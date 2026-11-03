@@ -50,6 +50,11 @@ extension ConnectionLibrary {
         return ResolvedCredential(ref: login.ref, source: .login)
     }
 
+    /// The connection's own username, else the resolved credential's.
+    func loginUser(for connection: Connection) -> String? {
+        [connection.username, loginCredential(for: connection.id)?.ref.username].compactMap { $0 }.first { !$0.isEmpty }
+    }
+
     /// Connection, then the nearest folder, then global.
     private func resolve(
         _ id: Connection.ID,

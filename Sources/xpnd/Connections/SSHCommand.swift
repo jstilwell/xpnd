@@ -24,6 +24,10 @@ struct SSHCommand: Equatable {
 enum SSHCommandBuilder {
     static let agentSocket = "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 
+    static func keyFile(_ ref: CredentialRef, in keysDirectory: URL) -> URL {
+        keysDirectory.appendingPathComponent("\(ref.item).pub")
+    }
+
     /// A connection that no longer exists also throws `.notSSH`: the error set has no closer case.
     static func build(_ id: Connection.ID, in library: ConnectionLibrary, keysDirectory: URL) throws(SSHCommandError) -> SSHCommand {
         guard let connection = library.connection(id), connection.type == .ssh else { throw .notSSH }
@@ -55,7 +59,7 @@ enum SSHCommandBuilder {
             if ref.category == .sshKey {
                 // ssh splits -o values on spaces, so the socket needs its own quotes inside the argument.
                 arguments += ["-o", "IdentityAgent=\"\(agentSocket)\"", "-o", "IdentitiesOnly=yes",
-                              "-i", keysDirectory.appendingPathComponent("\(ref.item).pub").path]
+                              "-i", keyFile(ref, in: keysDirectory).path]
             } else {
                 arguments += ["-o", "PubkeyAuthentication=no"]
             }
@@ -65,9 +69,7 @@ enum SSHCommandBuilder {
 
     /// `--` keeps a value starting with `-` from being read as an ssh option.
     private static func target(of connection: Connection, _ library: ConnectionLibrary) -> [String] {
-        let user = [connection.username, library.loginCredential(for: connection.id)?.ref.username]
-            .compactMap { $0 }.first { !$0.isEmpty }
-        let destination = user.map { "\($0)@\(connection.host)" } ?? connection.host
+        let destination = library.loginUser(for: connection).map { "\($0)@\(connection.host)" } ?? connection.host
         return destination.hasPrefix("-") ? ["--", destination] : [destination]
     }
 
