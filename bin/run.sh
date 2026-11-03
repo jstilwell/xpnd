@@ -7,8 +7,8 @@ Builds this copy of xpnd for Apple silicon and Intel, as releases are, and runs 
 quitting any copy that's already running.
 
   ./bin/run.sh                      build and run
-  ./bin/run.sh --test-snippets      first install Tests/Manual/test-snippets.yaml as your snippets,
-                                    backing up the current file
+  ./bin/run.sh --test-snippets      first install Tests/Manual/test-snippets.yaml as your snippets and
+                                    test-connections.yaml as your connections, backing up the current files
   ./bin/run.sh --reset-permissions  first clear xpnd's Accessibility and Input Monitoring grants, so
                                     the welcome window runs again (macOS asks for your password)
   ./bin/run.sh --log                then stream what it does (Ctrl-C stops the log, not the app)
@@ -53,20 +53,27 @@ if [ "$RESET_PERMISSIONS" = true ]; then
 fi
 
 if [ "$TEST_SNIPPETS" = true ]; then
-    SNIPPETS_DIR="$HOME/Library/Application Support/xpnd"
-    SNIPPETS="$SNIPPETS_DIR/snippets.yaml"
+    SUPPORT_DIR="$HOME/Library/Application Support/xpnd"
     MANUAL="$PWD/Tests/Manual"
-    mkdir -p "$SNIPPETS_DIR"
-    # Never lose the real snippets: anything already there is kept under a dated name.
-    if [ -f "$SNIPPETS" ]; then
-        BACKUP="$SNIPPETS.backup-$(date +%Y%m%d-%H%M%S)"
-        cp -p "$SNIPPETS" "$BACKUP"
-        echo "Backed up your snippets to: $BACKUP"
-        echo "  Put them back with: mv \"$BACKUP\" \"$SNIPPETS\""
-    fi
+    mkdir -p "$SUPPORT_DIR"
+    # Never lose the real files: anything already there is kept under a dated name.
+    backup() {
+        if [ -f "$1" ]; then
+            BACKUP="$1.backup-$(date +%Y%m%d-%H%M%S)"
+            cp -p "$1" "$BACKUP"
+            echo "Backed up your $2 to: $BACKUP"
+            echo "  Put them back with: mv \"$BACKUP\" \"$1\""
+        fi
+    }
+    SNIPPETS="$SUPPORT_DIR/snippets.yaml"
+    backup "$SNIPPETS" snippets
     sed "s|__MANUAL__|$MANUAL|g" "$MANUAL/test-snippets.yaml" > "$SNIPPETS.tmp"
     mv "$SNIPPETS.tmp" "$SNIPPETS"
-    echo "Installed the test snippets."
+    CONNECTIONS="$SUPPORT_DIR/connections.yaml"
+    backup "$CONNECTIONS" connections
+    cp "$MANUAL/test-connections.yaml" "$CONNECTIONS.tmp"
+    mv "$CONNECTIONS.tmp" "$CONNECTIONS"
+    echo "Installed the test snippets and connections."
 fi
 
 # Both architectures, as releases are built, so a local build matches what users get.
@@ -84,6 +91,9 @@ Try these in TextEdit:
   ;sh     script output        ;calc  opens Calculator                 ;tab     presses Tab
   ;bad    fails: keyword stays, message explains
   Control-Option-Command-Space opens the picker.
+  ;lo     connects to localhost over SSH (turn on Remote Login to get further)
+  ;dev    ;prod   open that folder's menu: press 1-9 to connect, Esc closes
+  Control-Option-Command-C opens the connection launcher.
 TRY
 fi
 
