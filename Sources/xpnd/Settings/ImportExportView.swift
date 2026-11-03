@@ -302,13 +302,19 @@ private struct ConnectionPreviewSheet: View {
             if rows.isEmpty {
                 Text("None: the file adds only folders.").foregroundStyle(.secondary)
             } else {
-                Table(rows) {
-                    TableColumn("Name", value: \.name)
-                    TableColumn("Address", value: \.address)
-                    TableColumn("Jump host") { Text($0.jumpHost ?? "") }
-                    TableColumn("SSH options", value: \.sshOptions)
+                // Blocks of wrapping text, not table cells, so a long or multi-line option is never cut off.
+                List(rows) { row in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(ConnectionImport.visible(row.name)).bold()
+                        Text(ConnectionImport.visible(row.address)).font(.body.monospaced())
+                        if let jump = row.jumpHost { field("Jump host", jump) }
+                        if !row.sshOptions.isEmpty { field("SSH options", row.sshOptions) }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.vertical, 4)
                 }
-                .frame(minHeight: 160)
+                .frame(minHeight: 240)
             }
             Text("SSH options and jump hosts run when you connect, so check them before importing.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -321,5 +327,10 @@ private struct ConnectionPreviewSheet: View {
         }
         .padding(20)
         .frame(width: 680)
+    }
+
+    private func field(_ label: String, _ value: String) -> some View {
+        (Text(label + ": ").foregroundStyle(.secondary) + Text(ConnectionImport.visible(value)).font(.body.monospaced()))
+            .fixedSize(horizontal: false, vertical: true)
     }
 }

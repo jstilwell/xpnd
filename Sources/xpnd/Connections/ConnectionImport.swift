@@ -138,6 +138,27 @@ enum ConnectionImport {
         let sshOptions: String
     }
 
+    /// `text` with every control and format character shown, so a newline, escape or bidi override
+    /// can't hide part of an option in the import preview.
+    static func visible(_ text: String) -> String {
+        var out = ""
+        for scalar in text.unicodeScalars {
+            switch scalar {
+            case "\n": out += "⏎"
+            case "\t": out += "⇥"
+            // C0 and DEL have Control Pictures: ␛, ␍, ␀…
+            case "\u{0}"..."\u{1F}": out.unicodeScalars.append(Unicode.Scalar(0x2400 + scalar.value)!)
+            case "\u{7F}": out += "␡"
+            default:
+                switch scalar.properties.generalCategory {
+                case .control, .format: out += "<U+\(String(scalar.value, radix: 16, uppercase: true))>"
+                default: out.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        return out
+    }
+
     /// The connections the merge with `choice` would add, in tree order.
     static func previewRows(incoming: ConnectionLibrary, existing: ConnectionLibrary, choice: ConflictChoice) -> [PreviewRow] {
         let have = Set(existing.allConnections.map(\.id))

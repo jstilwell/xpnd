@@ -8,6 +8,7 @@ struct PasswordManagerSettingsView: View {
     @State private var status: ProviderStatus?
     @State private var path = ""
     @State private var pathProblem: String?
+    @FocusState private var editingPath: Bool
 
     var body: some View {
         let library = editing.library
@@ -41,11 +42,13 @@ struct PasswordManagerSettingsView: View {
                     VStack(alignment: .trailing, spacing: 4) {
                         TextField("op path", text: $path, prompt: Text("/opt/homebrew/bin/op"))
                             .labelsHidden()
+                            .focused($editingPath)
                             .onSubmit(savePath)
+                            .onChange(of: editingPath) { if !editingPath { savePath() } }
                         if let pathProblem { Text(pathProblem).font(.callout).foregroundStyle(.red) }
                     }
                 }
-                Text("Leave empty to look in /opt/homebrew/bin and /usr/local/bin. Press Return to save.")
+                Text("Leave empty to look in /opt/homebrew/bin and /usr/local/bin. It saves when you press Return or leave the field.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             Section {
@@ -72,6 +75,7 @@ struct PasswordManagerSettingsView: View {
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear { path = settings.onePasswordPath ?? "" }
+        .onDisappear(perform: savePath)
         .task { await check() }
     }
 
@@ -103,7 +107,9 @@ struct PasswordManagerSettingsView: View {
             return
         }
         pathProblem = nil
-        settings.onePasswordPath = trimmed.isEmpty ? nil : trimmed
+        let new = trimmed.isEmpty ? nil : trimmed
+        guard new != settings.onePasswordPath else { return }
+        settings.onePasswordPath = new
         Task { await check() }
     }
 }

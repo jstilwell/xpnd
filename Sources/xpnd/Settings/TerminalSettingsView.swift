@@ -7,8 +7,9 @@ struct TerminalSettingsView: View {
     @Bindable var settings: AppSettings
     @State private var selection: Set<String> = []
     @State private var addProblem: String?
-    /// The custom template being typed; saved only while it has no problem.
+    /// The custom template being typed; saved on Return or leaving the field, and only without a problem.
     @State private var template = ""
+    @FocusState private var editingTemplate: Bool
     /// Local, so Custom can be chosen before its template is runnable.
     @State private var mode = Mode.preset(.terminal, newTab: false)
 
@@ -51,9 +52,12 @@ struct TerminalSettingsView: View {
                 if mode == .custom {
                     TextField("Command", text: $template, prompt: Text("tmux new-window {command}"))
                         .font(.body.monospaced())
-                        .onChange(of: template) { save() }
+                        .focused($editingTemplate)
+                        .onSubmit(save)
+                        // Not on each keystroke, which would save every valid prefix on the way.
+                        .onChange(of: editingTemplate) { if !editingTemplate { save() } }
                     if let problem = templateProblem {
-                        Text(problem + " Until then, xpnd keeps using your previous choice.")
+                        Text(problem + " Not saved until it's valid; xpnd keeps using your previous choice.")
                             .font(.callout).foregroundStyle(.red)
                     }
                     Text("""
@@ -68,6 +72,7 @@ struct TerminalSettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
+        .onDisappear(perform: save)
         .onAppear {
             switch settings.terminal.whenNoTerminal {
             case .preset(let preset, let newTab): mode = .preset(preset, newTab: newTab && preset.supportsTabs)
