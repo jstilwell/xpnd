@@ -14,6 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hud = HUD()
     private var engine: ExpansionEngine!
     private var tap: KeyEventTap!
+    private var picker: PickerPanel!
+    private let pickerHotKey = GlobalShortcut()
     private var welcome: WelcomeWindowController?
     /// Whether the tap has run since launch: losing access after that isn't a first launch.
     private var hasStarted = false
@@ -34,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             notify: { hud.flash($0) }
         )
         engine.isEnabled = settings.expansionEnabled
+        picker = PickerPanel(store: store, engine: engine)
+        pickerHotKey.action = { [weak self] in self?.picker.toggle() }
+        if !pickerHotKey.register(settings.pickerShortcut) { hud.flash("Picker shortcut is in use by another app") }
         tap = KeyEventTap(
             onKey: { [weak self] in self?.engine.handle($0) },
             onMouseDown: { [weak self] in self?.engine.resetBuffer() }
@@ -115,12 +120,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggle.target = self
         toggle.state = settings.expansionEnabled ? .on : .off
         menu.addItem(toggle)
+        let open = NSMenuItem(title: "Open Picker", action: #selector(openPicker), keyEquivalent: "")
+        open.target = self
+        menu.addItem(open)
         if store.loadError != nil {
             // No action, so the menu shows it disabled.
             menu.addItem(NSMenuItem(title: "Snippets file has an error", action: nil, keyEquivalent: ""))
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit xpnd", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    }
+
+    @objc private func openPicker() {
+        picker.toggle()
     }
 
     @objc private func toggleExpansion() {

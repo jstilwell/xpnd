@@ -8,15 +8,28 @@ final class AppSettings {
 
     private enum Key {
         static let expansionEnabled = "expansionEnabled"
+        static let pickerShortcut = "pickerShortcut"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
 
     var expansionEnabled: Bool { didSet { defaults.set(expansionEnabled, forKey: Key.expansionEnabled) } }
 
+    /// Control+Option+Command+Space unless changed; nil turns the picker hotkey off.
+    static let defaultPickerShortcut = Shortcut(keyCode: 49, modifiers: [.control, .option, .command], key: "Space")
+
+    var pickerShortcut: Shortcut? {
+        didSet { defaults.set(try? JSONEncoder().encode(pickerShortcut), forKey: Key.pickerShortcut) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [Key.expansionEnabled: true])
         expansionEnabled = defaults.bool(forKey: Key.expansionEnabled)
+        if let data = defaults.data(forKey: Key.pickerShortcut) {
+            pickerShortcut = try? JSONDecoder().decode(Shortcut.self, from: data)
+        } else {
+            pickerShortcut = Self.defaultPickerShortcut
+        }
     }
 }
