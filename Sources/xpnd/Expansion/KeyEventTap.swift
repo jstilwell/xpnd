@@ -5,12 +5,13 @@ import Carbon.HIToolbox
 /// Input Monitoring. Its owner keeps it alive while it's started: the callback holds it unretained.
 /// Never log what it hears.
 @MainActor final class KeyEventTap {
-    private let onKey: (KeyInput) -> Void
+    /// The Bool is whether the key goes to xpnd itself.
+    private let onKey: (KeyInput, Bool) -> Void
     private let onMouseDown: () -> Void
     private var port: CFMachPort?
     private var source: CFRunLoopSource?
 
-    init(onKey: @escaping (KeyInput) -> Void, onMouseDown: @escaping () -> Void) {
+    init(onKey: @escaping (KeyInput, Bool) -> Void, onMouseDown: @escaping () -> Void) {
         self.onKey = onKey
         self.onMouseDown = onMouseDown
     }
@@ -53,18 +54,22 @@ import Carbon.HIToolbox
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let port { CGEvent.tapEnable(tap: port, enable: true) }
-            onKey(.reset) // keys were missed while it was off
+            onKey(.reset, false) // keys were missed while it was off
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
             onMouseDown()
         case .keyDown:
             guard event.getIntegerValueField(.eventSourceUserData) != SyntheticEvent.marker else { return }
             // A password field: don't read the key, and don't let earlier keys combine with later ones.
-            guard !IsSecureEventInputEnabled() else { return onKey(.reset) }
+            guard !IsSecureEventInputEnabled() else { return onKey(.reset, false) }
             var chars = [UniChar](repeating: 0, count: 8)
             var length = 0
             event.keyboardGetUnicodeString(maxStringLength: chars.count, actualStringLength: &length, unicodeString: &chars)
             let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
-            onKey(KeyInput.classify(keyCode: keyCode, characters: String(utf16CodeUnits: chars, count: length), flags: event.flags))
+            // The picker is a non-activating panel, so it can be key while the app isn't active.
+            let targetsXpnd = event.getIntegerValueField(.eventTargetUnixProcessID) == Int64(getpid())
+                || NSApp.isActive || NSApp.keyWindow != nil
+            onKey(KeyInput.classify(keyCode: keyCode, characters: String(utf16CodeUnits: chars, count: length), flags: event.flags),
+                  targetsXpnd)
         default:
             break
         }

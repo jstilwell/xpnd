@@ -50,7 +50,9 @@ struct SnippetEditorView: View {
             }
             Toggle("Enabled", isOn: binding(\.enabled))
             Section {
-                TemplateTextView(text: binding(\.text), isEditable: !readOnly, controller: template)
+                TemplateTextView(text: snippet.text, snippetID: snippet.id, isEditable: !readOnly, controller: template) { new in
+                    edit { $0.text = new }
+                }
                     .frame(minHeight: 200)
             } header: {
                 HStack {

@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         image?.isTemplate = true
         statusItem.button?.image = image
         statusItem.menu = menu
+        installMainMenu()
 
         store.load()
         store.startWatching()
@@ -44,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerPickerShortcut()
         followSettings()
         tap = KeyEventTap(
-            onKey: { [weak self] in self?.engine.handle($0) },
+            onKey: { [weak self] in self?.engine.handle($0, targetsXpnd: $1) },
             onMouseDown: { [weak self] in self?.engine.resetBuffer() }
         )
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -115,6 +116,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.followLoadError()
             }
         }
+    }
+
+    /// Not shown (no Dock icon), but gives xpnd's windows their editing and closing shortcuts.
+    /// Adapted from HoverEnhance's.
+    private func installMainMenu() {
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        let appMenu = NSMenu()
+        appMenu.items = [
+            settingsItem, .separator(),
+            NSMenuItem(title: "Quit xpnd", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"),
+        ]
+        let editMenu = NSMenu(title: "Edit")
+        let redo = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.items = [
+            NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"), redo, .separator(),
+            NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"),
+            NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"),
+            NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"),
+            NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"),
+        ]
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.items = [NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")]
+        let main = NSMenu()
+        for submenu in [appMenu, editMenu, windowMenu] {
+            let item = NSMenuItem()
+            item.submenu = submenu
+            main.addItem(item)
+        }
+        NSApp.mainMenu = main
     }
 
     private func registerPickerShortcut() {

@@ -130,6 +130,23 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         #expect(h.sender.log.isEmpty)
     }
 
+    @Test func keysForXpndItselfDoNotExpand() async throws {
+        let h = try Harness([snip(";sig", "Best")])
+        // Typed into xpnd's own Settings editor or picker search field.
+        for c in [";", "s", "i", "g"] { h.engine.handle(.characters(c), targetsXpnd: true) }
+        await h.settle()
+        #expect(h.sender.log.isEmpty)
+        #expect(h.engine.buffer.text.isEmpty)
+
+        // Started in another app, finished in xpnd: the buffer starts over.
+        h.type(";", "s", "i")
+        h.engine.handle(.characters("g"), targetsXpnd: true)
+        #expect(h.engine.buffer.text.isEmpty)
+        h.type("g")
+        await h.settle()
+        #expect(h.sender.log.isEmpty)
+    }
+
     @Test func emojiKeywordDeletesByCharacter() async throws {
         let h = try Harness([snip("👍🏽!", "ok")])
         h.type("👍🏽", "!")

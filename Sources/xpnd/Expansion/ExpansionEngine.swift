@@ -29,7 +29,10 @@ import Foundation
         self.notify = notify
     }
 
-    func handle(_ input: KeyInput) {
+    /// `targetsXpnd`: the key goes to one of xpnd's own windows (Settings, the picker). Expanding
+    /// there would edit xpnd's own fields, so it never does, and the buffer starts over.
+    func handle(_ input: KeyInput, targetsXpnd: Bool = false) {
+        guard !targetsXpnd else { return buffer.apply(.reset) }
         guard isEnabled, !isExpanding, store.loadError == nil else { return }
         buffer.apply(input)
         guard let snippet = Matcher.match(buffer.text, in: store.library.activeSnippets) else { return }
