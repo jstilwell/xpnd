@@ -17,7 +17,12 @@ final class ConnectionLauncherPanel: LauncherPanel {
             choose: { [weak self] id in
                 guard let self else { return }
                 close()
-                Task { await connect(id, await self.refocusPrevious()) }
+                // Guarded against the app that was in front when the panel opened, not whatever is in front after refocusing.
+                let target = previousApp?.processIdentifier
+                Task {
+                    await self.refocusPrevious()
+                    await connect(id, target)
+                }
             },
             cancel: { [weak self] in self?.close() },
             openApp: { [weak self] in self?.close(); onOpenApp() }

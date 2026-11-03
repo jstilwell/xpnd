@@ -36,7 +36,8 @@ struct KeywordNamespace {
     }
 
     /// A custom string always stands (duplicates are flagged, not dropped). A derived one yields to
-    /// snippet keywords, connection strings, custom folder strings, and earlier folders in tree order.
+    /// snippet keywords (and keywords it's a prefix of), connection strings, custom folder strings,
+    /// and earlier folders in tree order.
     func effectiveActivation(ofFolder id: ConnectionFolder.ID) -> (string: String?, reason: String?) {
         guard let folder = connections.folder(id) else { return (nil, nil) }
         if let custom = folder.activation { return (custom.isEmpty ? nil : custom, nil) }
@@ -44,6 +45,10 @@ struct KeywordNamespace {
         if derived.isEmpty { return (nil, nil) }
         let taken = "“\(derived)” is already used by"
         if let snippet = snippets.snippet(keyword: derived) { return (nil, "\(taken) “\(snippet.name)”") }
+        // Typing the derived string would fire it before a longer snippet keyword could finish.
+        if let longer = snippets.groups.lazy.flatMap(\.snippets).first(where: { $0.keyword != derived && $0.keyword.hasPrefix(derived) }) {
+            return (nil, "“\(derived)” would hide the snippet “\(longer.keyword)”")
+        }
         if let other = connections.allConnections.first(where: { $0.activation == derived }) {
             return (nil, "\(taken) connection “\(other.name)”")
         }

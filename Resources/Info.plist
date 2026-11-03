@@ -23,7 +23,7 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>
-	<true/>
+	<false/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>xpnd opens your SSH connections in Terminal or iTerm2.</string>
 	<key>NSHumanReadableCopyright</key>

@@ -8,12 +8,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let loadErrorMessage =
         "xpnd couldn't read snippets.yaml, so expansion is paused. Fix the file and it reloads automatically."
 
-    private let settings = AppSettings.shared
-    private let store = SnippetStore(fileURL: SnippetStore.defaultURL)
-    private let connections = ConnectionStore(fileURL: ConnectionStore.defaultURL)
+    // Not private where AppDelegate+Connections uses them.
+    let settings = AppSettings.shared
+    let store = SnippetStore(fileURL: SnippetStore.defaultURL)
+    let connections = ConnectionStore(fileURL: ConnectionStore.defaultURL)
     private let permissions = PermissionWatcher()
-    private let hud = HUD()
-    private var engine: ExpansionEngine!
+    let hud = HUD()
+    var engine: ExpansionEngine!
+    var service: ConnectionService!
+    let quickMenu = QuickMenuPanel()
+    var mainWindow: MainWindowController?
+    /// The cross-file duplicates the HUD last flagged, so it says so once per change.
+    var flaggedDuplicates: Set<String> = []
     private var tap: KeyEventTap!
     private var picker: PickerPanel!
     private let pickerHotKey = GlobalShortcut()
@@ -41,12 +47,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connections.seedIfFirstLaunch(defaults: .standard)
         connections.startWatching()
         let store = store, hud = hud
+        let sender = CGEventKeystrokeSender()
+        service = makeConnectionService(sender: sender)
         engine = ExpansionEngine(
-            store: store, connections: connections, player: Player(sender: CGEventKeystrokeSender(), actions: ActionRunner()),
+            store: store, connections: connections, player: Player(sender: sender, actions: ActionRunner()),
             makeContext: { LiveEvaluationContext(library: store.library) },
             notify: { hud.flash($0) },
             frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
-            onActivate: { _, _ in } // Task 13 wires this to connecting and the quick menu.
+            onActivate: { [weak self] in await self?.activate($0, typedInto: $1) }
         )
         engine.isEnabled = settings.expansionEnabled
         picker = PickerPanel(store: store, engine: engine)
@@ -56,8 +64,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         launcherHotKey.action = { [weak self] in
             guard let self else { return }
             launcher.toggle(
-                library: connections.library, onOpenApp: { [weak self] in self?.showSettings() },
-                connect: { _, _ in } // Task 13 wires this through engine.exclusive.
+                library: connections.library, onOpenApp: { [weak self] in self?.showMainWindow(selecting: nil) },
+                connect: { [weak self] id, pid in await self?.connectExclusively(id, from: pid) }
             )
         }
         registerLauncherShortcut()
@@ -81,19 +89,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if store.loadError != nil { hud.flash(Self.loadErrorMessage) }
         followLoadError()
+        followCrossFileDuplicates()
         rebuildMenu()
+        // A login-item launch stays in the menu bar; any other opens the window (and the Dock icon).
+        if !Self.launchedAsLoginItem() { showMainWindow(selecting: nil) }
         log.info("xpnd launched")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         tap.stop()
+        SecretClipboard.clearIfOwned()
     }
 
-    /// Opening the app again (from Finder, Spotlight, or `open`) shows the welcome window while it
-    /// waits for access.
+    /// Opening the app again (Dock, Finder, Spotlight, or `open`) shows the main window, and the
+    /// welcome window while it waits for access.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !permissions.isGranted { showWelcome() }
+        showMainWindow(selecting: nil)
         return false
+    }
+
+    /// Only readable while launching: the open-application event says whether login started xpnd.
+    private static func launchedAsLoginItem() -> Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent, event.eventID == kAEOpenApplication else { return false }
+        return event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
 
     /// The tap runs only while both permissions are on.
@@ -139,7 +158,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Not shown (no Dock icon), but gives xpnd's windows their editing and closing shortcuts.
+    /// Shown while the main window is open; otherwise it still gives xpnd's windows their editing
+    /// and closing shortcuts.
     /// Adapted from HoverEnhance's.
     private func installMainMenu() {
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
@@ -209,6 +229,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Later tasks add their items here, above Quit.
     func rebuildMenu() {
         menu.removeAllItems()
+        let main = NSMenuItem(title: "Open xpnd…", action: #selector(openMainWindow), keyEquivalent: "")
+        main.target = self
+        menu.addItem(main)
         // A file error pauses expansion (the error item says why), so the toggle greys out instead of
         // offering a click that would really turn expansion off.
         let toggle = NSMenuItem(

@@ -3,12 +3,11 @@ import SwiftUI
 
 /// The Settings window's sections, in order. An enum so later projects can add sections.
 enum SettingsSection: String, CaseIterable, Sendable {
-    case general, snippets, importExport
+    case general, importExport
 
     var title: String {
         switch self {
         case .general: "General"
-        case .snippets: "Snippets"
         case .importExport: "Import/Export"
         }
     }
@@ -16,7 +15,6 @@ enum SettingsSection: String, CaseIterable, Sendable {
     var symbol: String {
         switch self {
         case .general: "gearshape"
-        case .snippets: "text.badge.plus"
         case .importExport: "square.and.arrow.up.on.square"
         }
     }
@@ -38,7 +36,6 @@ final class SettingsWindowController: NSWindowController {
         for section in SettingsSection.allCases {
             let host = switch section {
             case .general: host(GeneralSettingsView(settings: settings))
-            case .snippets: host(SnippetsSettingsView(store: store))
             case .importExport: host(ImportExportView(store: store))
             }
             host.title = section.title

@@ -46,6 +46,20 @@ private func snippets(_ list: Snippet...) -> SnippetLibrary {
         #expect(withNone.effectiveActivation(ofFolder: none.id) == (nil, nil))
     }
 
+    /// ";dev" would fire before ";devops" could be finished, so the derived string gives way.
+    @Test func derivedYieldsToLongerSnippetKeyword() {
+        let devops = Snippet(name: "Devops", keyword: ";devops", text: "x")
+        let folder = ConnectionFolder(name: "dev"), custom = ConnectionFolder(name: "other", activation: ";dev")
+        let namespace = KeywordNamespace(snippets: snippets(devops), connections: ConnectionLibrary(folders: [folder, custom]))
+        #expect(namespace.effectiveActivation(ofFolder: folder.id) == (nil, "“;dev” would hide the snippet “;devops”"))
+        // Only a derived string yields; a custom one stands.
+        #expect(namespace.effectiveActivation(ofFolder: custom.id) == (";dev", nil))
+
+        let d = Snippet(name: "D", keyword: ";d", text: "x")
+        let shorter = KeywordNamespace(snippets: snippets(d), connections: ConnectionLibrary(folders: [folder]))
+        #expect(shorter.effectiveActivation(ofFolder: folder.id) == (";dev", nil))
+    }
+
     @Test func problemMessages() {
         let namespace = KeywordNamespace(snippets: snippets(signature), connections: ConnectionLibrary(folders: [dev]))
 

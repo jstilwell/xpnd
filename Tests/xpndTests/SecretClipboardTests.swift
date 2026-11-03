@@ -70,4 +70,23 @@ import Testing
             #expect(board.string(forType: .string) == nil)
         }
     }
+
+    @Test func clearIfOwnedClearsOnlyItsSecret() async {
+        await withBoard { board in
+            let task = SecretClipboard.copy("hunter2", to: board, clearAfter: .seconds(60))
+            SecretClipboard.clearIfOwned(board)
+            #expect(board.string(forType: .string) == nil)
+            task.cancel()
+            await task.value
+        }
+        await withBoard { board in
+            let task = SecretClipboard.copy("hunter2", to: board, clearAfter: .seconds(60))
+            board.clearContents()
+            board.setString("newer", forType: .string)
+            SecretClipboard.clearIfOwned(board)
+            #expect(board.string(forType: .string) == "newer")
+            task.cancel()
+            await task.value
+        }
+    }
 }

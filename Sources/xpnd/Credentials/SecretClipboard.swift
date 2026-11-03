@@ -8,6 +8,9 @@ import AppKit
     /// Tuning value: outlasts a paste, which has the secret set aside until its settle ends.
     private static let recheckAfter = CGEventKeystrokeSender.pasteSettle * 2
 
+    /// The last copy's tag, so quitting can clear a secret still on the clipboard.
+    private static var lastTag: NSPasteboard.PasteboardType?
+
     @discardableResult
     static func copy(_ secret: String, to pasteboard: NSPasteboard = .general, clearAfter: Duration = clearAfter) -> Task<Void, Never> {
         let tag = NSPasteboard.PasteboardType("com.jessestilwell.xpnd.secret.\(UUID().uuidString)")
@@ -18,6 +21,7 @@ import AppKit
         item.setData(Data(), forType: .init("org.nspasteboard.TransientType"))
         item.setData(Data(), forType: tag)
         pasteboard.writeObjects([item])
+        lastTag = tag
         return Task { @MainActor in
             for wait in [clearAfter, recheckAfter] {
                 try? await Task.sleep(for: wait)
@@ -27,5 +31,11 @@ import AppKit
                 return
             }
         }
+    }
+
+    /// Clears the clipboard if it still holds the last secret xpnd copied, as when quitting.
+    static func clearIfOwned(_ pasteboard: NSPasteboard = .general) {
+        guard let lastTag, pasteboard.types?.contains(lastTag) == true else { return }
+        pasteboard.clearContents()
     }
 }
