@@ -186,7 +186,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.removeAllItems()
         let toggle = NSMenuItem(title: "Expansion On", action: #selector(toggleExpansion), keyEquivalent: "")
         toggle.target = self
-        toggle.state = settings.expansionEnabled ? .on : .off
+        // Checked only while expanding actually works; a file error pauses it (the error item says why).
+        toggle.state = settings.expansionEnabled && store.loadError == nil ? .on : .off
         menu.addItem(toggle)
         let open = NSMenuItem(title: "Open Picker", action: #selector(openPicker), keyEquivalent: "")
         open.target = self
