@@ -36,7 +36,9 @@ import Foundation
     /// there would edit xpnd's own fields, so it never does, and the buffer starts over.
     func handle(_ input: KeyInput, targetsXpnd: Bool = false) {
         guard !targetsXpnd else { return buffer.apply(.reset) }
-        guard isEnabled, !isExpanding, store.loadError == nil else { return }
+        // A dropped key breaks the run of typing, so a keyword can't span it. The in-flight expansion
+        // doesn't read the buffer, so resetting it then is safe.
+        guard isEnabled, !isExpanding, store.loadError == nil else { return buffer.apply(.reset) }
         buffer.apply(input)
         guard let snippet = Matcher.match(buffer.text, in: store.library.activeSnippets) else { return }
         buffer.apply(.reset)

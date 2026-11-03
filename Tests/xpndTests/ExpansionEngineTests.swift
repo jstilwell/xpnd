@@ -125,10 +125,26 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         #expect(h.sender.log.isEmpty)
 
         h.engine.isEnabled = true
-        try "groups: [".write(to: h.dir.appending(path: "snippets.yaml"), atomically: true, encoding: .utf8)
+        let url = h.dir.appending(path: "snippets.yaml")
+        let good = try String(contentsOf: url, encoding: .utf8)
+        try "groups: [".write(to: url, atomically: true, encoding: .utf8)
         h.store.load()
         #expect(h.store.loadError != nil)
         h.type(";", "s", "i", "g")
+        await h.settle()
+        #expect(h.sender.log.isEmpty)
+
+        // A key dropped during the error starts the buffer over, so `;s` + `ig` isn't `;sig`.
+        try good.write(to: url, atomically: true, encoding: .utf8)
+        h.store.load()
+        h.type(";", "s")
+        try "groups: [".write(to: url, atomically: true, encoding: .utf8)
+        h.store.load()
+        h.type("x")
+        try good.write(to: url, atomically: true, encoding: .utf8)
+        h.store.load()
+        #expect(h.store.loadError == nil)
+        h.type("i", "g")
         await h.settle()
         #expect(h.sender.log.isEmpty)
     }
