@@ -82,7 +82,7 @@ struct ConnectionImportTests {
         let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "b", connections: [
             web, conn("v6", host: "::1", jump: .text("ec2-user@jump:22")), conn("gone", jump: .connection(UUID())),
             conn("clash", act: ";k")])])
-        let rows = ConnectionImport.previewRows(incoming: incoming, existing: existing, choice: .skip)
+        let rows = ConnectionImport.preview(incoming: incoming, existing: existing, choice: .skip).added
         #expect(rows.map(\.name) == ["web", "v6", "gone"])
         #expect(rows[0].address == "deploy@web.example:2222")
         #expect(rows[0].jumpHost == "bastion")
@@ -90,8 +90,25 @@ struct ConnectionImportTests {
         #expect(rows[1].address == "[::1]:22")
         #expect(rows[1].jumpHost == "ec2-user@jump:22")
         #expect(rows[2].jumpHost == "A missing connection")
-        #expect(ConnectionImport.previewRows(incoming: incoming, existing: existing, choice: .replace).map(\.name)
+        #expect(ConnectionImport.preview(incoming: incoming, existing: existing, choice: .replace).added.map(\.name)
             == ["web", "v6", "gone", "clash"])
+    }
+
+    /// Replace changes existing connections too, so the preview names them.
+    @Test func previewShowsRemovedAndRepointedExisting() {
+        let old = conn("old", act: ";x"), user = conn("user", jump: .connection(old.id)), plain = conn("plain", jump: .text("j"))
+        let existing = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [old, user, plain])])
+        let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "b", connections: [conn("new", act: ";x")])])
+
+        let replaced = ConnectionImport.preview(incoming: incoming, existing: existing, choice: .replace)
+        #expect(replaced.added.map(\.name) == ["new"])
+        #expect(replaced.removed == ["old"])
+        #expect(replaced.rejumped == [ConnectionImport.Rejump(name: "user", jumpHost: "new")])
+
+        let skipped = ConnectionImport.preview(incoming: incoming, existing: existing, choice: .skip)
+        #expect(skipped.added.isEmpty)
+        #expect(skipped.removed.isEmpty)
+        #expect(skipped.rejumped.isEmpty)
     }
 
     @Test func previewShowsHiddenCharacters() {

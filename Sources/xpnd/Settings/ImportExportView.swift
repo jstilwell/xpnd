@@ -190,7 +190,7 @@ private struct ConnectionImportExport: View {
     @State private var choice = ConflictChoice.skip
     @State private var conflicts: [String] = []
     @State private var resolvingConflicts = false
-    @State private var preview: [ConnectionImport.PreviewRow]?
+    @State private var preview: ConnectionImport.Preview?
 
     var body: some View {
         Form {
@@ -225,7 +225,7 @@ private struct ConnectionImportExport: View {
             Text("Skip keeps your connections; Replace uses the imported ones.\n" + conflicts.joined(separator: ", "))
         }
         .sheet(isPresented: Binding(get: { preview != nil }, set: { if !$0 { preview = nil } })) {
-            ConnectionPreviewSheet(rows: preview ?? [], cancel: cancelImport, confirm: merge)
+            if let preview { ConnectionPreviewSheet(preview: preview, cancel: cancelImport, confirm: merge) }
         }
     }
 
@@ -268,7 +268,7 @@ private struct ConnectionImportExport: View {
     private func showPreview(_ choice: ConflictChoice) {
         guard let incoming else { return }
         self.choice = choice
-        preview = ConnectionImport.previewRows(incoming: incoming, existing: store.library, choice: choice)
+        preview = ConnectionImport.preview(incoming: incoming, existing: store.library, choice: choice)
     }
 
     private func merge() {
@@ -290,29 +290,46 @@ private struct ConnectionImportExport: View {
     }
 }
 
-/// Lists every connection an import adds, with what runs on connect, before any of them are added.
+/// Lists every connection an import adds, with what runs on connect, and every existing one it
+/// removes or re-points, before anything changes.
 private struct ConnectionPreviewSheet: View {
-    let rows: [ConnectionImport.PreviewRow]
+    let preview: ConnectionImport.Preview
     let cancel: () -> Void
     let confirm: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("These connections will be added").font(.headline)
-            if rows.isEmpty {
+            if preview.added.isEmpty {
                 Text("None: the file adds only folders.").foregroundStyle(.secondary)
             } else {
                 // Blocks of wrapping text, not table cells, so a long or multi-line option is never cut off.
-                List(rows) { row in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(ConnectionImport.visible(row.name)).bold()
-                        Text(ConnectionImport.visible(row.address)).font(.body.monospaced())
-                        if let jump = row.jumpHost { field("Jump host", jump) }
-                        if !row.sshOptions.isEmpty { field("SSH options", row.sshOptions) }
+                List {
+                    ForEach(preview.added) { row in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(ConnectionImport.visible(row.name)).bold()
+                            Text(ConnectionImport.visible(row.address)).font(.body.monospaced())
+                            if let jump = row.jumpHost { field("Jump host", jump) }
+                            if !row.sshOptions.isEmpty { field("SSH options", row.sshOptions) }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .padding(.vertical, 4)
                     }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .padding(.vertical, 4)
+                    // Only an added connection can evict or re-point one, so these sit in the same list.
+                    if !preview.removed.isEmpty {
+                        Section("Removed") {
+                            ForEach(Array(preview.removed.enumerated()), id: \.offset) { Text(ConnectionImport.visible($1)) }
+                        }
+                    }
+                    if !preview.rejumped.isEmpty {
+                        Section("Now jumps through") {
+                            ForEach(Array(preview.rejumped.enumerated()), id: \.offset) { _, change in
+                                Text(ConnectionImport.visible(change.name)).bold()
+                                    + Text(" → " + ConnectionImport.visible(change.jumpHost))
+                            }
+                        }
+                    }
                 }
                 .frame(minHeight: 240)
             }

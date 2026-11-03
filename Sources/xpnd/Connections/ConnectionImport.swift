@@ -122,7 +122,22 @@ enum ConnectionImport {
 
     /// Hosts of the incoming connections the merge with `choice` would add, sorted and unique.
     static func hostsAdded(incoming: ConnectionLibrary, existing: ConnectionLibrary, choice: ConflictChoice) -> [String] {
-        Set(previewRows(incoming: incoming, existing: existing, choice: choice).map(\.host)).sorted()
+        Set(preview(incoming: incoming, existing: existing, choice: choice).added.map(\.host)).sorted()
+    }
+
+    /// What the import confirmation shows: what's added, and what happens to existing connections.
+    struct Preview: Equatable {
+        let added: [PreviewRow]
+        /// Names of existing connections the merge removes (Replace evicts a string's old owner).
+        let removed: [String]
+        /// Existing connections whose saved jump host moves to an incoming connection.
+        let rejumped: [Rejump]
+    }
+
+    struct Rejump: Equatable {
+        let name: String
+        /// The new jump host's name.
+        let jumpHost: String
     }
 
     /// One connection the merge would add, as the import confirmation shows it.
@@ -159,12 +174,19 @@ enum ConnectionImport {
         return out
     }
 
-    /// The connections the merge with `choice` would add, in tree order.
-    static func previewRows(incoming: ConnectionLibrary, existing: ConnectionLibrary, choice: ConflictChoice) -> [PreviewRow] {
+    /// What the merge with `choice` would do, each list in tree order.
+    static func preview(incoming: ConnectionLibrary, existing: ConnectionLibrary, choice: ConflictChoice) -> Preview {
         let have = Set(existing.allConnections.map(\.id))
         // Colliding incoming IDs are re-keyed, so every added connection is outside `have`.
         let merged = merge(incoming, into: existing, choice: choice)
-        return merged.allConnections.filter { !have.contains($0.id) }.map { c in
+        let removed = existing.allConnections.filter { merged.connection($0.id) == nil }.map(\.name)
+        let rejumped = existing.allConnections.compactMap { old -> Rejump? in
+            // Also catches an old dangling jump whose id an incoming connection brings.
+            guard case .connection(let to)? = merged.connection(old.id)?.jumpHost, !have.contains(to),
+                  let target = merged.connection(to) else { return nil }
+            return Rejump(name: old.name, jumpHost: target.name)
+        }
+        let added = merged.allConnections.filter { !have.contains($0.id) }.map { c in
             let jump: String? = switch c.jumpHost {
             case nil: nil
             case .text(let text): text
@@ -175,6 +197,7 @@ enum ConnectionImport {
             return PreviewRow(id: c.id, name: c.name, host: c.host, address: "\(user)\(host):\(c.effectivePort)",
                               jumpHost: jump, sshOptions: c.sshOptions)
         }
+        return Preview(added: added, removed: removed, rejumped: rejumped)
     }
 
     /// `folders == nil` exports everything; selected folders keep their whole subtree.
