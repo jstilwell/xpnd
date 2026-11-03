@@ -36,6 +36,24 @@ struct SnippetStoreTests {
         }
     }
 
+    @Test func deletingBrokenFileRecovers() async throws {
+        try await withTempDir { dir in
+            let url = dir.appending(path: "snippets.yaml")
+            let store = SnippetStore(fileURL: url)
+            try store.update { $0.groups.append(group(";a")) }
+            try Data("groups: [".utf8).write(to: url, options: .atomic)
+            store.load()
+            #expect(store.loadError != nil)
+            try FileManager.default.removeItem(at: url)
+            store.load()
+            #expect(store.loadError == nil)
+            #expect(store.library == .empty)
+            // Saving works again, starting from the empty library.
+            try store.update { $0.groups.append(group(";b")) }
+            #expect(store.library.groups.flatMap(\.snippets).map(\.keyword) == [";b"])
+        }
+    }
+
     @Test func updateSavesAndReloads() async throws {
         try await withTempDir { dir in
             let url = dir.appending(path: "sub/snippets.yaml")

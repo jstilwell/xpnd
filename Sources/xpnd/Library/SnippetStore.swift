@@ -42,7 +42,10 @@ final class SnippetStore {
 
     func load() {
         switch readDisk() {
-        case .missing: return // empty library, no error
+        case .missing: // empty library, no error, so deleting a broken file recovers
+            library = .empty
+            loadError = nil
+            lastText = nil
         case .unreadable: loadError = "Could not read \(fileURL.lastPathComponent)"
         case .text(let text):
             lastText = text
