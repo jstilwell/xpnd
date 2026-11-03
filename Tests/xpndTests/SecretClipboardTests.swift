@@ -40,6 +40,26 @@ import Testing
         }
     }
 
+    @Test func clearsAfterAPasteRestores() async {
+        await withBoard { board in
+            let task = SecretClipboard.copy("hunter2", to: board, clearAfter: .milliseconds(100))
+            await CGEventKeystrokeSender.paste("text", on: board, settle: .milliseconds(10)) {}
+            #expect(board.string(forType: .string) == "hunter2")
+            await task.value
+            #expect(board.string(forType: .string) == nil)
+        }
+    }
+
+    /// The deadline passes while the paste has the secret set aside, so the tag isn't on the board then.
+    @Test func clearsWhenADeadlineFallsInsideAPaste() async {
+        await withBoard { board in
+            let task = SecretClipboard.copy("hunter2", to: board, clearAfter: .milliseconds(10))
+            await CGEventKeystrokeSender.paste("text", on: board, settle: .milliseconds(60)) {}
+            await task.value
+            #expect(board.string(forType: .string) == nil)
+        }
+    }
+
     @Test func secondCopyKeepsItsOwnClock() async {
         await withBoard { board in
             let first = SecretClipboard.copy("one", to: board, clearAfter: .milliseconds(10))

@@ -16,6 +16,15 @@ private let key = ref("key", .sshKey)
 private let login = ref("login", .login)
 private let sudo = ref("sudo", .password)
 
+/// Polls `condition` for up to two seconds.
+@MainActor private func eventually(_ condition: () -> Bool) async -> Bool {
+    for _ in 0..<200 {
+        if condition() { return true }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return condition()
+}
+
 /// Every fake writes to one log, so tests can assert the order across them.
 @MainActor private final class Log {
     var events: [String] = []
@@ -26,6 +35,9 @@ private let sudo = ref("sudo", .password)
     var passwordFailures: [String: CredentialError] = [:]
     var publicKeyFailure: CredentialError?
     var onPublicKey: () -> Void = {}
+    /// Items whose password fetch waits for `release`, like an unanswered Touch ID prompt.
+    var held: Set<String> = []
+    private var gates: [String: CheckedContinuation<Void, Never>] = [:]
 
     init(log: Log) { self.log = log }
 
@@ -34,9 +46,13 @@ private let sudo = ref("sudo", .password)
 
     func password(for ref: CredentialRef) async throws(CredentialError) -> String {
         log.events.append("password \(ref.item)")
+        if held.contains(ref.item) { await withCheckedContinuation { gates[ref.item] = $0 } }
         if let failure = passwordFailures[ref.item] { throw failure }
         return "secret-\(ref.item)"
     }
+
+    func isHolding(_ item: String) -> Bool { gates[item] != nil }
+    func release(_ item: String) { gates.removeValue(forKey: item)?.resume() }
 
     func publicKey(for ref: CredentialRef) async throws(CredentialError) -> String {
         log.events.append("publicKey \(ref.item)")
@@ -78,12 +94,17 @@ private let sudo = ref("sudo", .password)
 @MainActor private final class FakePrompt: PasswordPrompting {
     let log: Log
     var answer = true
+    /// Stays open until the task is cancelled, like an offer nobody has answered.
+    var staysOpen = false
 
     init(log: Log) { self.log = log }
 
     func offerSudo(for name: String) async -> Bool {
         log.events.append("offerSudo \(name)")
-        return answer
+        guard staysOpen else { return answer }
+        while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(1)) }
+        log.events.append("offer dismissed")
+        return false
     }
 }
 
@@ -98,6 +119,8 @@ private let sudo = ref("sudo", .password)
     var keys: URL { directory.appending(path: "keys") }
     var front: (pid: pid_t, bundleID: String?)? = inTerminal
     var settings = TerminalSettings.standard
+    /// Stands in for the wiring through `ExpansionEngine.whenIdle`.
+    var onCopy: () -> Void = {}
 
     init(library: ConnectionLibrary) throws {
         provider = FakeProvider(log: log)
@@ -121,12 +144,17 @@ private let sudo = ref("sudo", .password)
             terminal: { [unowned self] in settings },
             frontmost: { [unowned self] in front },
             notify: { [log] in log.events.append("notify \($0)") },
-            copySecret: { [log] in log.events.append("copy \($0)") },
+            copySecret: { [unowned self] secret in
+                onCopy()
+                log.events.append("copy \(secret)")
+            },
             prompt: prompt, keysDirectory: keys)
     }
 
     func connect(_ connection: Connection, typedInto target: pid_t? = terminalPID) async {
-        await service().connect(connection.id, typedInto: target)
+        let service = service()
+        await service.connect(connection.id, typedInto: target)
+        await service.passwordPhase?.value
     }
 
     func writeKey(_ ref: CredentialRef) throws {
@@ -391,6 +419,124 @@ struct ConnectionServiceTests {
         await h.connect(aws)
         #expect(h.log.events == ["publicKey k1", "publicKey k2"] + (try h.typed(aws)))
         #expect(FileManager.default.fileExists(atPath: h.keyFile(k2).path))
+    }
+
+    @Test func focusLostBetweenPasteAndReturnStops() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login)
+        let h = try Harness(aws)
+        h.sender.onPaste = { h.front = inSafari }
+        await h.connect(aws)
+        #expect(h.log.events == ["paste \(try h.line(aws))", "notify \(moved)"])
+    }
+
+    @Test func nilTargetPressesReturnWhateverIsInFront() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3")
+        let h = try Harness(aws)
+        h.sender.onPaste = { h.front = inSafari }
+        await h.connect(aws, typedInto: nil)
+        #expect(h.log.events == (try h.typed(aws)))
+    }
+
+    @Test func unsafeKeyItemIsRefused() async throws {
+        for item in ["../../x", "../x"] {
+            let bad = ref(item, .sshKey)
+            let aws = Connection(name: "aws", host: "54.1.2.3", credential: bad)
+            let h = try Harness(aws)
+            if item == "../x" { try h.writeKey(bad) } // inside the temp directory: being on disk mustn't count
+            await h.connect(aws)
+            #expect(h.log.events == ["notify This credential link isn't valid. Choose it again from 1Password."])
+        }
+    }
+
+    @Test func unsafeJumpHostKeyItemIsRefused() async throws {
+        let jump = Connection(name: "jump", host: "jump", credential: ref("../../x", .sshKey))
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login, jumpHost: .connection(jump.id))
+        let h = try Harness(aws, jump)
+        await h.connect(aws)
+        #expect(h.log.events == ["notify This credential link isn't valid. Choose it again from 1Password."])
+    }
+
+    @Test func connectReturnsBeforePasswords() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login)
+        let h = try Harness(aws)
+        h.provider.held = ["login"]
+        let service = h.service()
+        await service.connect(aws.id, typedInto: terminalPID) // would never return if it waited for the fetch
+        #expect(await eventually { h.provider.isHolding("login") })
+        #expect(h.log.events == (try h.typed(aws)) + ["password login"])
+        h.provider.release("login")
+        await service.passwordPhase?.value
+        #expect(h.log.events == (try h.typed(aws)) + ["password login", "copy secret-login", "notify Password copied for aws"])
+    }
+
+    @Test func failedLaunchStartsNoPasswordPhase() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login)
+        let h = try Harness(aws)
+        let service = h.service()
+        await service.connect(aws.id, typedInto: otherPID)
+        #expect(service.passwordPhase == nil)
+    }
+
+    @Test func newerConnectDiscardsAStaleFetch() async throws {
+        let (a, b) = (ref("a", .login), ref("b", .login))
+        let older = Connection(name: "older", host: "older", credential: a)
+        let newer = Connection(name: "newer", host: "newer", credential: b)
+        let h = try Harness(older, newer)
+        h.provider.held = ["a"]
+        let service = h.service()
+        await service.connect(older.id, typedInto: terminalPID)
+        let stale = try #require(service.passwordPhase)
+        #expect(await eventually { h.provider.isHolding("a") })
+        await service.connect(newer.id, typedInto: terminalPID)
+        await service.passwordPhase?.value
+        h.provider.release("a")
+        await stale.value
+        #expect(h.log.events.contains("copy secret-b"))
+        #expect(!h.log.events.contains("copy secret-a"))
+        #expect(!h.log.events.contains("notify Password copied for older"))
+    }
+
+    @Test func staleFailureSaysNothing() async throws {
+        let older = Connection(name: "older", host: "older", credential: login)
+        let newer = Connection(name: "newer", host: "newer")
+        let h = try Harness(older, newer)
+        h.provider.held = ["login"]
+        h.provider.passwordFailures = ["login": .locked]
+        let service = h.service()
+        await service.connect(older.id, typedInto: terminalPID)
+        let stale = try #require(service.passwordPhase)
+        #expect(await eventually { h.provider.isHolding("login") })
+        await service.connect(newer.id, typedInto: terminalPID)
+        h.provider.release("login")
+        await stale.value
+        #expect(!h.log.events.contains("notify \(CredentialError.locked.message)"))
+    }
+
+    @Test func cancelledDuringCopySaysNothing() async throws {
+        let older = Connection(name: "older", host: "older", credential: login, sudoCredential: sudo, autoSudo: true)
+        let newer = Connection(name: "newer", host: "newer")
+        let h = try Harness(older, newer)
+        let service = h.service()
+        h.onCopy = { service.passwordPhase?.cancel() }
+        await service.connect(older.id, typedInto: terminalPID)
+        await service.passwordPhase?.value
+        #expect(!h.log.events.contains("notify Password copied for older"))
+        #expect(!h.log.events.contains("offerSudo older"))
+    }
+
+    @Test func newerConnectDismissesAnOpenOffer() async throws {
+        let older = Connection(name: "older", host: "older", credential: login, sudoCredential: sudo, autoSudo: true)
+        let newer = Connection(name: "newer", host: "newer")
+        let h = try Harness(older, newer)
+        h.prompt.staysOpen = true
+        let service = h.service()
+        await service.connect(older.id, typedInto: terminalPID)
+        let stale = try #require(service.passwordPhase)
+        #expect(await eventually { h.log.events.contains("offerSudo older") })
+        await service.connect(newer.id, typedInto: terminalPID)
+        await stale.value
+        #expect(h.log.events.contains("offer dismissed"))
+        #expect(!h.log.events.contains("password sudo"))
     }
 
     @Test func noMessageContainsASecret() async throws {

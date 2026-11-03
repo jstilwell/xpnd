@@ -26,6 +26,8 @@ struct CredentialItem: Hashable, Sendable {
 enum CredentialError: Error, Equatable, Sendable {
     case notInstalled, locked, notFound(String), noPassword(String), failed(String)
 
+    static let invalidRef = CredentialError.failed("This credential link isn't valid. Choose it again from 1Password.")
+
     /// One line, never contains secret material.
     var message: String {
         switch self {

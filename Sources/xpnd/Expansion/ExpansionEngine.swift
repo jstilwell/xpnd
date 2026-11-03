@@ -84,6 +84,14 @@ import Foundation
         }
     }
 
+    /// Runs `body` once no action is in flight, with no suspension in between, so it can't land in
+    /// a paste's settle. Skips `body` if the task is cancelled while waiting.
+    func whenIdle(_ body: @MainActor () -> Void) async {
+        // Polled: only `isExpanding` knows when an action ends, and a few ms is nothing here.
+        while isExpanding, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(20)) }
+        if !Task.isCancelled { body() }
+    }
+
     /// Runs `body` as the one action in flight, or returns false without running it if another is.
     func exclusive(_ body: @MainActor () async -> Void) async -> Bool {
         guard !isExpanding else { return false }

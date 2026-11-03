@@ -14,6 +14,7 @@ import AppKit
     private let label = NSTextField(wrappingLabelWithString: "")
     private var pending: CheckedContinuation<Bool, Never>?
     private var timeoutTask: Task<Void, Never>?
+    private var offer = 0
 
     override init() {
         super.init()
@@ -69,12 +70,21 @@ import AppKit
         panel.setFrame(NSRect(origin: origin, size: size), display: true)
         panel.orderFrontRegardless()
 
-        return await withCheckedContinuation { continuation in
-            pending = continuation
-            timeoutTask = Task { [weak self] in
-                try? await Task.sleep(for: Self.timeout)
-                guard !Task.isCancelled else { return }
-                self?.finish(false)
+        offer += 1
+        let current = offer
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                pending = continuation
+                timeoutTask = Task { [weak self] in
+                    try? await Task.sleep(for: Self.timeout)
+                    guard !Task.isCancelled else { return }
+                    self?.finish(false)
+                }
+            }
+        } onCancel: {
+            // Hops to the main actor, by when a newer offer may be showing: leave that one up.
+            Task { @MainActor [weak self] in
+                if self?.offer == current { self?.finish(false) }
             }
         }
     }

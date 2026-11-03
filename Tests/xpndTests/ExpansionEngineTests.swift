@@ -444,4 +444,45 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         await h.settle()
         #expect(h.sender.log.isEmpty)
     }
+
+    @Test func whenIdleRunsAtOnceWhenNothingIsInFlight() async throws {
+        let h = try Harness([])
+        var ran = false
+        await h.engine.whenIdle { ran = true }
+        #expect(ran)
+    }
+
+    @Test func whenIdleWaitsForTheActionInFlight() async throws {
+        let aws = Connection(name: "aws", host: "h", activation: ";aws")
+        let h = try Harness([], folders: [ConnectionFolder(name: "f", activation: "", connections: [aws])])
+        let gate = InputGate()
+        h.activationGate = gate
+        h.type(";", "a", "w", "s")
+        #expect(await eventually { gate.continuation != nil })
+
+        let waiter = Task { await h.engine.whenIdle { h.notes.append("busy: \(h.engine.isExpanding)") } }
+        await Task.yield()
+        #expect(h.notes.isEmpty)
+        gate.continuation?.resume(returning: nil)
+        await waiter.value
+        #expect(h.notes == ["busy: false"])
+    }
+
+    /// Must end while the engine is still busy, without running `body` then or later.
+    @Test func whenIdleStopsWhenCancelled() async throws {
+        let aws = Connection(name: "aws", host: "h", activation: ";aws")
+        let h = try Harness([], folders: [ConnectionFolder(name: "f", activation: "", connections: [aws])])
+        let gate = InputGate()
+        h.activationGate = gate
+        h.type(";", "a", "w", "s")
+        #expect(await eventually { gate.continuation != nil })
+
+        let waiter = Task { await h.engine.whenIdle { h.notes.append("ran") } }
+        waiter.cancel()
+        await waiter.value
+        #expect(h.engine.isExpanding)
+        #expect(h.notes.isEmpty)
+        gate.continuation?.resume(returning: nil)
+        await h.settle()
+    }
 }

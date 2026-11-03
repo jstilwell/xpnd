@@ -20,6 +20,14 @@ struct CredentialRef: Hashable, Codable, Sendable {
     var username: String?
 
     var hasPassword: Bool { category != .sshKey }
+
+    /// Refs come from a hand-editable file: a leading "-" would become a CLI flag, and a "/" would
+    /// leave the keys directory.
+    static func isSafe(_ s: String) -> Bool {
+        guard let first = s.unicodeScalars.first, first.isASCII, first.properties.isAlphabetic || ("0"..."9").contains(Character(first))
+        else { return false }
+        return s.unicodeScalars.allSatisfy { $0.isASCII && ($0.properties.isAlphabetic || ("0"..."9").contains(Character($0)) || ".-_".unicodeScalars.contains($0)) }
+    }
 }
 
 enum JumpHost: Hashable, Sendable {
