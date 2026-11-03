@@ -60,6 +60,8 @@ enum EditorRules {
             _ = try SSHCommandBuilder.build(id, in: candidate, keysDirectory: URL(filePath: "/"))
         } catch .jumpHostCycle {
             return SSHCommandError.jumpHostCycle.message
+        } catch .jumpHostChainTooLong {
+            return SSHCommandError.jumpHostChainTooLong.message
         } catch {
             // Other problems (an unmatched quote in the options, say) aren't the jump host's.
         }

@@ -199,5 +199,14 @@ private struct TwoAccountProvider: CredentialProvider {
         // bastion already jumps through web, so web → bastion would loop.
         library.editConnection(bastion.id) { $0.jumpHost = .connection(web.id) }
         #expect(EditorRules.jumpHostProblem(bastion.id, for: web.id, in: library) == SSHCommandError.jumpHostCycle.message)
+
+        // A sixth hop is refused like a loop.
+        var hops = [Connection(name: "h0", host: "h0", credential: ref("K", .sshKey))]
+        for i in 1..<6 {
+            hops.append(Connection(name: "h\(i)", host: "h\(i)", credential: ref("K", .sshKey), jumpHost: .connection(hops[i - 1].id)))
+        }
+        let chain = ConnectionLibrary(folders: [ConnectionFolder(name: "f", connections: hops + [web])])
+        #expect(EditorRules.jumpHostProblem(hops[4].id, for: web.id, in: chain) == nil)
+        #expect(EditorRules.jumpHostProblem(hops[5].id, for: web.id, in: chain) == SSHCommandError.jumpHostChainTooLong.message)
     }
 }

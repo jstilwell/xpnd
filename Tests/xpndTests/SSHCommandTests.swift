@@ -144,6 +144,23 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
         #expect(throws: SSHCommandError.jumpHostMissing) { try build(deep, with: orphan) }
     }
 
+    /// Quoting grows about fourfold per hop, so a long hand-edited chain would hang the builder.
+    @Test func jumpChainIsCappedAtFiveHops() throws {
+        func chain(_ hops: Int) -> (Connection, [Connection]) {
+            var jumps = [Connection(name: "j0", host: "j0", credential: ref("k", .sshKey))]
+            for i in 1..<hops {
+                jumps.append(Connection(name: "j\(i)", host: "j\(i)", credential: ref("k", .sshKey), jumpHost: .connection(jumps[i - 1].id)))
+            }
+            return (Connection(name: "a", host: "host", jumpHost: .connection(jumps[hops - 1].id)), jumps)
+        }
+        let (five, fiveJumps) = chain(5)
+        #expect(try SSHCommandBuilder.build(five.id, in: library([five] + fiveJumps), keysDirectory: keys).arguments.last == "host")
+        let (six, sixJumps) = chain(6)
+        #expect(throws: SSHCommandError.jumpHostChainTooLong) {
+            try SSHCommandBuilder.build(six.id, in: library([six] + sixJumps), keysDirectory: keys)
+        }
+    }
+
     @Test func jumpPasswordRefused() throws {
         var bastion = Connection(name: "bastion", host: "b", credential: ref("p", .login))
         var c = Connection(name: "a", host: "host", jumpHost: .connection(bastion.id))
@@ -166,7 +183,8 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
     }
 
     @Test func messages() {
-        let errors: [SSHCommandError] = [.unbalancedQuote, .jumpHostMissing, .jumpHostCycle, .jumpHostNeedsKey("bastion"), .notSSH, .controlCharacter("aws")]
+        let errors: [SSHCommandError] = [.unbalancedQuote, .jumpHostMissing, .jumpHostCycle, .jumpHostNeedsKey("bastion"), .notSSH, .controlCharacter("aws"),
+                                       .jumpHostChainTooLong]
         #expect(errors.allSatisfy { !$0.message.isEmpty && !$0.message.contains("\n") })
         #expect(SSHCommandError.jumpHostNeedsKey("bastion").message.contains("“bastion”"))
         #expect(SSHCommandError.controlCharacter("aws").message.contains("“aws”"))

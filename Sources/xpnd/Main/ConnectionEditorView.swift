@@ -17,6 +17,8 @@ struct ConnectionEditorView: View {
     @State private var otherChosen = false
     /// Why the last jump host picked was refused.
     @State private var jumpNote: String?
+    /// The saved jump host's problem, worked out once per library change rather than per render.
+    @State private var storedJumpProblem: String?
 
     var body: some View {
         let library = editing.library
@@ -70,6 +72,9 @@ struct ConnectionEditorView: View {
             let typed = EditorRules.parsePort(portText, type: connection.type)
             if typed.problem != nil || typed.port != connection.port { portText = connection.port.map(String.init) ?? "" }
         }
+        .onChange(of: editing.library, initial: true) {
+            storedJumpProblem = Self.jumpProblem(of: connection.id, in: editing.library)
+        }
         .onChange(of: connection.activation) {
             if (connection.activation ?? "") != activationText { activationText = connection.activation ?? "" }
         }
@@ -84,7 +89,7 @@ struct ConnectionEditorView: View {
     @ViewBuilder private func advanced(_ library: ConnectionLibrary) -> some View {
         let candidates = library.allConnections.filter { $0.type == .ssh && $0.id != connection.id }
         Section("Advanced") {
-            field(problem: jumpNote ?? storedJumpProblem(library)) {
+            field(problem: jumpNote ?? storedJumpProblem) {
                 Picker("Jump host", selection: Binding(get: { jumpChoice }, set: chooseJump)) {
                     Text("None").tag(JumpChoice.none)
                     ForEach(candidates) { Text($0.name).tag(JumpChoice.connection($0.id)) }
@@ -149,9 +154,9 @@ struct ConnectionEditorView: View {
     }
 
     /// A hand-edited jump host can be missing, keyless, or a loop.
-    private func storedJumpProblem(_ library: ConnectionLibrary) -> String? {
-        guard case .connection(let id)? = connection.jumpHost else { return nil }
-        return EditorRules.jumpHostProblem(id, for: connection.id, in: library)
+    private static func jumpProblem(of connection: Connection.ID, in library: ConnectionLibrary) -> String? {
+        guard case .connection(let id)? = library.connection(connection)?.jumpHost else { return nil }
+        return EditorRules.jumpHostProblem(id, for: connection, in: library)
     }
 
     private func chooseJump(_ choice: JumpChoice) {

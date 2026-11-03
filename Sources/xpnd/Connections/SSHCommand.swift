@@ -1,13 +1,14 @@
 import Foundation
 
 enum SSHCommandError: Error, Equatable {
-    case unbalancedQuote, jumpHostMissing, jumpHostCycle, jumpHostNeedsKey(String), notSSH, controlCharacter(String)
+    case unbalancedQuote, jumpHostMissing, jumpHostCycle, jumpHostChainTooLong, jumpHostNeedsKey(String), notSSH, controlCharacter(String)
 
     var message: String {
         switch self {
         case .unbalancedQuote: "The extra SSH options have an unmatched quote."
         case .jumpHostMissing: "The jump host points to a connection that no longer exists."
         case .jumpHostCycle: "The jump hosts form a loop."
+        case .jumpHostChainTooLong: "Jump-host chains can be at most \(SSHCommandBuilder.maxJumpHops) hops."
         case .jumpHostNeedsKey(let name): "The jump host “\(name)” must be an SSH connection that uses an SSH key."
         case .notSSH: "This isn't an SSH connection."
         case .controlCharacter(let name): "“\(name)” has a control character in its settings, so xpnd won't type it."
@@ -23,6 +24,8 @@ struct SSHCommand: Equatable {
 
 enum SSHCommandBuilder {
     static let agentSocket = "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+    /// Each hop roughly quadruples the quoting, so a long hand-edited chain would hang the main thread.
+    static let maxJumpHops = 5
 
     static func keyFile(_ ref: CredentialRef, in keysDirectory: URL) -> URL {
         keysDirectory.appendingPathComponent("\(ref.item).pub")
@@ -86,6 +89,7 @@ enum SSHCommandBuilder {
         _ id: Connection.ID, visited: Set<Connection.ID>, _ library: ConnectionLibrary, _ keysDirectory: URL
     ) throws(SSHCommandError) -> String {
         guard !visited.contains(id) else { throw .jumpHostCycle }
+        guard visited.count <= maxJumpHops else { throw .jumpHostChainTooLong }
         guard let jump = library.connection(id) else { throw .jumpHostMissing }
         guard jump.type == .ssh, library.loginCredential(for: id)?.ref.category == .sshKey else { throw .jumpHostNeedsKey(jump.name) }
         let before = try options(for: jump, visited: visited.union([id]), library, keysDirectory)
