@@ -54,6 +54,14 @@ import Testing
         #expect(try await ScriptRunner.run(path: path, timeoutMs: 10_000).count == 1_000_000)
     }
 
+    @Test func relativeScriptPathIsNotFound() async throws {
+        // Resolves to /bin/echo against any working directory, so it would run if relative paths were allowed.
+        let relative = String(repeating: "../", count: 30) + "bin/echo"
+        await #expect(throws: ExpansionError.scriptNotFound(path: relative)) {
+            try await LiveEvaluationContext(library: .empty).runScript(path: relative, timeoutMs: 0)
+        }
+    }
+
     @Test func nonExecutableIsNotFound() async throws {
         let (path, dir) = try script("echo hi", mode: 0o644)
         defer { try? FileManager.default.removeItem(at: dir) }
