@@ -1,7 +1,8 @@
 # Test connections that ./bin/run.sh --test-snippets installs as your connections.
 # No credentials are set here: pick them in the app (Settings > Password Manager, or a
 # connection's Details) if you want to try 1Password. The ids are fixed so web-01 can jump
-# through bastion by saved connection.
+# through bastion by saved connection. That needs a 1Password SSH key picked for bastion in
+# the app: until then connecting to web-01 shows an error.
 version: 1
 folders:
   - name: dev

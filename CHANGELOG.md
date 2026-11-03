@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 - Connecting types the command into a terminal that's in front, or opens Terminal, iTerm2, Ghostty, or your own command.
 - Connections can use 1Password items for the login, an SSH key, and the sudo password, set per connection, per folder, or for all of them.
 - Passwords are copied concealed and cleared after 30 seconds, and are never typed.
-- Connections can jump through another saved connection or a typed host, add SSH options, and offer the sudo password after login.
+- Connections can jump through a typed host or another saved connection (which needs a 1Password SSH key), add SSH options, and offer the sudo password after login.
 - Import and export connections as YAML, with a preview of what will run before anything is added.
 
 ### Changed

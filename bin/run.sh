@@ -93,6 +93,7 @@ Try these in TextEdit:
   Control-Option-Command-Space opens the picker.
   ;lo     connects to localhost over SSH (turn on Remote Login to get further)
   ;dev    ;prod   open that folder's menu: press 1-9 to connect, Esc closes
+  web-01 (prod) errors until bastion is given a 1Password SSH key in the app.
   Control-Option-Command-C opens the connection launcher.
 TRY
 fi

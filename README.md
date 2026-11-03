@@ -83,7 +83,7 @@ Keep your SSH and VNC connections in folders and open them by typing, from the l
 - **Activation strings**: give a connection a string such as `;aws` and typing it connects. A folder opens a numbered menu instead: press 1 to 9 to connect, the arrows and Return to pick, Esc to close. A folder named `prod` gets `;prod` unless you set another or none. Snippets and connections share one set of strings, and xpnd flags one used twice.
 - **Launcher**: press Control-Option-Command-C (changeable in Settings) to search connections and press Return to connect.
 - **Terminal**: if a terminal (Terminal, iTerm2, Ghostty, Warp, or others you add in Settings → Terminal) is in front, the command is typed into it. Otherwise xpnd opens a new Terminal window, or whatever you pick under "Open in" (iTerm2, Ghostty, or your own command with `{command}`, which is how to reach Warp). A VNC connection opens its `vnc://` address in your default viewer, Screen Sharing unless you changed it.
-- **Credentials**: a connection uses its own 1Password item, else its folder's (nearest first), else the global one from Settings → Password Manager. A sudo item falls back the same way, then to the login password. An SSH key is used through the 1Password SSH agent. A password is copied to the clipboard, marked concealed, and cleared after 30 seconds. xpnd never types it. With "Auto sudo" on, it offers the sudo password after the login one.
+- **Credentials**: a connection uses its own 1Password item, else its folder's (nearest first), else the global one from Settings → Password Manager. A sudo item falls back the same way, then to the login password. An SSH key is used through the 1Password SSH agent. A password is copied to the clipboard, marked concealed, and cleared after 30 seconds unless you've copied something else since. xpnd never types it. With "Auto-sudo" on, it offers the sudo password after the login one.
 - **1Password setup**: install the [1Password CLI](https://developer.1password.com/docs/cli/get-started/) (`op`), turn on Integrate with 1Password CLI in 1Password → Settings → Developer, then pick items in Settings → Password Manager or a connection's details. SSH keys also need the 1Password SSH agent turned on.
 - **Import and export**: Settings → Import/Export shares connections as YAML (1Password references only). Importing shows every connection, its jump host, and its SSH options before anything is added, because they run when you connect.
 
@@ -110,6 +110,8 @@ folders:
           autoSudo: true
 ```
 
+A jump host chosen from your saved connections must be an SSH connection whose login credential is a 1Password SSH key, or connecting shows an error; a typed jump host (`text:`) has no such requirement.
+
 Credentials are 1Password references (`credential` and `sudoCredential` on a connection, folder, or the file) that Settings fills in for you.
 
 ## Privacy
@@ -117,7 +119,7 @@ Credentials are 1Password references (`credential` and `sudoCredential` on a con
 - xpnd keeps up to the last 128 characters you typed, in memory only, to match keywords. They're never stored, logged, or sent anywhere.
 - It puts your clipboard back after each expansion.
 - xpnd stores no passwords or keys, only references to 1Password items and the public key of an SSH key item (under `~/Library/Application Support/xpnd/keys`).
-- It runs `op` only when you connect or pick an item. A password is copied concealed and cleared after 30 seconds, or when you quit.
+- It runs `op` when you connect, pick or refresh a credential, or open Settings → Password Manager, never in the background. A password is copied concealed and cleared after 30 seconds (unless you've copied something else since), or when you quit.
 - Its only network use is the optional update check against GitHub, which you can turn off in Settings.
 
 ## Building
