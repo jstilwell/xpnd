@@ -3,83 +3,35 @@ import SwiftUI
 
 /// The search panel the picker hotkey opens: type to filter, arrows to move, Return to insert, Esc to close.
 @MainActor
-final class PickerPanel {
-    /// How long to wait for the app that was in front to come back before inserting into it.
-    private static let refocusTimeout: Duration = .seconds(1)
-
+final class PickerPanel: LauncherPanel {
     private let store: SnippetStore
     private let engine: ExpansionEngine
-    private let panel = KeyablePanel(
-        contentRect: NSRect(x: 0, y: 0, width: 560, height: 360),
-        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true
-    )
-    private var previous: NSRunningApplication?
-    private var generation = 0
 
     init(store: SnippetStore, engine: ExpansionEngine) {
         self.store = store
         self.engine = engine
-        panel.onResignKey = { [weak self] in self?.close() }
-        panel.level = .floating
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.isReleasedWhenClosed = false
-        panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        super.init()
     }
 
     func toggle() {
-        if panel.isVisible { close() } else { show() }
+        if isVisible { close() } else { show() }
     }
 
     private func show() {
-        let front = NSWorkspace.shared.frontmostApplication
-        previous = front == .current ? nil : front
         // A fresh view each time, so the query and highlight start clean.
-        panel.contentView = NSHostingView(rootView: PickerView(
+        present(PickerView(
             snippets: store.library.activeSnippets,
             choose: { [weak self] in self?.insert($0) },
             cancel: { [weak self] in self?.close() }
         ))
-        let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-        if let visible = screen?.visibleFrame {
-            let size = panel.frame.size
-            panel.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2, y: visible.maxY - visible.height / 3 - size.height / 2))
-        }
-        panel.makeKeyAndOrderFront(nil)
-    }
-
-    private func close() {
-        panel.orderOut(nil)
     }
 
     private func insert(_ snippet: Snippet) {
         close()
-        let app = previous
         Task {
-            if let app {
-                NSApp.yieldActivation(to: app)
-                app.activate()
-                let deadline = ContinuousClock.now + Self.refocusTimeout
-                while NSWorkspace.shared.frontmostApplication != app, ContinuousClock.now < deadline {
-                    try? await Task.sleep(for: .milliseconds(20))
-                }
-            }
+            await refocusPrevious()
             await engine.expand(snippet, deletingCharacters: 0)
         }
-    }
-}
-
-private final class KeyablePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    var onResignKey: (() -> Void)?
-
-    // Clicking into another app doesn't deactivate xpnd (the panel is non-activating), so close here.
-    override func resignKey() {
-        super.resignKey()
-        onResignKey?()
     }
 }
 
