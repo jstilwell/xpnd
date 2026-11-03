@@ -65,10 +65,14 @@ struct SnippetEditorView: View {
         }
         .formStyle(.grouped)
         .disabled(readOnly)
-        .onAppear { keyword = snippet.keyword }
+        .onAppear {
+            keyword = snippet.keyword
+            // An existing cross-file duplicate shows without typing.
+            keywordProblem = namespace.problem(keyword, for: .snippet(snippet.id))
+        }
         .onChange(of: snippet.id) {
             keyword = snippet.keyword
-            keywordProblem = nil
+            keywordProblem = namespace.problem(keyword, for: .snippet(snippet.id))
         }
         .onChange(of: keyword) { saveKeyword() }
         .sheet(isPresented: $choosingShortcut) {

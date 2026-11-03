@@ -61,7 +61,8 @@ struct CredentialPickerSheet: View {
     @State private var items: [CredentialItem]?
     @State private var selection: String?
     @State private var problem: String?
-    @State private var picking = false
+    /// The running pick (it can wait on Touch ID); cancelled when the sheet closes.
+    @State private var picking: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -87,15 +88,21 @@ struct CredentialPickerSheet: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack {
-                if picking { ProgressView().controlSize(.small) }
+                if picking != nil { ProgressView().controlSize(.small) }
                 Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Choose", action: choose).keyboardShortcut(.defaultAction).disabled(selection == nil || picking)
+                Button("Cancel", role: .cancel) {
+                    picking?.cancel()
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Choose", action: choose).keyboardShortcut(.defaultAction).disabled(selection == nil || picking != nil)
             }
         }
         .padding()
         .frame(width: 480, height: 420)
         .task(id: query) { await search() }
+        // Cancel, Esc, or the sheet closing any other way.
+        .onDisappear { picking?.cancel() }
     }
 
     private func row(_ item: CredentialItem) -> some View {
@@ -142,26 +149,16 @@ struct CredentialPickerSheet: View {
     }
 
     private func choose() {
-        guard let account, let item = items?.first(where: { $0.id == selection }), !picking else { return }
-        // Refs end up in argv and, for keys, a file name.
-        guard CredentialRef.isSafe(item.id), CredentialRef.isSafe(item.vaultID) else {
-            problem = CredentialError.invalidRef.message
-            return
-        }
-        let ref = item.ref(account: account)
-        picking = true
-        Task {
-            defer { picking = false }
-            if ref.category == .sshKey {
-                do throws(CredentialError) {
-                    try await editing.savePublicKey(for: ref)
-                } catch {
-                    problem = error.message
-                    return
-                }
+        guard let account, let item = items?.first(where: { $0.id == selection }), picking == nil else { return }
+        picking = Task {
+            defer { picking = nil }
+            do throws(CredentialError) {
+                guard let ref = try await editing.pick(item, account: account), !Task.isCancelled else { return }
+                pick(ref)
+                dismiss()
+            } catch {
+                if !Task.isCancelled { problem = error.message }
             }
-            pick(ref)
-            dismiss()
         }
     }
 }

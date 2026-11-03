@@ -58,7 +58,7 @@ struct Sidebar: View {
         ) { folder in
             Button("Delete", role: .destructive) { delete(.folder(folder.id)) }
         } message: { folder in
-            Text("\(folder.allConnections.count) connections and \(folder.allFolders.count - 1) folders")
+            Text("\(EditorRules.count(folder.allConnections.count, "connection")) and \(EditorRules.count(folder.allFolders.count - 1, "folder"))")
         }
         .safeAreaInset(edge: .bottom) {
             HStack {

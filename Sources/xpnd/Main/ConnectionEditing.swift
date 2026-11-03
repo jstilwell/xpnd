@@ -31,6 +31,11 @@ enum EditorRules {
         return (port == type.defaultPort ? nil : port, nil)
     }
 
+    /// "1 connection", "2 connections".
+    static func count(_ n: Int, _ noun: String) -> String {
+        "\(n) \(noun)\(n == 1 ? "" : "s")"
+    }
+
     /// "From folder prod: prod-ssh (1Password)", or "Not set".
     static func summary(_ resolved: ResolvedCredential?) -> String {
         guard let resolved else { return "Not set" }
@@ -330,6 +335,16 @@ final class ConnectionEditing {
             guard let first = accounts.first else { throw .locked }
             return first.id
         }
+    }
+
+    /// The ref to store for a picked item, after saving an SSH key's public key. nil if the task
+    /// was cancelled meanwhile (the sheet closed), so a cancelled pick never lands in a slot.
+    func pick(_ item: CredentialItem, account: String) async throws(CredentialError) -> CredentialRef? {
+        // Refs end up in argv and, for keys, a file name.
+        guard CredentialRef.isSafe(item.id), CredentialRef.isSafe(item.vaultID) else { throw .invalidRef }
+        let ref = item.ref(account: account)
+        if ref.category == .sshKey { try await savePublicKey(for: ref) }
+        return Task.isCancelled ? nil : ref
     }
 
     /// Fetches an SSH key item's public key into `keys/<item>.pub`.

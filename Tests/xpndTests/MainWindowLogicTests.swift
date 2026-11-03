@@ -6,7 +6,66 @@ private func ref(_ item: String, _ category: CredentialCategory = .login) -> Cre
     CredentialRef(account: "acct", vault: "vault", item: item, title: item, category: category)
 }
 
+/// `publicKey` waits for `release`, like an unanswered Touch ID prompt.
+@MainActor private final class HeldKeyProvider: CredentialProvider {
+    private var gate: CheckedContinuation<Void, Never>?
+    var isHolding: Bool { gate != nil }
+    func release() { gate?.resume(); gate = nil }
+
+    func status() async -> ProviderStatus { .notInstalled }
+    func search(_ query: String, account: String) async throws(CredentialError) -> [CredentialItem] { [] }
+    func password(for ref: CredentialRef) async throws(CredentialError) -> String { throw .locked }
+    func publicKey(for ref: CredentialRef) async throws(CredentialError) -> String {
+        await withCheckedContinuation { gate = $0 }
+        return "ssh-ed25519 AAAA test\n"
+    }
+}
+
+@MainActor private func editing(_ provider: any CredentialProvider) -> (ConnectionEditing, URL) {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    let editing = ConnectionEditing(
+        store: ConnectionStore(fileURL: directory.appending(path: "connections.yaml")),
+        snippets: SnippetStore(fileURL: directory.appending(path: "snippets.yaml")),
+        provider: provider, keysDirectory: directory.appending(path: "keys"), connect: { _ in })
+    return (editing, directory)
+}
+
 @Suite struct MainWindowLogicTests {
+    @MainActor @Test func cancelledPickIsNeverStored() async throws {
+        let provider = HeldKeyProvider()
+        let (editing, directory) = editing(provider)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let item = CredentialItem(id: "key1", vaultID: "v1", vaultName: "Private", title: "deploy", category: .sshKey, username: nil)
+
+        let cancelled = Task { try await editing.pick(item, account: "acct") }
+        while !provider.isHolding { await Task.yield() }
+        cancelled.cancel()
+        provider.release()
+        #expect(try await cancelled.value == nil)
+
+        let kept = Task { try await editing.pick(item, account: "acct") }
+        while !provider.isHolding { await Task.yield() }
+        provider.release()
+        #expect(try await kept.value == item.ref(account: "acct"))
+        let key = try String(contentsOf: directory.appending(path: "keys/key1.pub"), encoding: .utf8)
+        #expect(key == "ssh-ed25519 AAAA test\n")
+        let mode = try FileManager.default.attributesOfItem(atPath: directory.appending(path: "keys/key1.pub").path)[.posixPermissions] as? Int
+        #expect(mode == 0o644)
+    }
+
+    @MainActor @Test func unsafePickIsRefused() async {
+        let (editing, directory) = editing(HeldKeyProvider())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let item = CredentialItem(id: "../evil", vaultID: "v1", vaultName: "Private", title: "x", category: .sshKey, username: nil)
+        await #expect(throws: CredentialError.invalidRef) { try await editing.pick(item, account: "acct") }
+    }
+
+    @Test func plurals() {
+        #expect(EditorRules.count(1, "connection") == "1 connection")
+        #expect(EditorRules.count(0, "folder") == "0 folders")
+        #expect(EditorRules.count(2, "folder") == "2 folders")
+    }
+
     @Test func uniqueNames() {
         #expect(EditorRules.uniqueName("New Connection", taken: []) == "New Connection")
         #expect(EditorRules.uniqueName("New Connection", taken: ["New Connection"]) == "New Connection 2")
