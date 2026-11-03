@@ -45,7 +45,7 @@ app: build
 	for code in Versions/B/Autoupdate Versions/B/Updater.app .; do \
 		codesign --force $(SIGN_FLAGS) --sign "$(or $(SIGN_ID),-)" "$(SPARKLE)/$$code" || exit 1; \
 	done
-	codesign --force $(SIGN_FLAGS) --sign "$(or $(SIGN_ID),-)" "$(APP)"
+	codesign --force $(SIGN_FLAGS) --entitlements xpnd.entitlements --sign "$(or $(SIGN_ID),-)" "$(APP)"
 
 run: app stop
 	open "$(APP)"

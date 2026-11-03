@@ -24,6 +24,8 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>xpnd opens your SSH connections in Terminal or iTerm2.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Stilwe LLC. All rights reserved.</string>
 	<key>SURequireSignedFeed</key>

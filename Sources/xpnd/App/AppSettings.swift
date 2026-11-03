@@ -9,6 +9,7 @@ final class AppSettings {
     private enum Key {
         static let expansionEnabled = "expansionEnabled"
         static let pickerShortcut = "pickerShortcut"
+        static let terminalSettings = "terminalSettings"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -22,6 +23,10 @@ final class AppSettings {
         didSet { defaults.set(try? JSONEncoder().encode(pickerShortcut), forKey: Key.pickerShortcut) }
     }
 
+    var terminal: TerminalSettings {
+        didSet { defaults.set(try? JSONEncoder().encode(terminal), forKey: Key.terminalSettings) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [Key.expansionEnabled: true])
@@ -31,5 +36,6 @@ final class AppSettings {
         } else {
             pickerShortcut = Self.defaultPickerShortcut
         }
+        terminal = defaults.data(forKey: Key.terminalSettings).flatMap { try? JSONDecoder().decode(TerminalSettings.self, from: $0) } ?? .standard
     }
 }
