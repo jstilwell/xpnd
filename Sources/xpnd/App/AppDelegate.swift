@@ -5,8 +5,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var statusItem: NSStatusItem!
     private(set) var menu = NSMenu()
 
-    private static let loadErrorMessage =
-        "xpnd couldn't read snippets.yaml, so expansion is paused. Fix the file and it reloads automatically."
+    private static let snippetsErrorMessage =
+        "xpnd couldn't read snippets.yaml, so snippets are paused (connection strings still work). Fix the file and it reloads automatically."
+    private static let connectionsErrorMessage =
+        "xpnd couldn't read connections.yaml, so connection strings are paused. Fix the file and it reloads automatically."
 
     // Not private where AppDelegate+Connections uses them.
     let settings = AppSettings.shared
@@ -90,8 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissions.start()
         permissionsChanged()
 
-        if store.loadError != nil { hud.flash(Self.loadErrorMessage) }
-        followLoadError()
+        flashLoadErrors(wereBroken: (false, false))
+        followLoadErrors()
         followCrossFileDuplicates()
         rebuildMenu()
         // A login-item launch stays in the menu bar; any other opens the window (and the Dock icon).
@@ -149,14 +151,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         welcome?.show()
     }
 
-    /// Flashes a message when the snippets file breaks, and keeps the menu's error item current.
-    private func followLoadError() {
-        withObservationTracking { _ = store.loadError } onChange: { [weak self] in
+    private var broken: (snippets: Bool, connections: Bool) { (store.loadError != nil, connections.loadError != nil) }
+
+    /// Flashes once for each file that has just broken, not again while it stays broken.
+    private func flashLoadErrors(wereBroken before: (snippets: Bool, connections: Bool)) {
+        if broken.snippets, !before.snippets { hud.flash(Self.snippetsErrorMessage) }
+        if broken.connections, !before.connections { hud.flash(Self.connectionsErrorMessage) }
+    }
+
+    /// Flashes a message when either file breaks, and keeps the menu's error items current.
+    private func followLoadErrors() {
+        let before = broken
+        withObservationTracking { _ = (store.loadError, connections.loadError) } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                if self.store.loadError != nil { self.hud.flash(Self.loadErrorMessage) }
+                self.flashLoadErrors(wereBroken: before)
                 self.rebuildMenu()
-                self.followLoadError()
+                self.followLoadErrors()
             }
         }
     }
@@ -235,8 +246,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let main = NSMenuItem(title: "Open xpnd…", action: #selector(openMainWindow), keyEquivalent: "")
         main.target = self
         menu.addItem(main)
-        // A file error pauses expansion (the error item says why), so the toggle greys out instead of
-        // offering a click that would really turn expansion off.
+        // A snippets file error pauses expansion (the error item says why), so the toggle greys out
+        // instead of offering a click that would really turn expansion off.
         let toggle = NSMenuItem(
             title: "Expansion On", action: store.loadError == nil ? #selector(toggleExpansion) : nil,
             keyEquivalent: "")
@@ -260,6 +271,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if store.loadError != nil {
             // No action, so the menu shows it disabled.
             menu.addItem(NSMenuItem(title: "Snippets file has an error", action: nil, keyEquivalent: ""))
+        }
+        if connections.loadError != nil {
+            menu.addItem(NSMenuItem(title: "Connections file has an error", action: nil, keyEquivalent: ""))
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit xpnd", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
