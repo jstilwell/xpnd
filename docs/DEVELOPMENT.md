@@ -6,6 +6,8 @@ Requires Xcode (the Makefile uses `xcrun swift`).
 
 ```sh
 ./bin/run.sh # build it universal, as releases are, and launch it; --log also streams what it does
+./bin/run.sh --test-snippets     # install Tests/Manual/test-snippets.yaml first (backs up yours)
+./bin/run.sh --reset-permissions # clear xpnd's Accessibility and Input Monitoring grants first
 make run     # build, bundle, sign, and launch build/xpnd.app
 make log     # stream the unified log (subsystem com.jessestilwell.xpnd)
 make stop
