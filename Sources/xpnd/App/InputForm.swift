@@ -8,8 +8,8 @@ import SwiftUI
 
     private static var current: InputFormPanel?
 
-    /// The value typed for each label, or nil when cancelled. Either way, the app that was in front is
-    /// back in front when this returns.
+    /// The value typed for each label, or nil when cancelled. Either way, it tries to bring back the app
+    /// that was in front; if that fails, `ExpansionEngine` sees another app in front and pastes nothing.
     static func ask(_ labels: [String]) async -> [String: String]? {
         guard current == nil else { return nil }
         let previous = NSWorkspace.shared.frontmostApplication

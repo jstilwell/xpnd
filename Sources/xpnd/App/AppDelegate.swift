@@ -37,7 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine = ExpansionEngine(
             store: store, player: Player(sender: CGEventKeystrokeSender(), actions: ActionRunner()),
             makeContext: { LiveEvaluationContext(library: store.library) },
-            notify: { hud.flash($0) }
+            notify: { hud.flash($0) },
+            frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier }
         )
         engine.isEnabled = settings.expansionEnabled
         picker = PickerPanel(store: store, engine: engine)

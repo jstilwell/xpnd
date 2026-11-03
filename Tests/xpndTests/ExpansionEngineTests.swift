@@ -40,6 +40,8 @@ private struct FakeContext: EvaluationContext {
     let sender = FakeSender()
     let gate = InputGate()
     var notes: [String] = []
+    /// The pid the engine sees as frontmost.
+    var front: pid_t? = 100
     private(set) var engine: ExpansionEngine!
 
     init(_ snippets: [Snippet]) throws {
@@ -51,7 +53,8 @@ private struct FakeContext: EvaluationContext {
         engine = ExpansionEngine(
             store: store, player: Player(sender: sender, actions: FakeActions()),
             makeContext: { FakeContext(library: store.library, gate: gate) },
-            notify: { [unowned self] in notes.append($0) }
+            notify: { [unowned self] in notes.append($0) },
+            frontmostPID: { [unowned self] in front }
         )
     }
 
@@ -145,6 +148,39 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         h.type("g")
         await h.settle()
         #expect(h.sender.log.isEmpty)
+    }
+
+    @Test func targetAppLeavingFrontCancels() async throws {
+        let h = try Harness([snip(";tix", "Hi #{input:Name}")])
+        h.type(";", "t", "i", "x")
+        #expect(await eventually { h.gate.continuation != nil })
+        h.front = 200 // the user clicked into another app while the form was open
+        h.gate.continuation?.resume(returning: ["Name": "Ann"])
+        await h.settle()
+        #expect(!h.sender.log.contains { $0.hasPrefix("bs") })
+        #expect(h.sender.log.isEmpty)
+        #expect(h.notes == [ExpansionError.targetAppChanged.message])
+        #expect(!h.engine.isExpanding)
+
+        // The picker path: captured when `expand` starts.
+        h.front = 100
+        let picked = Task { await h.engine.expand(snip(";p", "P #{input:X}"), deletingCharacters: 0) }
+        #expect(await eventually { h.gate.continuation != nil && h.engine.isExpanding })
+        h.front = 300
+        h.gate.continuation?.resume(returning: ["X": "x"])
+        await picked.value
+        #expect(h.sender.log.isEmpty)
+        #expect(h.notes.count == 2)
+    }
+
+    @Test func unchangedFrontAppStillExpands() async throws {
+        let h = try Harness([snip(";tix", "Hi #{input:Name}")])
+        h.type(";", "t", "i", "x")
+        #expect(await eventually { h.gate.continuation != nil })
+        h.gate.continuation?.resume(returning: ["Name": "Ann"])
+        await h.settle()
+        #expect(h.sender.log == ["bs 4", "paste Hi Ann"])
+        #expect(h.notes.isEmpty)
     }
 
     @Test func emojiKeywordDeletesByCharacter() async throws {

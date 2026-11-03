@@ -17,16 +17,19 @@ import Foundation
     private let player: Player
     private let makeContext: @MainActor () -> any EvaluationContext
     private let notify: @MainActor (String) -> Void
+    private let frontmostPID: @MainActor () -> pid_t?
 
     init(
         store: SnippetStore, player: Player,
         makeContext: @escaping @MainActor () -> any EvaluationContext,
-        notify: @escaping @MainActor (String) -> Void
+        notify: @escaping @MainActor (String) -> Void,
+        frontmostPID: @escaping @MainActor () -> pid_t?
     ) {
         self.store = store
         self.player = player
         self.makeContext = makeContext
         self.notify = notify
+        self.frontmostPID = frontmostPID
     }
 
     /// `targetsXpnd`: the key goes to one of xpnd's own windows (Settings, the picker). Expanding
@@ -39,9 +42,10 @@ import Foundation
         buffer.apply(.reset)
         // Claimed now, so nothing typed before the task starts can begin a second expansion.
         isExpanding = true
+        let target = frontmostPID()
         pendingExpansion = Task {
             try? await Task.sleep(for: Self.typedKeywordSettle)
-            await run(snippet, deletingCharacters: snippet.keyword.count)
+            await run(snippet, deletingCharacters: snippet.keyword.count, into: target)
         }
     }
 
@@ -50,18 +54,21 @@ import Foundation
     }
 
     /// Does nothing while another expansion is in flight: its paste would capture this one's text as
-    /// the clipboard to restore.
+    /// the clipboard to restore. Inserts into the app in front when called.
     func expand(_ snippet: Snippet, deletingCharacters: Int) async {
         guard !isExpanding else { return }
         isExpanding = true
-        await run(snippet, deletingCharacters: deletingCharacters)
+        await run(snippet, deletingCharacters: deletingCharacters, into: frontmostPID())
     }
 
-    private func run(_ snippet: Snippet, deletingCharacters: Int) async {
+    /// `target`: the app the keyword was typed in. If another app is in front once evaluation ends
+    /// (the user switched while the form was open or a script ran), nothing is deleted or pasted.
+    private func run(_ snippet: Snippet, deletingCharacters: Int, into target: pid_t?) async {
         defer { isExpanding = false }
         do throws(ExpansionError) {
             // Evaluation fails before anything on screen changes, so the keyword stays.
             let steps = try await Evaluator.evaluate(snippet, context: makeContext())
+            guard frontmostPID() == target else { throw .targetAppChanged }
             try await player.play(steps, deletingCharacters: deletingCharacters)
         } catch {
             notify(error.message)

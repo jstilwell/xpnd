@@ -170,7 +170,7 @@ struct EvaluatorTests {
         let errors: [ExpansionError] = [
             .missingCombo(";zz"), .scriptNotFound(path: "/s"), .scriptFailed(path: "/s", status: 1),
             .scriptTimedOut(path: "/s"), .inputCancelled, .appNotFound(path: "/A.app"), .unknownShortcut("F"),
-            .shortcutFailed(name: "F", status: 2), .shortcutTimedOut("F"),
+            .shortcutFailed(name: "F", status: 2), .shortcutTimedOut("F"), .targetAppChanged,
         ]
         for e in errors { #expect(!e.message.isEmpty && !e.message.contains("\n")) }
         #expect(ExpansionError.missingCombo(";zz").message == "No snippet has the keyword “;zz”.")
