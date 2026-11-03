@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let settings = AppSettings.shared
     private let store = SnippetStore(fileURL: SnippetStore.defaultURL)
+    private let connections = ConnectionStore(fileURL: ConnectionStore.defaultURL)
     private let permissions = PermissionWatcher()
     private let hud = HUD()
     private var engine: ExpansionEngine!
@@ -33,12 +34,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         store.load()
         store.startWatching()
+        connections.load()
+        connections.seedIfFirstLaunch(defaults: .standard)
+        connections.startWatching()
         let store = store, hud = hud
         engine = ExpansionEngine(
-            store: store, player: Player(sender: CGEventKeystrokeSender(), actions: ActionRunner()),
+            store: store, connections: connections, player: Player(sender: CGEventKeystrokeSender(), actions: ActionRunner()),
             makeContext: { LiveEvaluationContext(library: store.library) },
             notify: { hud.flash($0) },
-            frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+            frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+            onActivate: { _, _ in } // Task 13 wires this to connecting and the quick menu.
         )
         engine.isEnabled = settings.expansionEnabled
         picker = PickerPanel(store: store, engine: engine)
