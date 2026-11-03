@@ -77,6 +77,15 @@ struct Shortcut: Codable, Hashable, Sendable {
 @MainActor
 final class GlobalShortcut {
     var action: (() -> Void)?
+    private static var nextID: UInt32 = 100 // 2 is the availability probe's
+    /// Each instance's own hot key ID, so one's handler ignores the other's key.
+    private let hotKeyID: UInt32
+
+    init() {
+        hotKeyID = Self.nextID
+        Self.nextID += 1
+    }
+
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
 
@@ -88,7 +97,7 @@ final class GlobalShortcut {
         hotKey = nil
         guard let shortcut else { return true }
         installHandler()
-        let id = EventHotKeyID(signature: OSType(0x4845_4E48), id: 1) // "HENH"
+        let id = EventHotKeyID(signature: OSType(0x4845_4E48), id: hotKeyID) // "HENH"
         return RegisterEventHotKey(UInt32(shortcut.keyCode), shortcut.carbonModifiers, id, GetEventDispatcherTarget(), 0, &hotKey) == noErr
     }
 
@@ -106,9 +115,13 @@ final class GlobalShortcut {
         guard handler == nil else { return }
         var pressed = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         // Hot keys arrive on the main thread, through the main event loop.
-        InstallEventHandler(GetEventDispatcherTarget(), { _, _, context in
-            guard let context else { return OSStatus(eventNotHandledErr) }
+        InstallEventHandler(GetEventDispatcherTarget(), { _, event, context in
+            guard let context, let event else { return OSStatus(eventNotHandledErr) }
             let shortcut = Unmanaged<GlobalShortcut>.fromOpaque(context).takeUnretainedValue()
+            var pressedID = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                              MemoryLayout<EventHotKeyID>.size, nil, &pressedID)
+            guard pressedID.id == shortcut.hotKeyID else { return OSStatus(eventNotHandledErr) }
             MainActor.assumeIsolated { shortcut.action?() }
             return noErr
         }, 1, &pressed, Unmanaged.passUnretained(self).toOpaque(), &handler)

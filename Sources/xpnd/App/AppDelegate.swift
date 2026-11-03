@@ -17,10 +17,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var tap: KeyEventTap!
     private var picker: PickerPanel!
     private let pickerHotKey = GlobalShortcut()
+    private var launcher: ConnectionLauncherPanel!
+    private let launcherHotKey = GlobalShortcut()
     private var welcome: WelcomeWindowController?
     private var settingsWindow: SettingsWindowController?
     /// The picker shortcut last registered, so a settings change re-registers only when it differs.
     private var registeredPickerShortcut: Shortcut?
+    private var registeredLauncherShortcut: Shortcut?
     /// Whether the tap has run since launch: losing access after that isn't a first launch.
     private var hasStarted = false
 
@@ -49,6 +52,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         picker = PickerPanel(store: store, engine: engine)
         pickerHotKey.action = { [weak self] in self?.picker.toggle() }
         registerPickerShortcut()
+        launcher = ConnectionLauncherPanel()
+        launcherHotKey.action = { [weak self] in
+            guard let self else { return }
+            launcher.toggle(
+                library: connections.library, onOpenApp: { [weak self] in self?.showSettings() },
+                connect: { _, _ in } // Task 13 wires this through engine.exclusive.
+            )
+        }
+        registerLauncherShortcut()
         followSettings()
         tap = KeyEventTap(
             onKey: { [weak self] in self?.engine.handle($0, targetsXpnd: $1) },
@@ -163,14 +175,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !pickerHotKey.register(settings.pickerShortcut) { hud.flash("Picker shortcut is in use by another app") }
     }
 
+    private func registerLauncherShortcut() {
+        registeredLauncherShortcut = settings.connectionLauncherShortcut
+        if !launcherHotKey.register(settings.connectionLauncherShortcut) {
+            hud.flash("Connection launcher shortcut is in use by another app")
+        }
+    }
+
     /// Applies changes made in Settings (or the menu) at once.
     private func followSettings() {
-        withObservationTracking { _ = (settings.expansionEnabled, settings.pickerShortcut) } onChange: { [weak self] in
+        withObservationTracking { _ = (settings.expansionEnabled, settings.pickerShortcut, settings.connectionLauncherShortcut) } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 self.engine.isEnabled = self.settings.expansionEnabled
                 self.engine.resetBuffer()
                 if self.settings.pickerShortcut != self.registeredPickerShortcut { self.registerPickerShortcut() }
+                if self.settings.connectionLauncherShortcut != self.registeredLauncherShortcut { self.registerLauncherShortcut() }
                 self.rebuildMenu()
                 self.followSettings()
             }

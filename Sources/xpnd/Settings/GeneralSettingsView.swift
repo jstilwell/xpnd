@@ -9,8 +9,11 @@ struct GeneralSettingsView: View {
         Form {
             Toggle("Expand keywords", isOn: $settings.expansionEnabled)
             LaunchAtLoginToggle()
-            LabeledContent("Picker shortcut") {
+            LabeledContent("Snippet picker") {
                 ShortcutRecorder(shortcut: $settings.pickerShortcut)
+            }
+            LabeledContent("Connection launcher") {
+                ShortcutRecorder(shortcut: $settings.connectionLauncherShortcut)
             }
             if updates.isAvailable {
                 Toggle("Check for updates automatically", isOn: $updates.checksAutomatically)

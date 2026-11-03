@@ -9,6 +9,7 @@ final class AppSettings {
     private enum Key {
         static let expansionEnabled = "expansionEnabled"
         static let pickerShortcut = "pickerShortcut"
+        static let connectionLauncherShortcut = "connectionLauncherShortcut"
         static let terminalSettings = "terminalSettings"
     }
 
@@ -23,6 +24,13 @@ final class AppSettings {
         didSet { defaults.set(try? JSONEncoder().encode(pickerShortcut), forKey: Key.pickerShortcut) }
     }
 
+    /// Control+Option+Command+C unless changed; nil turns the connection launcher hotkey off.
+    static let defaultConnectionLauncherShortcut = Shortcut(keyCode: 8, modifiers: [.control, .option, .command], key: "C")
+
+    var connectionLauncherShortcut: Shortcut? {
+        didSet { defaults.set(try? JSONEncoder().encode(connectionLauncherShortcut), forKey: Key.connectionLauncherShortcut) }
+    }
+
     var terminal: TerminalSettings {
         didSet { defaults.set(try? JSONEncoder().encode(terminal), forKey: Key.terminalSettings) }
     }
@@ -35,6 +43,11 @@ final class AppSettings {
             pickerShortcut = try? JSONDecoder().decode(Shortcut.self, from: data)
         } else {
             pickerShortcut = Self.defaultPickerShortcut
+        }
+        if let data = defaults.data(forKey: Key.connectionLauncherShortcut) {
+            connectionLauncherShortcut = try? JSONDecoder().decode(Shortcut.self, from: data)
+        } else {
+            connectionLauncherShortcut = Self.defaultConnectionLauncherShortcut
         }
         terminal = defaults.data(forKey: Key.terminalSettings).flatMap { try? JSONDecoder().decode(TerminalSettings.self, from: $0) } ?? .standard
     }
