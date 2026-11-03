@@ -1,7 +1,7 @@
 import Foundation
 
 enum SSHCommandError: Error, Equatable {
-    case unbalancedQuote, jumpHostMissing, jumpHostCycle, jumpHostNeedsKey(String), notSSH
+    case unbalancedQuote, jumpHostMissing, jumpHostCycle, jumpHostNeedsKey(String), notSSH, controlCharacter(String)
 
     var message: String {
         switch self {
@@ -10,6 +10,7 @@ enum SSHCommandError: Error, Equatable {
         case .jumpHostCycle: "The jump hosts form a loop."
         case .jumpHostNeedsKey(let name): "The jump host “\(name)” must be an SSH connection that uses an SSH key."
         case .notSSH: "This isn't an SSH connection."
+        case .controlCharacter(let name): "“\(name)” has a control character in its settings, so xpnd won't type it."
         }
     }
 }
@@ -31,6 +32,11 @@ enum SSHCommandBuilder {
         if connection.autoSudo { arguments.append("-t") }
         arguments += target(of: connection, library)
         if connection.autoSudo { arguments += ["sudo", "-i"] }
+        // Quoting can't hold these once pasted: Ctrl-U erases the opening quote and \r runs the rest.
+        // Jump hosts' values sit inside the ProxyCommand argument, so this covers them too.
+        guard !arguments.joined().unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
+            throw .controlCharacter(connection.name)
+        }
         return SSHCommand(arguments: arguments)
     }
 
@@ -73,15 +79,11 @@ enum SSHCommandBuilder {
         guard let jump = library.connection(id) else { throw .jumpHostMissing }
         guard jump.type == .ssh, library.loginCredential(for: id)?.ref.category == .sshKey else { throw .jumpHostNeedsKey(jump.name) }
         let before = try options(for: jump, visited: visited.union([id]), library, keysDirectory)
-        // ssh expands % tokens in ProxyCommand once, so only -W's own tokens stay live. It also checks
-        // the value's quotes with its own parser, which reads `\'` even inside quotes, so once nested
-        // `'\''` looks unbalanced; `'"'"'` means the same to a shell and survives any depth.
+        // ssh expands % tokens in ProxyCommand once, so only -W's own tokens stay live.
         func literal(_ arguments: [String]) -> [String] {
-            arguments.map {
-                ShellQuote.quote($0.replacingOccurrences(of: "%", with: "%%", options: .literal))
-                    .replacingOccurrences(of: #"'\''"#, with: #"'"'"'"#, options: .literal)
-            }
+            arguments.map { ShellQuote.quote($0.replacingOccurrences(of: "%", with: "%%", options: .literal)) }
         }
-        return (["ssh"] + literal(before) + ["-W", "%h:%p"] + literal(target(of: jump, library))).joined(separator: " ")
+        // Brackets for IPv6 targets; quoted because zsh would glob a bare `[`.
+        return (["ssh"] + literal(before) + ["-W", "'[%h]:%p'"] + literal(target(of: jump, library))).joined(separator: " ")
     }
 }

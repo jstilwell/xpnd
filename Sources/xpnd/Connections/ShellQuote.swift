@@ -3,11 +3,12 @@ import Foundation
 enum ShellQuote {
     private static let safe = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_@%+=:,./-".unicodeScalars)
 
-    /// POSIX single-quote form. Works on scalars, not Characters: `'` plus a combining
-    /// mark is one Character, but the shell still sees a quote.
+    /// POSIX single-quote form. `'` and `\` both step outside the quotes, because fish and ssh's
+    /// `-o` parser read a backslash inside single quotes. The regex matches scalars, not
+    /// Characters: `'` plus a combining mark is one Character, but the shell still sees a quote.
     static func quote(_ s: String) -> String {
         if !s.isEmpty, s.unicodeScalars.allSatisfy(safe.contains) { return s }
-        return "'" + s.replacingOccurrences(of: "'", with: #"'\''"#, options: .literal) + "'"
+        return "'" + s.replacingOccurrences(of: #"['\\]"#, with: #"'\\$0'"#, options: .regularExpression) + "'"
     }
 
     /// POSIX-like word splitting. Never expands variables, commands, globs or `~`.

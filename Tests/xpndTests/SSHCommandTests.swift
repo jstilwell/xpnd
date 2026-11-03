@@ -28,9 +28,11 @@ private func proxyCommand(_ command: SSHCommand) throws -> String {
 
 /// Harmless on purpose: these run through real shells, so a quoting bug must not do damage.
 private let hostileValues = [
-    "a;echo pwned", "$(echo pwned)", "`echo pwned`", "$HOME", "*", "~", "a\nb", "a b", "it's", "'", "''", "\"", "\\",
-    "x\\'", "'\u{301};echo pwned;'", "a&echo pwned", "a|echo pwned", "a>pwned", "#a", "!a", "{a,b}", "é", "",
+    "a;echo pwned", "$(echo pwned)", "`echo pwned`", "$HOME", "*", "~", "a b", "it's", "'", "''", "\"", "\\",
+    "x\\'", "\\'", "a\\", "'\u{301};echo pwned;'", "a&echo pwned", "a|echo pwned", "a>pwned", "#a", "!a", "{a,b}", "é", "",
 ]
+
+private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[201~", "\u{7f}", "\u{85}", "\u{9f}"]
 
 @Suite struct SSHCommandTests {
     @Test func plainConnection() throws {
@@ -97,7 +99,8 @@ private let hostileValues = [
         #expect(command.arguments.prefix(2) == ["ssh", "-o"])
         #expect(command.arguments[2] == "ProxyCommand=" + value)
         #expect(Array(command.arguments[3...]) == keyOptions("k") + ["host"])
-        #expect(try ShellQuote.split(value) == ["ssh", "-p", "2022"] + keyOptions("jk") + ["-v", "-W", "%h:%p", "user@jump"])
+        #expect(value.contains(" -W '[%h]:%p' "))
+        #expect(try ShellQuote.split(value) == ["ssh", "-p", "2022"] + keyOptions("jk") + ["-v", "-W", "[%h]:%p", "user@jump"])
         #expect(try ShellQuote.split(command.shellLine) == command.arguments)
     }
 
@@ -110,15 +113,15 @@ private let hostileValues = [
         // ssh expands the outer value once, so the inner %h must reach the inner ssh intact.
         let inner = try ShellQuote.split(String(outer[2].dropFirst("ProxyCommand=".count)))
         #expect(outer.prefix(2) == ["ssh", "-o"])
-        #expect(outer.suffix(3) == ["-W", "%h:%p", "near"])
-        #expect(inner == ["ssh"] + keyOptions("fk") + ["-W", "%%h:%%p", "far"])
+        #expect(outer.suffix(3) == ["-W", "[%h]:%p", "near"])
+        #expect(inner == ["ssh"] + keyOptions("fk") + ["-W", "[%%h]:%%p", "far"])
     }
 
     @Test func jumpLiteralPercentIsEscaped() throws {
         let jump = Connection(name: "j", host: "jump", username: "a%hb", credential: ref("k", .sshKey), sshOptions: "-o Tag=%p")
         let c = Connection(name: "a", host: "host", jumpHost: .connection(jump.id))
         let parts = try ShellQuote.split(try proxyCommand(try build(c, with: jump)))
-        #expect(parts.suffix(4) == ["Tag=%%p", "-W", "%h:%p", "a%%hb@jump"])
+        #expect(parts.suffix(4) == ["Tag=%%p", "-W", "[%h]:%p", "a%%hb@jump"])
     }
 
     @Test func jumpCycleAndMissing() {
@@ -163,9 +166,10 @@ private let hostileValues = [
     }
 
     @Test func messages() {
-        let errors: [SSHCommandError] = [.unbalancedQuote, .jumpHostMissing, .jumpHostCycle, .jumpHostNeedsKey("bastion"), .notSSH]
+        let errors: [SSHCommandError] = [.unbalancedQuote, .jumpHostMissing, .jumpHostCycle, .jumpHostNeedsKey("bastion"), .notSSH, .controlCharacter("aws")]
         #expect(errors.allSatisfy { !$0.message.isEmpty && !$0.message.contains("\n") })
         #expect(SSHCommandError.jumpHostNeedsKey("bastion").message.contains("“bastion”"))
+        #expect(SSHCommandError.controlCharacter("aws").message.contains("“aws”"))
     }
 
     @Test func hostileValuesAreQuoted() throws {
@@ -184,6 +188,42 @@ private let hostileValues = [
             #expect(try ShellQuote.split(command.shellLine) == command.arguments)
             #expect(try ShellQuote.split(build(Connection(name: "a", host: value)).shellLine) == ["ssh", value])
         }
+        #expect(throws: SSHCommandError.controlCharacter("a")) { try build(Connection(name: "a", host: "a\nb")) }
+        // Not in controlValues: URL turns a NUL in the key item into a harmless literal %00.
+        #expect(throws: SSHCommandError.controlCharacter("a")) { try build(Connection(name: "a", host: "a\u{0}b")) }
+    }
+
+    /// Quoted is not enough: a pasted Ctrl-U or \r acts before the shell ever sees the quotes.
+    @Test(arguments: controlValues)
+    func controlCharactersAreRefused(value: String) {
+        let quoted = "-o \(ShellQuote.quote(value))"
+        let refused = SSHCommandError.controlCharacter("a")
+        let key = ref("k", .sshKey)
+
+        let direct = [
+            Connection(name: "a", host: value),
+            Connection(name: "a", host: "h", username: value),
+            Connection(name: "a", host: "h", credential: ref("k", .login, username: value)),
+            Connection(name: "a", host: "h", credential: ref(value, .sshKey)),
+            Connection(name: "a", host: "h", jumpHost: .text(value)),
+            Connection(name: "a", host: "h", sshOptions: quoted),
+        ]
+        for c in direct { #expect(throws: refused) { try build(c) } }
+
+        let hops = [
+            Connection(name: "j", host: value, credential: key),
+            Connection(name: "j", host: "j", username: value, credential: key),
+            Connection(name: "j", host: "j", credential: ref(value, .sshKey)),
+            Connection(name: "j", host: "j", credential: key, jumpHost: .text(value)),
+            Connection(name: "j", host: "j", credential: key, sshOptions: quoted),
+        ]
+        for jump in hops {
+            let c = Connection(name: "a", host: "h", jumpHost: .connection(jump.id))
+            #expect(throws: refused) { try build(c, with: jump) }
+            let near = Connection(name: "near", host: "near", credential: key, jumpHost: .connection(jump.id))
+            let far = Connection(name: "a", host: "h", jumpHost: .connection(near.id))
+            #expect(throws: refused) { try build(far, with: near, jump) }
+        }
     }
 
     @Test func hostileJumpValuesAreQuotedTwice() throws {
@@ -193,7 +233,7 @@ private let hostileValues = [
             let command = try build(c, with: jump)
             let parts = try ShellQuote.split(try proxyCommand(command))
             #expect(try ShellQuote.split(command.shellLine) == command.arguments)
-            #expect(parts.suffix(4) == [value, "-W", "%h:%p", "\(value)@\(value)"])
+            #expect(parts.suffix(4) == [value, "-W", "[%h]:%p", "\(value)@\(value)"])
         }
     }
 
@@ -208,7 +248,7 @@ private let hostileValues = [
         let jump = Connection(name: "j", host: "-oProxyCommand=echo", credential: ref("k", .sshKey))
         let c = Connection(name: "a", host: "host", jumpHost: .connection(jump.id))
         let parts = try ShellQuote.split(try proxyCommand(try build(c, with: jump)))
-        #expect(parts.suffix(4) == ["-W", "%h:%p", "--", "-oProxyCommand=echo"])
+        #expect(parts.suffix(4) == ["-W", "[%h]:%p", "--", "-oProxyCommand=echo"])
     }
 
     @Test func quoteForms() {
@@ -216,10 +256,29 @@ private let hostileValues = [
         #expect(ShellQuote.quote("") == "''")
         #expect(ShellQuote.quote("a b") == "'a b'")
         #expect(ShellQuote.quote("it's") == #"'it'\''s'"#)
+        #expect(ShellQuote.quote(#"a\b"#) == #"'a'\\'b'"#)
+        #expect(ShellQuote.quote(#"\'"#) == #"''\\''\'''"#)
         #expect(ShellQuote.quote("~") == "'~'")
         #expect(ShellQuote.quote("é") == "'é'")
         // The quote and the combining mark are one Character; a Character-level replace would miss it.
         #expect(ShellQuote.quote("'\u{301}") == "''\\''\u{301}'")
+    }
+
+    /// fish and ssh's `-o` parser read `\` inside single quotes; POSIX shells don't. Outside
+    /// quotes they all agree, which is what keeps the quoting safe in each.
+    @Test func noBackslashInsideSingleQuotes() {
+        for value in hostileValues {
+            var inside = false
+            var scalars = ShellQuote.quote(value).unicodeScalars.makeIterator()
+            while let c = scalars.next() {
+                if c == "'" { inside.toggle() }
+                if c == "\\" {
+                    #expect(!inside)
+                    _ = scalars.next()
+                }
+            }
+            #expect(!inside)
+        }
     }
 
     @Test func splitForms() throws {
@@ -257,7 +316,7 @@ private let hostileValues = [
     /// Catches what string checks can't: ssh re-parses `-o` values with its own quoting rules.
     /// Walks a four-hop chain the way ssh would, checking every level's command with `ssh -G`.
     @Test func realSSHAcceptsEveryHop() async throws {
-        var hops = [Connection(name: "h0", host: "h0", credential: ref("k0", .sshKey), sshOptions: #"-o "Tag=\"it's\"""#)]
+        var hops = [Connection(name: "h0", host: "h0", credential: ref("k0", .sshKey), sshOptions: "-o " + ShellQuote.quote(#"Tag="it\'s""#))]
         for i in 1...3 {
             hops.append(Connection(name: "h\(i)", host: "h\(i)", credential: ref("k\(i)", .sshKey), jumpHost: .connection(hops[i - 1].id)))
         }
@@ -273,10 +332,10 @@ private let hostileValues = [
             guard let proxy = arguments.first(where: { $0.hasPrefix("ProxyCommand=") }) else { break }
             // What ssh hands to the shell, then what the shell hands to the next ssh.
             arguments = try ShellQuote.split(String(proxy.dropFirst("ProxyCommand=".count))).dropFirst().map {
-                $0 == "%h:%p" ? "next:22" : $0.replacingOccurrences(of: "%%", with: "%")
+                $0 == "[%h]:%p" ? "[::1]:22" : $0.replacingOccurrences(of: "%%", with: "%")
             }
         }
         #expect(levels == 5)
-        #expect(arguments.contains(#"Tag="it's""#))
+        #expect(arguments.contains(#"Tag="it\'s""#))
     }
 }
