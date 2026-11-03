@@ -5,7 +5,8 @@ enum SidebarItem: Hashable {
 }
 
 /// The main window's sidebar: the connection tree, then snippet groups as one-level folders.
-/// Double-clicking a connection (or Connect in its menu) connects.
+/// Double-clicking a connection (or Connect in its menu) connects. Searching filters both: the
+/// connections as a flat list, as the launcher shows them, and each group's snippets as the picker does.
 struct Sidebar: View {
     let connections: ConnectionEditing
     let editing: SnippetEditing
@@ -13,39 +14,39 @@ struct Sidebar: View {
     @Binding var focus: EditorFocus?
     /// A folder with something in it, waiting for Delete to be confirmed.
     @State private var confirmingDelete: ConnectionFolder?
+    @State private var search = ""
+    /// Groups opened by hand; every group shows open while searching.
+    @State private var expandedGroups: Set<SnippetGroup.ID> = []
 
     var body: some View {
         let library = editing.store.library
         let namespace = KeywordNamespace(snippets: library, connections: connections.library)
+        let searching = !search.trimmingCharacters(in: .whitespaces).isEmpty
         List(selection: $selection) {
             Section("Connections") {
-                OutlineGroup(connections.library.folders.map { ConnectionNode(folder: $0, namespace) }, children: \.children) { node in
-                    row(node.title, detail: node.detail, symbol: node.symbol).tag(node.id)
+                if searching {
+                    ForEach(ConnectionFilter.filter(ConnectionFilter.entries(connections.library), query: search), id: \.connection.id) { entry in
+                        row(entry.connection.name, detail: entry.pathText, symbol: ConnectionNode(connection: entry.connection).symbol)
+                            .tag(SidebarItem.connection(entry.connection.id))
+                    }
+                } else {
+                    OutlineGroup(connections.library.folders.map { ConnectionNode(folder: $0, namespace) }, children: \.children) { node in
+                        row(node.title, detail: node.detail, symbol: node.symbol).tag(node.id)
+                    }
                 }
             }
             Section("Snippets") {
                 ForEach(library.groups) { group in
-                    DisclosureGroup {
-                        ForEach(group.snippets) { snippet in
-                            row(snippet.name.isEmpty ? "Untitled" : snippet.name, detail: snippet.keyword, symbol: "text.cursor")
-                                .opacity(snippet.enabled ? 1 : 0.5)
-                                .tag(SidebarItem.snippet(snippet.id))
-                        }
-                    } label: {
-                        HStack {
-                            row(group.name.isEmpty ? "Untitled" : group.name, detail: nil, symbol: "folder")
-                                .foregroundStyle(group.enabled ? .primary : .secondary)
-                            Spacer()
-                            Toggle("Enabled", isOn: editing.groupBinding(group, \.enabled))
-                                .labelsHidden().toggleStyle(.switch).controlSize(.mini)
-                                .disabled(editing.readOnly)
-                        }
-                        .help(group.description)
-                        .tag(SidebarItem.snippetGroup(group.id))
+                    let shown = searching ? PickerFilter.filter(group.snippets, query: search) : group.snippets
+                    if !searching || !shown.isEmpty {
+                        snippetGroup(group, shown, expanded: Binding(
+                            get: { searching || expandedGroups.contains(group.id) },
+                            set: { if $0 { expandedGroups.insert(group.id) } else { expandedGroups.remove(group.id) } }))
                     }
                 }
             }
         }
+        .searchable(text: $search, placement: .sidebar)
         .contextMenu(forSelectionType: SidebarItem.self) { items in
             menu(for: items)
         } primaryAction: { items in
@@ -69,6 +70,27 @@ struct Sidebar: View {
                 Spacer()
             }
             .labelStyle(.iconOnly).buttonStyle(.borderless).padding(6)
+        }
+    }
+
+    private func snippetGroup(_ group: SnippetGroup, _ snippets: [Snippet], expanded: Binding<Bool>) -> some View {
+        DisclosureGroup(isExpanded: expanded) {
+            ForEach(snippets) { snippet in
+                row(snippet.name.isEmpty ? "Untitled" : snippet.name, detail: snippet.keyword, symbol: "text.cursor")
+                    .opacity(snippet.enabled ? 1 : 0.5)
+                    .tag(SidebarItem.snippet(snippet.id))
+            }
+        } label: {
+            HStack {
+                row(group.name.isEmpty ? "Untitled" : group.name, detail: nil, symbol: "folder")
+                    .foregroundStyle(group.enabled ? .primary : .secondary)
+                Spacer()
+                Toggle("Enabled", isOn: editing.groupBinding(group, \.enabled))
+                    .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                    .disabled(editing.readOnly)
+            }
+            .help(group.description)
+            .tag(SidebarItem.snippetGroup(group.id))
         }
     }
 
