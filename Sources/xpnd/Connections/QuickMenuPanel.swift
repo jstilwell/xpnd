@@ -122,13 +122,18 @@ private struct QuickMenuView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element) { index, row in
-                            rowView(row, selected: index == state.highlighted)
-                                .onTapGesture { state.pick(row) }
+                // Keeps the highlighted row in view, so Return never picks a row the user can't see.
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(Array(rows.enumerated()), id: \.element) { index, row in
+                                rowView(row, selected: index == state.highlighted)
+                                    .id(index)
+                                    .onTapGesture { state.pick(row) }
+                            }
                         }
                     }
+                    .onChange(of: state.highlighted) { proxy.scrollTo($1) }
                 }
             }
         }

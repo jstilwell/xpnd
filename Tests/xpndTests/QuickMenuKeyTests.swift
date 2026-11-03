@@ -36,4 +36,20 @@ struct QuickMenuKeyTests {
         #expect(QuickMenuKey.swallows(modifiers: []))
         #expect(QuickMenuKey.swallows(modifiers: .shift))
     }
+
+    /// The panel scrolls to the row whose `.id` is `highlighted`, so it must always name a real row,
+    /// and Return must pick the row the highlight is on, past the ninth too.
+    @MainActor @Test func highlightStaysOnARowAndReturnPicksIt() {
+        let list = (1...12).map { Connection(name: "c\($0)", host: "h") }
+        let folder = ConnectionFolder(name: "prod", connections: list)
+        var chosen: Connection.ID?
+        let state = QuickMenuState(model: QuickMenuModel(library: ConnectionLibrary(folders: [folder]), folder: folder.id),
+                                   choose: { chosen = $0 }, cancel: {})
+        for _ in 0..<15 { state.handle(.down) }
+        #expect(state.highlighted == 11)
+        state.handle(.choose)
+        #expect(chosen == list[11].id)
+        for _ in 0..<15 { state.handle(.up) }
+        #expect(state.highlighted == 0)
+    }
 }
