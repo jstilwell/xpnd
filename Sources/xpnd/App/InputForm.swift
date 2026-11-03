@@ -60,6 +60,8 @@ import SwiftUI
         panel.level = .floating
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
+        // Shows over full-screen apps too, as the picker does.
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let host = NSHostingController(rootView: InputFormView(
             labels: labels, submit: { [weak self] in self?.end($0) }, cancel: { [weak self] in self?.end(nil) }
         ))
