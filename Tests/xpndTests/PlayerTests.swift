@@ -74,4 +74,27 @@ private struct FakeActions: ActionRunning {
         snapshot.restore(to: pb)
         #expect(pb.pasteboardItems?.isEmpty ?? true)
     }
+
+    @Test func pasteRestoresOriginalClipboard() async {
+        let pb = NSPasteboard(name: .init("xpnd-test-\(UUID())"))
+        defer { pb.releaseGlobally() }
+        pb.clearContents()
+        pb.setString("original", forType: .string)
+        var pasted: String?
+        await CGEventKeystrokeSender.paste("expanded", on: pb, settle: .zero) { pasted = pb.string(forType: .string) }
+        #expect(pasted == "expanded")
+        #expect(pb.string(forType: .string) == "original")
+    }
+
+    @Test func pasteDoesNotRestoreOverNewerCopy() async {
+        let pb = NSPasteboard(name: .init("xpnd-test-\(UUID())"))
+        defer { pb.releaseGlobally() }
+        pb.clearContents()
+        pb.setString("original", forType: .string)
+        await CGEventKeystrokeSender.paste("expanded", on: pb, settle: .zero) {
+            pb.clearContents()
+            pb.setString("user copy", forType: .string)
+        }
+        #expect(pb.string(forType: .string) == "user copy")
+    }
 }
