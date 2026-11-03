@@ -3,11 +3,13 @@ import SwiftUI
 
 /// The Settings window's sections, in order. An enum so later projects can add sections.
 enum SettingsSection: String, CaseIterable, Sendable {
-    case general, importExport
+    case general, terminal, passwordManager, importExport
 
     var title: String {
         switch self {
         case .general: "General"
+        case .terminal: "Terminal"
+        case .passwordManager: "Password Manager"
         case .importExport: "Import/Export"
         }
     }
@@ -15,6 +17,8 @@ enum SettingsSection: String, CaseIterable, Sendable {
     var symbol: String {
         switch self {
         case .general: "gearshape"
+        case .terminal: "terminal"
+        case .passwordManager: "key"
         case .importExport: "square.and.arrow.up.on.square"
         }
     }
@@ -23,7 +27,7 @@ enum SettingsSection: String, CaseIterable, Sendable {
 /// The Settings window: a toolbar of sections, each a SwiftUI view. Adapted from HoverEnhance's.
 @MainActor
 final class SettingsWindowController: NSWindowController {
-    init(settings: AppSettings, store: SnippetStore) {
+    init(settings: AppSettings, store: SnippetStore, connections: ConnectionEditing) {
         let tabs = NSTabViewController()
         tabs.tabStyle = .toolbar
         func host<Content: View>(_ view: Content) -> NSViewController {
@@ -36,7 +40,9 @@ final class SettingsWindowController: NSWindowController {
         for section in SettingsSection.allCases {
             let host = switch section {
             case .general: host(GeneralSettingsView(settings: settings))
-            case .importExport: host(ImportExportView(store: store))
+            case .terminal: host(TerminalSettingsView(settings: settings))
+            case .passwordManager: host(PasswordManagerSettingsView(settings: settings, editing: connections))
+            case .importExport: host(ImportExportView(store: store, connections: connections.store))
             }
             host.title = section.title
             let item = NSTabViewItem(viewController: host)

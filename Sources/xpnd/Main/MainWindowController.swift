@@ -14,12 +14,14 @@ final class MainWindowModel {
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let model: MainWindowModel
 
-    init(store: SnippetStore, connections: ConnectionStore, provider: any CredentialProvider, keysDirectory: URL,
+    init(store: SnippetStore, connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider,
+         preferredAccount: @escaping @MainActor () -> String?, keysDirectory: URL,
          connect: @escaping (Connection.ID) -> Void) {
         let model = MainWindowModel()
         self.model = model
         let editing = ConnectionEditing(
-            store: connections, snippets: store, provider: provider, keysDirectory: keysDirectory, connect: connect)
+            store: connections, snippets: store, provider: provider, preferredAccount: preferredAccount,
+            keysDirectory: keysDirectory, connect: connect)
         let host = NSHostingController(rootView: MainView(model: model, connections: editing, editing: SnippetEditing(store: store)))
         // The SwiftUI minimum becomes the window's; the user sizes it from there.
         host.sizingOptions = [.minSize]

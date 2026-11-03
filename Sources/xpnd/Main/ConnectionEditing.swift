@@ -249,19 +249,26 @@ extension ConnectionLibrary {
 final class ConnectionEditing {
     let store: ConnectionStore
     let snippets: SnippetStore
-    let provider: any CredentialProvider
+    /// Asked at each use, so a changed op path in Settings applies at once.
+    private let currentProvider: @MainActor () -> any CredentialProvider
+    /// Settings' chosen account id, if any.
+    private let preferredAccount: @MainActor () -> String?
     let keysDirectory: URL
     let connect: (Connection.ID) -> Void
     var saveProblem: String?
 
-    init(store: ConnectionStore, snippets: SnippetStore, provider: any CredentialProvider, keysDirectory: URL,
+    init(store: ConnectionStore, snippets: SnippetStore, provider: @escaping @MainActor () -> any CredentialProvider,
+         preferredAccount: @escaping @MainActor () -> String? = { nil }, keysDirectory: URL,
          connect: @escaping (Connection.ID) -> Void) {
         self.store = store
         self.snippets = snippets
-        self.provider = provider
+        self.currentProvider = provider
+        self.preferredAccount = preferredAccount
         self.keysDirectory = keysDirectory
         self.connect = connect
     }
+
+    var provider: any CredentialProvider { currentProvider() }
 
     var library: ConnectionLibrary { store.library }
     var readOnly: Bool { store.loadError != nil }
@@ -326,14 +333,15 @@ final class ConnectionEditing {
         save { $0.remove(item) != nil }
     }
 
-    /// The account to search: the first signed-in one. Task 15 adds the account setting.
+    /// The account to search: Settings' choice while 1Password still lists it, else the first.
     func account() async throws(CredentialError) -> String {
         switch await provider.status() {
         case .notInstalled: throw .notInstalled
         case .notSignedIn(let message): throw .failed(message)
         case .ready(let accounts):
-            guard let first = accounts.first else { throw .locked }
-            return first.id
+            let preferred = preferredAccount()
+            guard let account = accounts.first(where: { $0.id == preferred }) ?? accounts.first else { throw .locked }
+            return account.id
         }
     }
 

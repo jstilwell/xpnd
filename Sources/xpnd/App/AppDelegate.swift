@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let hud = HUD()
     var engine: ExpansionEngine!
     var service: ConnectionService!
+    /// The 1Password provider for connecting, the main window and Settings. It keeps no state, so
+    /// building it from the current op path at each use means no holder keeps a stale path.
+    var provider: OnePasswordProvider { OnePasswordProvider(opPath: settings.onePasswordPath) }
     let quickMenu = QuickMenuPanel()
     var mainWindow: MainWindowController?
     /// The cross-file duplicates the HUD last flagged, so it says so once per change.
@@ -271,7 +274,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSettings() {
-        if settingsWindow == nil { settingsWindow = SettingsWindowController(settings: settings, store: store) }
+        if settingsWindow == nil {
+            settingsWindow = SettingsWindowController(
+                settings: settings, store: store,
+                connections: ConnectionEditing(
+                    store: connections, snippets: store, provider: { [unowned self] in self.provider },
+                    preferredAccount: { AppSettings.shared.onePasswordAccount }, keysDirectory: keysDirectory,
+                    connect: { _ in }))
+        }
         settingsWindow?.show()
     }
 

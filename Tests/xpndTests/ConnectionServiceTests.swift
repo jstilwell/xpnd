@@ -140,7 +140,7 @@ private let sudo = ref("sudo", .password)
 
     func service() -> ConnectionService {
         ConnectionService(
-            connections: store, provider: provider, executor: executor, sender: sender,
+            connections: store, provider: { [provider] in provider }, executor: executor, sender: sender,
             terminal: { [unowned self] in settings },
             frontmost: { [unowned self] in front },
             notify: { [log] in log.events.append("notify \($0)") },

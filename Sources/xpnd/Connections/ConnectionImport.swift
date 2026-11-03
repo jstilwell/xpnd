@@ -122,10 +122,38 @@ enum ConnectionImport {
 
     /// Hosts of the incoming connections the merge with `choice` would add, sorted and unique.
     static func hostsAdded(incoming: ConnectionLibrary, existing: ConnectionLibrary, choice: ConflictChoice) -> [String] {
+        Set(previewRows(incoming: incoming, existing: existing, choice: choice).map(\.host)).sorted()
+    }
+
+    /// One connection the merge would add, as the import confirmation shows it.
+    struct PreviewRow: Identifiable, Equatable {
+        let id: Connection.ID
+        let name: String
+        let host: String
+        /// `user@host:port`, without `user@` when no user resolves.
+        let address: String
+        /// The text, or the saved connection's name; nil for none.
+        let jumpHost: String?
+        /// Verbatim, since they run on connect.
+        let sshOptions: String
+    }
+
+    /// The connections the merge with `choice` would add, in tree order.
+    static func previewRows(incoming: ConnectionLibrary, existing: ConnectionLibrary, choice: ConflictChoice) -> [PreviewRow] {
         let have = Set(existing.allConnections.map(\.id))
         // Colliding incoming IDs are re-keyed, so every added connection is outside `have`.
         let merged = merge(incoming, into: existing, choice: choice)
-        return Set(merged.allConnections.filter { !have.contains($0.id) }.map(\.host)).sorted()
+        return merged.allConnections.filter { !have.contains($0.id) }.map { c in
+            let jump: String? = switch c.jumpHost {
+            case nil: nil
+            case .text(let text): text
+            case .connection(let id): merged.connection(id)?.name ?? "A missing connection"
+            }
+            let user = merged.loginUser(for: c).map { "\($0)@" } ?? ""
+            let host = c.host.contains(":") && !c.host.hasPrefix("[") ? "[\(c.host)]" : c.host
+            return PreviewRow(id: c.id, name: c.name, host: c.host, address: "\(user)\(host):\(c.effectivePort)",
+                              jumpHost: jump, sshOptions: c.sshOptions)
+        }
     }
 
     /// `folders == nil` exports everything; selected folders keep their whole subtree.

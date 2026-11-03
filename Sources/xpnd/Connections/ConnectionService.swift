@@ -10,7 +10,8 @@ import Foundation
 /// front-app check and the typing. Never log or show a secret or the command.
 @MainActor final class ConnectionService {
     private let connections: ConnectionStore
-    private let provider: any CredentialProvider
+    /// Asked at each use, so a changed op path in Settings applies at once.
+    private let provider: @MainActor () -> any CredentialProvider
     private let executor: any LaunchExecuting
     private let sender: any KeystrokeSending
     private let terminal: @MainActor () -> TerminalSettings
@@ -23,7 +24,7 @@ import Foundation
     private(set) var passwordPhase: Task<Void, Never>?
 
     init(
-        connections: ConnectionStore, provider: any CredentialProvider, executor: any LaunchExecuting,
+        connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider, executor: any LaunchExecuting,
         sender: any KeystrokeSending, terminal: @escaping @MainActor () -> TerminalSettings,
         frontmost: @escaping @MainActor () -> (pid: pid_t, bundleID: String?)?,
         notify: @escaping @MainActor (String) -> Void, copySecret: @escaping @MainActor (String) async -> Void,
@@ -91,7 +92,7 @@ import Foundation
             if FileManager.default.fileExists(atPath: file.path) { continue }
             let key: String
             do throws(CredentialError) {
-                key = try await provider.publicKey(for: ref)
+                key = try await provider().publicKey(for: ref)
             } catch {
                 notify(error.message)
                 return false
@@ -151,7 +152,7 @@ import Foundation
     /// and the HUD, so this one stays silent.
     private func copyPassword(_ ref: CredentialRef) async -> Bool {
         do throws(CredentialError) {
-            let password = try await provider.password(for: ref)
+            let password = try await provider().password(for: ref)
             guard !Task.isCancelled else { return false }
             await copySecret(password)
             return !Task.isCancelled

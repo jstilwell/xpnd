@@ -6,7 +6,7 @@ extension AppDelegate {
         let hud = hud
         return ConnectionService(
             connections: connections,
-            provider: OnePasswordProvider(opPath: nil), // Task 15 adds the op path setting.
+            provider: { [unowned self] in self.provider },
             executor: LiveLaunchExecutor(), sender: sender,
             terminal: { AppSettings.shared.terminal },
             frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.bundleIdentifier) } },
@@ -48,7 +48,7 @@ extension AppDelegate {
         if mainWindow == nil {
             mainWindow = MainWindowController(
                 store: store, connections: connections,
-                provider: OnePasswordProvider(opPath: nil), // Task 15 adds the op path setting.
+                provider: { [unowned self] in self.provider }, preferredAccount: { AppSettings.shared.onePasswordAccount },
                 keysDirectory: keysDirectory
             ) { [weak self] id in
                 // Clicked in xpnd itself, so there's no other app to guard.

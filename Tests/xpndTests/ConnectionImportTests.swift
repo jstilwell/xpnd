@@ -72,6 +72,28 @@ struct ConnectionImportTests {
         #expect(ConnectionImport.hostsAdded(incoming: inc2, existing: clash, choice: .replace) == ["kept", "skipped"])
     }
 
+    @Test func previewRowsShowWhatRunsOnConnect() {
+        let bastion = conn("bastion", host: "b.example")
+        let existing = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [bastion, conn("x", act: ";k")])])
+        var web = conn("web", host: "web.example", jump: .connection(bastion.id))
+        web.username = "deploy"
+        web.port = 2222
+        web.sshOptions = "-o ProxyCommand=$(evil)"
+        let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "b", connections: [
+            web, conn("v6", host: "::1", jump: .text("ec2-user@jump:22")), conn("gone", jump: .connection(UUID())),
+            conn("clash", act: ";k")])])
+        let rows = ConnectionImport.previewRows(incoming: incoming, existing: existing, choice: .skip)
+        #expect(rows.map(\.name) == ["web", "v6", "gone"])
+        #expect(rows[0].address == "deploy@web.example:2222")
+        #expect(rows[0].jumpHost == "bastion")
+        #expect(rows[0].sshOptions == "-o ProxyCommand=$(evil)")
+        #expect(rows[1].address == "[::1]:22")
+        #expect(rows[1].jumpHost == "ec2-user@jump:22")
+        #expect(rows[2].jumpHost == "A missing connection")
+        #expect(ConnectionImport.previewRows(incoming: incoming, existing: existing, choice: .replace).map(\.name)
+            == ["web", "v6", "gone", "clash"])
+    }
+
     @Test func exportSelectedFoldersRoundTrips() throws {
         let inner = ConnectionFolder(name: "inner", connections: [conn("i", jump: .text("j"))])
         let a = ConnectionFolder(name: "a", activation: ";a", connections: [conn("c")], folders: [inner])

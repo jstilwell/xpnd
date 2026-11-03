@@ -21,16 +21,34 @@ private func ref(_ item: String, _ category: CredentialCategory = .login) -> Cre
     }
 }
 
-@MainActor private func editing(_ provider: any CredentialProvider) -> (ConnectionEditing, URL) {
+/// Two signed-in accounts.
+private struct TwoAccountProvider: CredentialProvider {
+    func status() async -> ProviderStatus {
+        .ready([ProviderAccount(id: "A1", email: "a@x", url: "x"), ProviderAccount(id: "A2", email: "b@x", url: "x")])
+    }
+    func search(_ query: String, account: String) async throws(CredentialError) -> [CredentialItem] { [] }
+    func password(for ref: CredentialRef) async throws(CredentialError) -> String { throw .locked }
+    func publicKey(for ref: CredentialRef) async throws(CredentialError) -> String { throw .locked }
+}
+
+@MainActor private func editing(_ provider: any CredentialProvider, account: String? = nil) -> (ConnectionEditing, URL) {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     let editing = ConnectionEditing(
         store: ConnectionStore(fileURL: directory.appending(path: "connections.yaml")),
         snippets: SnippetStore(fileURL: directory.appending(path: "snippets.yaml")),
-        provider: provider, keysDirectory: directory.appending(path: "keys"), connect: { _ in })
+        provider: { provider }, preferredAccount: { account }, keysDirectory: directory.appending(path: "keys"),
+        connect: { _ in })
     return (editing, directory)
 }
 
 @Suite struct MainWindowLogicTests {
+    @MainActor @Test func accountPrefersTheSettingWhileListed() async throws {
+        #expect(try await editing(TwoAccountProvider()).0.account() == "A1")
+        #expect(try await editing(TwoAccountProvider(), account: "A2").0.account() == "A2")
+        // An account 1Password no longer lists falls back to the first.
+        #expect(try await editing(TwoAccountProvider(), account: "gone").0.account() == "A1")
+    }
+
     @MainActor @Test func cancelledPickIsNeverStored() async throws {
         let provider = HeldKeyProvider()
         let (editing, directory) = editing(provider)
