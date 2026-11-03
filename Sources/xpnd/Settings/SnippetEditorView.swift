@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 /// One snippet's fields. `edit` saves at once and returns false if the store refused the change.
 struct SnippetEditorView: View {
     let snippet: Snippet
-    let library: SnippetLibrary
+    /// Keywords share one namespace with connection and folder activation strings.
+    let namespace: KeywordNamespace
     let readOnly: Bool
     let edit: ((inout Snippet) -> Void) -> Bool
 
@@ -92,7 +93,7 @@ struct SnippetEditorView: View {
     }
 
     private func saveKeyword() {
-        keywordProblem = library.keywordProblem(keyword, for: snippet.id)
+        keywordProblem = namespace.problem(keyword, for: .snippet(snippet.id))
         guard keywordProblem == nil, keyword != snippet.keyword else { return }
         let new = keyword
         // On failure the page-level message says why, and the field shows the saved keyword again.

@@ -4,6 +4,8 @@ import SwiftUI
 @MainActor @Observable
 final class MainWindowModel {
     var selection: SidebarItem?
+    /// A field the sidebar asks the Details editor to focus.
+    var focus: EditorFocus?
 }
 
 /// The main window: connections and snippets in the sidebar, the selection's Details on the right.
@@ -12,11 +14,13 @@ final class MainWindowModel {
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let model: MainWindowModel
 
-    init(store: SnippetStore, connections: ConnectionStore, connect: @escaping (Connection.ID) -> Void) {
+    init(store: SnippetStore, connections: ConnectionStore, provider: any CredentialProvider, keysDirectory: URL,
+         connect: @escaping (Connection.ID) -> Void) {
         let model = MainWindowModel()
         self.model = model
-        let host = NSHostingController(rootView: MainView(
-            model: model, connections: connections, editing: SnippetEditing(store: store), connect: connect))
+        let editing = ConnectionEditing(
+            store: connections, snippets: store, provider: provider, keysDirectory: keysDirectory, connect: connect)
+        let host = NSHostingController(rootView: MainView(model: model, connections: editing, editing: SnippetEditing(store: store)))
         // The SwiftUI minimum becomes the window's; the user sizes it from there.
         host.sizingOptions = [.minSize]
         let window = NSWindow(contentViewController: host)
@@ -46,22 +50,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
 private struct MainView: View {
     @Bindable var model: MainWindowModel
-    let connections: ConnectionStore
+    let connections: ConnectionEditing
     let editing: SnippetEditing
-    let connect: (Connection.ID) -> Void
     /// A reload from disk gives snippets new ids, so the selected group or snippet is found again by
     /// its name or keyword.
     @State private var selectedName: String?
+    /// Connections keep their ids, but a hand edit can drop them: then the folder names from the
+    /// root (and the connection's name) find the item again.
+    @State private var selectedPath: [String]?
 
     var body: some View {
         NavigationSplitView {
-            Sidebar(connections: connections, editing: editing, selection: $model.selection, connect: connect)
+            Sidebar(connections: connections, editing: editing, selection: $model.selection, focus: $model.focus)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
-            DetailsPane(connections: connections, editing: editing, selection: $model.selection, connect: connect)
+            DetailsPane(connections: connections, editing: editing, selection: $model.selection, focus: $model.focus)
         }
         .frame(minWidth: 900, minHeight: 560)
         .onChange(of: editing.store.library) { reselect() }
+        .onChange(of: connections.library) { reselectConnection() }
         .onChange(of: model.selection, initial: true) { remember() }
     }
 
@@ -71,6 +78,20 @@ private struct MainView: View {
         case .snippet(let id): editing.snippet(id)?.keyword
         default: nil
         }
+        selectedPath = model.selection.flatMap(connections.library.namePath(of:))
+    }
+
+    private func reselectConnection() {
+        let library = connections.library
+        switch model.selection {
+        case .folder(let id) where library.folder(id) == nil:
+            model.selection = selectedPath.flatMap(library.folder(atNamePath:)).map { .folder($0.id) }
+        case .connection(let id) where library.connection(id) == nil:
+            model.selection = selectedPath.flatMap(library.connection(atNamePath:)).map { .connection($0.id) }
+        default:
+            break
+        }
+        remember()
     }
 
     private func reselect() {

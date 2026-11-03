@@ -13,9 +13,11 @@ extension AppDelegate {
             notify: { hud.flash($0) },
             copySecret: { [weak self] secret in await self?.engine.whenIdle { SecretClipboard.copy(secret) } },
             prompt: PasswordPrompt(),
-            keysDirectory: ConnectionStore.defaultURL.deletingLastPathComponent().appending(path: "keys")
+            keysDirectory: keysDirectory
         )
     }
+
+    var keysDirectory: URL { ConnectionStore.defaultURL.deletingLastPathComponent().appending(path: "keys") }
 
     /// A typed activation string, already inside the engine's claim.
     func activate(_ target: ActivationTarget, typedInto pid: pid_t?) async {
@@ -44,7 +46,11 @@ extension AppDelegate {
 
     func showMainWindow(selecting item: SidebarItem?) {
         if mainWindow == nil {
-            mainWindow = MainWindowController(store: store, connections: connections) { [weak self] id in
+            mainWindow = MainWindowController(
+                store: store, connections: connections,
+                provider: OnePasswordProvider(opPath: nil), // Task 15 adds the op path setting.
+                keysDirectory: keysDirectory
+            ) { [weak self] id in
                 // Clicked in xpnd itself, so there's no other app to guard.
                 Task { await self?.connectExclusively(id, from: nil) }
             }

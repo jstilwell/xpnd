@@ -1,0 +1,357 @@
+import Foundation
+
+/// A field the sidebar's Rename and Set Activation… ask the Details editor to focus.
+enum EditorFocus: Hashable {
+    case name, activation
+}
+
+extension StoreError {
+    var connectionsMessage: String {
+        switch self {
+        case .fileUnreadable: "Couldn't save connections.yaml."
+        case .duplicateKeyword(let string): "“\(string)” is already used by another connection or folder."
+        case .encodingFailed: "Couldn't write the connections as YAML, so nothing was saved."
+        }
+    }
+}
+
+/// The editors' rules that don't need a view.
+enum EditorRules {
+    /// `base`, else `base 2`, `base 3`… whichever is free first.
+    static func uniqueName(_ base: String, taken: Set<String>) -> String {
+        (1...).lazy.map { $0 == 1 ? base : "\(base) \($0)" }.first { !taken.contains($0) } ?? base
+    }
+
+    /// The `port` to store: nil when empty or the type's default.
+    static func parsePort(_ text: String, type: ConnectionType) -> (port: Int?, problem: String?) {
+        let text = text.trimmingCharacters(in: .whitespaces)
+        if text.isEmpty { return (nil, nil) }
+        guard let port = Int(text) else { return (nil, "The port must be a number.") }
+        guard (1...65535).contains(port) else { return (nil, "The port must be between 1 and 65535.") }
+        return (port == type.defaultPort ? nil : port, nil)
+    }
+
+    /// "From folder prod: prod-ssh (1Password)", or "Not set".
+    static func summary(_ resolved: ResolvedCredential?) -> String {
+        guard let resolved else { return "Not set" }
+        let provider = resolved.ref.provider == "1password" ? "1Password" : resolved.ref.provider
+        let item = "\(resolved.ref.title) (\(provider))"
+        return switch resolved.source {
+        case .connection: item
+        case .folder(let name): "From folder \(name): \(item)"
+        case .global: "Global: \(item)"
+        case .login: "From login credential: \(item)"
+        }
+    }
+
+    /// Why `jump` can't be `id`'s jump host, or nil if it can.
+    static func jumpHostProblem(_ jump: Connection.ID, for id: Connection.ID, in library: ConnectionLibrary) -> String? {
+        guard library.connection(jump) != nil else { return SSHCommandError.jumpHostMissing.message }
+        guard library.loginCredential(for: jump)?.ref.category == .sshKey else { return "Jump hosts must use an SSH key" }
+        var candidate = library
+        candidate.editConnection(id) { $0.jumpHost = .connection(jump) }
+        do throws(SSHCommandError) {
+            // Only builds argv; nothing is read from the keys directory.
+            _ = try SSHCommandBuilder.build(id, in: candidate, keysDirectory: URL(filePath: "/"))
+        } catch .jumpHostCycle {
+            return SSHCommandError.jumpHostCycle.message
+        } catch {
+            // Other problems (an unmatched quote in the options, say) aren't the jump host's.
+        }
+        return nil
+    }
+}
+
+extension ConnectionFolder {
+    fileprivate func folderPath(of id: ID) -> [ConnectionFolder]? {
+        if self.id == id { return [self] }
+        return folders.lazy.compactMap { $0.folderPath(of: id) }.first.map { [self] + $0 }
+    }
+
+    fileprivate mutating func editFolder(_ id: ID, _ change: (inout ConnectionFolder) -> Void) -> Bool {
+        if self.id == id {
+            change(&self)
+            return true
+        }
+        for index in folders.indices where folders[index].editFolder(id, change) { return true }
+        return false
+    }
+
+    fileprivate mutating func refreshRefs(_ fresh: CredentialRef) {
+        fresh.refresh(&credential)
+        fresh.refresh(&sudoCredential)
+        for index in connections.indices {
+            fresh.refresh(&connections[index].credential)
+            fresh.refresh(&connections[index].sudoCredential)
+        }
+        for index in folders.indices { folders[index].refreshRefs(fresh) }
+    }
+}
+
+extension CredentialRef {
+    /// Replaces `stored` with self when both name the same 1Password item.
+    fileprivate func refresh(_ stored: inout CredentialRef?) {
+        if let old = stored, old.provider == provider, old.account == account, old.item == item { stored = self }
+    }
+}
+
+extension ConnectionLibrary {
+    /// The folder and its ancestors, from the root; empty if it isn't in the tree.
+    func folderPath(of id: ConnectionFolder.ID) -> [ConnectionFolder] {
+        folders.lazy.compactMap { $0.folderPath(of: id) }.first ?? []
+    }
+
+    func folder(atNamePath names: [String]) -> ConnectionFolder? {
+        var level = folders
+        var found: ConnectionFolder?
+        for name in names {
+            guard let next = level.first(where: { $0.name == name }) else { return nil }
+            found = next
+            level = next.folders
+        }
+        return found
+    }
+
+    func connection(atNamePath names: [String]) -> Connection? {
+        guard let name = names.last else { return nil }
+        return folder(atNamePath: names.dropLast()).flatMap { $0.connections.first { $0.name == name } }
+    }
+
+    /// Folder names from the root, then the connection's name, so a reload that changed ids can find it again.
+    func namePath(of item: SidebarItem) -> [String]? {
+        switch item {
+        case .folder(let id): folder(id).map { _ in folderPath(of: id).map(\.name) }
+        case .connection(let id): connection(id).map { path(of: id).map(\.name) + [$0.name] }
+        default: nil
+        }
+    }
+
+    /// A folder's own credential (source `.connection`: the item's own), else the nearest ancestor's, else global.
+    func folderLoginCredential(for id: ConnectionFolder.ID) -> ResolvedCredential? {
+        resolveFolder(id, \.credential, global: credential)
+    }
+
+    /// As `sudoCredential(for:)`, for a folder.
+    func folderSudoCredential(for id: ConnectionFolder.ID) -> ResolvedCredential? {
+        if let sudo = resolveFolder(id, \.sudoCredential, global: sudoCredential) { return sudo }
+        guard let login = folderLoginCredential(for: id), login.ref.hasPassword else { return nil }
+        return ResolvedCredential(ref: login.ref, source: .login)
+    }
+
+    private func resolveFolder(
+        _ id: ConnectionFolder.ID, _ key: KeyPath<ConnectionFolder, CredentialRef?>, global: CredentialRef?
+    ) -> ResolvedCredential? {
+        let path = folderPath(of: id)
+        guard let own = path.last else { return nil }
+        if let ref = own[keyPath: key] { return ResolvedCredential(ref: ref, source: .connection) }
+        for folder in path.dropLast().reversed() {
+            if let ref = folder[keyPath: key] { return ResolvedCredential(ref: ref, source: .folder(name: folder.name)) }
+        }
+        return global.map { ResolvedCredential(ref: $0, source: .global) }
+    }
+
+    @discardableResult
+    mutating func editFolder(_ id: ConnectionFolder.ID, _ change: (inout ConnectionFolder) -> Void) -> Bool {
+        for index in folders.indices where folders[index].editFolder(id, change) { return true }
+        return false
+    }
+
+    @discardableResult
+    mutating func editConnection(_ id: Connection.ID, _ change: (inout Connection) -> Void) -> Bool {
+        guard let parent = path(of: id).last?.id else { return false }
+        return editFolder(parent) { folder in
+            if let index = folder.connections.firstIndex(where: { $0.id == id }) { change(&folder.connections[index]) }
+        }
+    }
+
+    /// Every stored copy of the same item, at any level, takes `fresh`'s title, category and username.
+    mutating func refreshRefs(_ fresh: CredentialRef) {
+        fresh.refresh(&credential)
+        fresh.refresh(&sudoCredential)
+        for index in folders.indices { folders[index].refreshRefs(fresh) }
+    }
+
+    /// Where `item` can move: any folder outside its own subtree, other than the one it's in.
+    func moveTargets(for item: SidebarItem) -> [ConnectionFolder] {
+        let excluded: Set<ConnectionFolder.ID>
+        switch item {
+        case .folder(let id):
+            guard let folder = folder(id) else { return [] }
+            excluded = Set(folderPath(of: id).dropLast().suffix(1).map(\.id) + folder.allFolders.map(\.id))
+        case .connection(let id):
+            excluded = Set(path(of: id).suffix(1).map(\.id))
+        default:
+            return []
+        }
+        return allFolders.filter { !excluded.contains($0.id) }
+    }
+
+    /// Moves `item` to the end of `destination` (nil: the top level, for folders). False, and no
+    /// change, if either is gone or the move isn't one `moveTargets` offers.
+    @discardableResult
+    mutating func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?) -> Bool {
+        var next = self
+        switch (item, destination) {
+        case (.folder(let id), nil):
+            guard folderPath(of: id).count > 1, case .folder(let moved)? = next.remove(item) else { return false }
+            next.folders.append(moved)
+        case (.folder, let target?), (.connection, let target?):
+            guard moveTargets(for: item).contains(where: { $0.id == target }), let moved = next.remove(item) else { return false }
+            next.editFolder(target) { folder in
+                switch moved {
+                case .folder(let f): folder.folders.append(f)
+                case .connection(let c): folder.connections.append(c)
+                }
+            }
+        default:
+            return false
+        }
+        self = next
+        return true
+    }
+
+    enum Removed {
+        case folder(ConnectionFolder), connection(Connection)
+    }
+
+    @discardableResult
+    mutating func remove(_ item: SidebarItem) -> Removed? {
+        var removed: Removed?
+        switch item {
+        case .folder(let id):
+            if let index = folders.firstIndex(where: { $0.id == id }) { return .folder(folders.remove(at: index)) }
+            guard let parent = folderPath(of: id).dropLast().last?.id else { return nil }
+            editFolder(parent) { folder in
+                if let index = folder.folders.firstIndex(where: { $0.id == id }) { removed = .folder(folder.folders.remove(at: index)) }
+            }
+        case .connection(let id):
+            guard let parent = path(of: id).last?.id else { return nil }
+            editFolder(parent) { folder in
+                if let index = folder.connections.firstIndex(where: { $0.id == id }) {
+                    removed = .connection(folder.connections.remove(at: index))
+                }
+            }
+        default:
+            return nil
+        }
+        return removed
+    }
+}
+
+/// Connection saving for the main window's sidebar and Details pane. Every edit saves at once
+/// through `store.update`; ids are persisted, so a save finds its item by id.
+@MainActor @Observable
+final class ConnectionEditing {
+    let store: ConnectionStore
+    let snippets: SnippetStore
+    let provider: any CredentialProvider
+    let keysDirectory: URL
+    let connect: (Connection.ID) -> Void
+    var saveProblem: String?
+
+    init(store: ConnectionStore, snippets: SnippetStore, provider: any CredentialProvider, keysDirectory: URL,
+         connect: @escaping (Connection.ID) -> Void) {
+        self.store = store
+        self.snippets = snippets
+        self.provider = provider
+        self.keysDirectory = keysDirectory
+        self.connect = connect
+    }
+
+    var library: ConnectionLibrary { store.library }
+    var readOnly: Bool { store.loadError != nil }
+    /// Uniqueness across both files, from the other file's last good contents.
+    var namespace: KeywordNamespace { KeywordNamespace(snippets: snippets.library, connections: store.library) }
+
+    /// `change` returns false if its item is gone.
+    @discardableResult
+    func save(_ change: (inout ConnectionLibrary) -> Bool) -> Bool {
+        var found = false
+        do {
+            try store.update { found = change(&$0) }
+        } catch {
+            saveProblem = error.connectionsMessage
+            return false
+        }
+        saveProblem = found ? nil : "That item changed in connections.yaml. Select it again."
+        return found
+    }
+
+    @discardableResult
+    func edit(folder id: ConnectionFolder.ID, _ change: (inout ConnectionFolder) -> Void) -> Bool {
+        save { $0.editFolder(id, change) }
+    }
+
+    @discardableResult
+    func edit(connection id: Connection.ID, _ change: (inout Connection) -> Void) -> Bool {
+        save { $0.editConnection(id, change) }
+    }
+
+    /// The new connection's id, or nil if it wasn't saved.
+    func addConnection(in folder: ConnectionFolder.ID) -> Connection.ID? {
+        let new = Connection(name: EditorRules.uniqueName("New Connection", taken: Set(library.allConnections.map(\.name))), host: "")
+        return edit(folder: folder) { $0.connections.append(new) } ? new.id : nil
+    }
+
+    /// Unique across the tree, so the new folder's derived activation string isn't contested.
+    func addFolder(in parent: ConnectionFolder.ID?) -> ConnectionFolder.ID? {
+        let new = ConnectionFolder(name: EditorRules.uniqueName("New Folder", taken: Set(library.allFolders.map(\.name))))
+        guard let parent else { return save { $0.folders.append(new); return true } ? new.id : nil }
+        return edit(folder: parent) { $0.folders.append(new) } ? new.id : nil
+    }
+
+    /// A copy just after the original, without its activation string (which must stay unique).
+    func duplicate(_ id: Connection.ID) -> Connection.ID? {
+        guard let original = library.connection(id), let parent = library.path(of: id).last?.id else { return nil }
+        var copy = original
+        copy.id = UUID()
+        copy.name = EditorRules.uniqueName(original.name, taken: Set(library.allConnections.map(\.name)))
+        copy.activation = nil
+        return edit(folder: parent) { folder in
+            let index = folder.connections.firstIndex { $0.id == id }.map { $0 + 1 } ?? folder.connections.endIndex
+            folder.connections.insert(copy, at: index)
+        } ? copy.id : nil
+    }
+
+    func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?) -> Bool {
+        save { $0.move(item, to: destination) }
+    }
+
+    func delete(_ item: SidebarItem) -> Bool {
+        save { $0.remove(item) != nil }
+    }
+
+    /// The account to search: the first signed-in one. Task 15 adds the account setting.
+    func account() async throws(CredentialError) -> String {
+        switch await provider.status() {
+        case .notInstalled: throw .notInstalled
+        case .notSignedIn(let message): throw .failed(message)
+        case .ready(let accounts):
+            guard let first = accounts.first else { throw .locked }
+            return first.id
+        }
+    }
+
+    /// Fetches an SSH key item's public key into `keys/<item>.pub`.
+    func savePublicKey(for ref: CredentialRef) async throws(CredentialError) {
+        // The item id names a file, so it must not leave the keys directory.
+        guard CredentialRef.isSafe(ref.item) else { throw .invalidRef }
+        let key = try await provider.publicKey(for: ref)
+        do {
+            try SSHCommandBuilder.writeKeyFile(key, for: ref, in: keysDirectory)
+        } catch {
+            throw .failed("xpnd couldn't save the public key for “\(ref.title)”.")
+        }
+    }
+
+    /// Re-reads the item's title, category and username (and an SSH key's public key) and updates
+    /// every stored copy. `op item list` has no lookup by id, so this lists the account and matches it.
+    func refresh(_ ref: CredentialRef) async throws(CredentialError) {
+        guard let item = try await provider.search("", account: ref.account).first(where: { $0.id == ref.item }) else {
+            throw .notFound(ref.title)
+        }
+        let fresh = item.ref(account: ref.account)
+        if fresh.category == .sshKey { try await savePublicKey(for: fresh) }
+        if !save({ $0.refreshRefs(fresh); return true }) { throw .failed(saveProblem ?? "Couldn't save connections.yaml.") }
+    }
+}

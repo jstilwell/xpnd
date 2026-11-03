@@ -1,0 +1,126 @@
+import Foundation
+import Testing
+@testable import xpnd
+
+private func ref(_ item: String, _ category: CredentialCategory = .login) -> CredentialRef {
+    CredentialRef(account: "acct", vault: "vault", item: item, title: item, category: category)
+}
+
+@Suite struct MainWindowLogicTests {
+    @Test func uniqueNames() {
+        #expect(EditorRules.uniqueName("New Connection", taken: []) == "New Connection")
+        #expect(EditorRules.uniqueName("New Connection", taken: ["New Connection"]) == "New Connection 2")
+        #expect(EditorRules.uniqueName("New Connection", taken: ["New Connection", "New Connection 2"]) == "New Connection 3")
+        #expect(EditorRules.uniqueName("web", taken: ["web", "web 3"]) == "web 2")
+    }
+
+    @Test func portParsing() {
+        #expect(EditorRules.parsePort("", type: .ssh) == (nil, nil))
+        #expect(EditorRules.parsePort(" 22 ", type: .ssh) == (nil, nil))
+        #expect(EditorRules.parsePort("22", type: .vnc) == (22, nil))
+        #expect(EditorRules.parsePort("5900", type: .vnc) == (nil, nil))
+        #expect(EditorRules.parsePort("2222", type: .ssh) == (2222, nil))
+        #expect(EditorRules.parsePort("abc", type: .ssh).problem == "The port must be a number.")
+        #expect(EditorRules.parsePort("0", type: .ssh).problem == "The port must be between 1 and 65535.")
+        #expect(EditorRules.parsePort("65536", type: .ssh).problem == "The port must be between 1 and 65535.")
+    }
+
+    @Test func moveTargetsExcludeOwnSubtreeAndParent() {
+        let web = Connection(name: "web", host: "web")
+        let inner = ConnectionFolder(name: "inner")
+        let aws = ConnectionFolder(name: "aws", connections: [web], folders: [inner])
+        let prod = ConnectionFolder(name: "prod", folders: [aws])
+        let dev = ConnectionFolder(name: "dev")
+        var library = ConnectionLibrary(folders: [prod, dev])
+
+        #expect(library.moveTargets(for: .folder(aws.id)).map(\.name) == ["dev"])
+        #expect(library.moveTargets(for: .folder(prod.id)).map(\.name) == ["dev"])
+        #expect(library.moveTargets(for: .connection(web.id)).map(\.name) == ["prod", "inner", "dev"])
+
+        // Into its own subtree: refused, nothing changes.
+        let before = library
+        let intoOwnSubtree = library.move(.folder(prod.id), to: inner.id)
+        #expect(!intoOwnSubtree)
+        #expect(library == before)
+
+        let toDev = library.move(.folder(aws.id), to: dev.id)
+        #expect(toDev)
+        #expect(library.folderPath(of: inner.id).map(\.name) == ["dev", "aws", "inner"])
+        let toTop = library.move(.folder(aws.id), to: nil)
+        #expect(toTop)
+        #expect(library.folders.map(\.name) == ["prod", "dev", "aws"])
+        let alreadyTop = library.move(.folder(aws.id), to: nil)
+        #expect(!alreadyTop)
+
+        let connectionToDev = library.move(.connection(web.id), to: dev.id)
+        #expect(connectionToDev)
+        #expect(library.path(of: web.id).map(\.name) == ["dev"])
+        let removedConnection = library.remove(.connection(web.id))
+        #expect(removedConnection != nil)
+        #expect(library.connection(web.id) == nil)
+        let removedFolder = library.remove(.folder(inner.id))
+        #expect(removedFolder != nil)
+        #expect(library.folder(inner.id) == nil)
+    }
+
+    @Test func namePathsFindItemsAgain() {
+        let web = Connection(name: "web", host: "web")
+        let aws = ConnectionFolder(name: "aws", connections: [web])
+        let library = ConnectionLibrary(folders: [ConnectionFolder(name: "prod", folders: [aws])])
+        #expect(library.namePath(of: .connection(web.id)) == ["prod", "aws", "web"])
+        #expect(library.namePath(of: .folder(aws.id)) == ["prod", "aws"])
+        #expect(library.connection(atNamePath: ["prod", "aws", "web"])?.id == web.id)
+        #expect(library.folder(atNamePath: ["prod", "aws"])?.id == aws.id)
+        #expect(library.folder(atNamePath: ["aws"]) == nil)
+        #expect(library.namePath(of: .folder(UUID())) == nil)
+    }
+
+    @Test func folderCredentialsCascade() {
+        let inner = ConnectionFolder(name: "inner")
+        let prod = ConnectionFolder(name: "prod", credential: ref("P", .sshKey), folders: [inner])
+        var library = ConnectionLibrary(credential: ref("G"), folders: [prod])
+
+        #expect(library.folderLoginCredential(for: prod.id) == ResolvedCredential(ref: ref("P", .sshKey), source: .connection))
+        #expect(library.folderLoginCredential(for: inner.id) == ResolvedCredential(ref: ref("P", .sshKey), source: .folder(name: "prod")))
+        // An SSH key has no password, so sudo has nothing to fall back to.
+        #expect(library.folderSudoCredential(for: inner.id) == nil)
+        library.sudoCredential = ref("S")
+        #expect(library.folderSudoCredential(for: inner.id) == ResolvedCredential(ref: ref("S"), source: .global))
+
+        #expect(EditorRules.summary(library.folderLoginCredential(for: inner.id)) == "From folder prod: P (1Password)")
+        #expect(EditorRules.summary(ResolvedCredential(ref: ref("G"), source: .global)) == "Global: G (1Password)")
+        #expect(EditorRules.summary(ResolvedCredential(ref: ref("L"), source: .login)) == "From login credential: L (1Password)")
+        #expect(EditorRules.summary(nil) == "Not set")
+    }
+
+    @Test func refreshUpdatesEveryCopy() {
+        var fresh = ref("K", .sshKey)
+        fresh.title = "renamed"
+        fresh.username = "ubuntu"
+        let web = Connection(name: "web", host: "web", credential: ref("K", .sshKey), sudoCredential: ref("other"))
+        var library = ConnectionLibrary(
+            credential: ref("K", .sshKey),
+            folders: [ConnectionFolder(name: "prod", credential: ref("K", .sshKey), connections: [web])])
+        library.refreshRefs(fresh)
+        #expect(library.credential == fresh)
+        #expect(library.folders[0].credential == fresh)
+        #expect(library.connection(web.id)?.credential == fresh)
+        #expect(library.connection(web.id)?.sudoCredential == ref("other"))
+    }
+
+    @Test func jumpHostChoices() {
+        let bastion = Connection(name: "bastion", host: "b", credential: ref("K", .sshKey))
+        let passwordJump = Connection(name: "pw", host: "p", credential: ref("L"))
+        var web = Connection(name: "web", host: "w")
+        web.credential = ref("K", .sshKey)
+        var library = ConnectionLibrary(folders: [ConnectionFolder(name: "prod", connections: [bastion, passwordJump, web])])
+
+        #expect(EditorRules.jumpHostProblem(bastion.id, for: web.id, in: library) == nil)
+        #expect(EditorRules.jumpHostProblem(passwordJump.id, for: web.id, in: library) == "Jump hosts must use an SSH key")
+        #expect(EditorRules.jumpHostProblem(UUID(), for: web.id, in: library) == SSHCommandError.jumpHostMissing.message)
+
+        // bastion already jumps through web, so web → bastion would loop.
+        library.editConnection(bastion.id) { $0.jumpHost = .connection(web.id) }
+        #expect(EditorRules.jumpHostProblem(bastion.id, for: web.id, in: library) == SSHCommandError.jumpHostCycle.message)
+    }
+}

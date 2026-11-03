@@ -7,10 +7,12 @@ enum SidebarItem: Hashable {
 /// The main window's sidebar: the connection tree, then snippet groups as one-level folders.
 /// Double-clicking a connection (or Connect in its menu) connects.
 struct Sidebar: View {
-    let connections: ConnectionStore
+    let connections: ConnectionEditing
     let editing: SnippetEditing
     @Binding var selection: SidebarItem?
-    let connect: (Connection.ID) -> Void
+    @Binding var focus: EditorFocus?
+    /// A folder with something in it, waiting for Delete to be confirmed.
+    @State private var confirmingDelete: ConnectionFolder?
 
     var body: some View {
         let library = editing.store.library
@@ -45,9 +47,18 @@ struct Sidebar: View {
             }
         }
         .contextMenu(forSelectionType: SidebarItem.self) { items in
-            if let id = Self.connection(in: items) { Button("Connect") { connect(id) } }
+            menu(for: items)
         } primaryAction: { items in
-            if let id = Self.connection(in: items) { connect(id) }
+            if let id = Self.connection(in: items) { connections.connect(id) }
+        }
+        .confirmationDialog(
+            "Delete “\(confirmingDelete?.name ?? "")” and everything in it?",
+            isPresented: Binding(get: { confirmingDelete != nil }, set: { if !$0 { confirmingDelete = nil } }),
+            presenting: confirmingDelete
+        ) { folder in
+            Button("Delete", role: .destructive) { delete(.folder(folder.id)) }
+        } message: { folder in
+            Text("\(folder.allConnections.count) connections and \(folder.allFolders.count - 1) folders")
         }
         .safeAreaInset(edge: .bottom) {
             HStack {
@@ -58,6 +69,78 @@ struct Sidebar: View {
                 Spacer()
             }
             .labelStyle(.iconOnly).buttonStyle(.borderless).padding(6)
+        }
+    }
+
+    @ViewBuilder private func menu(for items: Set<SidebarItem>) -> some View {
+        let readOnly = connections.readOnly
+        switch items.count == 1 ? items.first : nil {
+        case .folder(let id)?:
+            Group {
+                Button("New Connection") { select(connections.addConnection(in: id).map(SidebarItem.connection), focus: .name, else: .folder(id)) }
+                Button("New Folder") { select(connections.addFolder(in: id).map(SidebarItem.folder), focus: .name, else: .folder(id)) }
+                Button("Rename") { select(.folder(id), focus: .name) }
+                Button("Set Activation…") { select(.folder(id), focus: .activation) }
+                moveMenu(.folder(id))
+                Divider()
+                Button("Delete", role: .destructive) {
+                    guard let folder = connections.library.folder(id) else { return }
+                    if folder.connections.isEmpty && folder.folders.isEmpty { delete(.folder(id)) } else { confirmingDelete = folder }
+                }
+            }
+            .disabled(readOnly)
+        case .connection(let id)?:
+            Button("Connect") { connections.connect(id) }
+            Group {
+                Button("Duplicate") { select(connections.duplicate(id).map(SidebarItem.connection), focus: .name, else: .connection(id)) }
+                moveMenu(.connection(id))
+                Divider()
+                Button("Delete", role: .destructive) { delete(.connection(id)) }
+            }
+            .disabled(readOnly)
+        default:
+            if items.isEmpty {
+                Button("New Folder") { select(connections.addFolder(in: nil).map(SidebarItem.folder), focus: .name) }
+                    .disabled(readOnly)
+            }
+        }
+    }
+
+    private func moveMenu(_ item: SidebarItem) -> some View {
+        let library = connections.library
+        return Menu("Move to…") {
+            if case .folder(let id) = item, library.folderPath(of: id).count > 1 {
+                Button("Top Level") { move(item, to: nil) }
+                Divider()
+            }
+            ForEach(library.moveTargets(for: item)) { folder in
+                Button(library.folderPath(of: folder.id).map(\.name).joined(separator: " / ")) {
+                    move(item, to: folder.id)
+                }
+            }
+        }
+    }
+
+    /// nil is an add that failed: `fallback`'s Details then shows why.
+    private func select(_ item: SidebarItem?, focus field: EditorFocus, else fallback: SidebarItem? = nil) {
+        guard let item else {
+            if let fallback { selection = fallback }
+            return
+        }
+        selection = item
+        focus = field
+    }
+
+    /// On failure the item is selected, so its Details shows why.
+    private func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?) {
+        if !connections.move(item, to: destination) { selection = item }
+    }
+
+    private func delete(_ item: SidebarItem) {
+        if connections.delete(item) {
+            if selection == item { selection = nil }
+        } else {
+            selection = item
         }
     }
 

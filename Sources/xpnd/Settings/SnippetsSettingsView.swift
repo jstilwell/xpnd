@@ -143,11 +143,13 @@ struct SnippetGroupDetails: View {
 struct SnippetDetails: View {
     let editing: SnippetEditing
     let snippet: Snippet
+    let connections: ConnectionLibrary
     @Binding var selection: SidebarItem?
 
     var body: some View {
         VStack(spacing: 0) {
-            SnippetEditorView(snippet: snippet, library: editing.store.library, readOnly: editing.readOnly) { change in
+            SnippetEditorView(snippet: snippet, namespace: KeywordNamespace(snippets: editing.store.library, connections: connections),
+                              readOnly: editing.readOnly) { change in
                 editing.save(at: snippet) { change(&$0.groups[$1].snippets[$2]) }
             }
             HStack {

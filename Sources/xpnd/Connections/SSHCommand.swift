@@ -28,6 +28,14 @@ enum SSHCommandBuilder {
         keysDirectory.appendingPathComponent("\(ref.item).pub")
     }
 
+    /// Public keys aren't secret, so 0644 like `~/.ssh/*.pub`. The caller checks `ref.item` is safe.
+    static func writeKeyFile(_ key: String, for ref: CredentialRef, in keysDirectory: URL) throws {
+        let file = keyFile(ref, in: keysDirectory)
+        try FileManager.default.createDirectory(at: keysDirectory, withIntermediateDirectories: true)
+        try Data(key.utf8).write(to: file, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+    }
+
     /// A connection that no longer exists also throws `.notSSH`: the error set has no closer case.
     static func build(_ id: Connection.ID, in library: ConnectionLibrary, keysDirectory: URL) throws(SSHCommandError) -> SSHCommand {
         guard let connection = library.connection(id), connection.type == .ssh else { throw .notSSH }

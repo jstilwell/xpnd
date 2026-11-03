@@ -97,9 +97,7 @@ import Foundation
                 return false
             }
             do {
-                try FileManager.default.createDirectory(at: keysDirectory, withIntermediateDirectories: true)
-                try Data(key.utf8).write(to: file, options: .atomic)
-                try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+                try SSHCommandBuilder.writeKeyFile(key, for: ref, in: keysDirectory)
             } catch {
                 notify("xpnd couldn't save the public key for “\(ref.title)”.")
                 return false
