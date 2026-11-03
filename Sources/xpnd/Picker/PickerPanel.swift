@@ -19,6 +19,7 @@ final class PickerPanel {
     init(store: SnippetStore, engine: ExpansionEngine) {
         self.store = store
         self.engine = engine
+        panel.onResignKey = { [weak self] in self?.close() }
         panel.level = .floating
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -73,6 +74,13 @@ final class PickerPanel {
 
 private final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
+    var onResignKey: (() -> Void)?
+
+    // Clicking into another app doesn't deactivate xpnd (the panel is non-activating), so close here.
+    override func resignKey() {
+        super.resignKey()
+        onResignKey?()
+    }
 }
 
 private struct PickerView: View {
