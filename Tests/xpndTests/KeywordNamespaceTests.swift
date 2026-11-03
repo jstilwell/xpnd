@@ -60,6 +60,25 @@ private func snippets(_ list: Snippet...) -> SnippetLibrary {
         #expect(shorter.effectiveActivation(ofFolder: folder.id) == (";dev", nil))
     }
 
+    /// Seeded ";dev" would fire before ";devbox" could be finished, whoever owns ";devbox".
+    @Test func derivedYieldsToLongerConnectionAndFolderStrings() {
+        let devbox = Connection(name: "devbox", host: "h", activation: ";devbox")
+        let dev = ConnectionFolder(name: "dev"), other = ConnectionFolder(name: "other", connections: [devbox])
+        let byConnection = KeywordNamespace(snippets: .empty, connections: ConnectionLibrary(folders: [dev, other]))
+        #expect(byConnection.effectiveActivation(ofFolder: dev.id) == (nil, "“;dev” would hide “;devbox”, used by connection “devbox”"))
+
+        let tools = ConnectionFolder(name: "tools", activation: ";devtools")
+        let byFolder = KeywordNamespace(snippets: .empty, connections: ConnectionLibrary(folders: [dev, tools]))
+        #expect(byFolder.effectiveActivation(ofFolder: dev.id) == (nil, "“;dev” would hide “;devtools”, used by folder “tools”"))
+        #expect(byFolder.effectiveActivation(ofFolder: tools.id) == (";devtools", nil))
+
+        // Shorter strings and the empty "none" hide nothing.
+        let short = ConnectionFolder(name: "x", activation: ";d", connections: [Connection(name: "c", host: "h", activation: ";de")])
+        let quiet = ConnectionFolder(name: "q", activation: "")
+        let shorter = KeywordNamespace(snippets: .empty, connections: ConnectionLibrary(folders: [dev, short, quiet]))
+        #expect(shorter.effectiveActivation(ofFolder: dev.id) == (";dev", nil))
+    }
+
     @Test func problemMessages() {
         let namespace = KeywordNamespace(snippets: snippets(signature), connections: ConnectionLibrary(folders: [dev]))
 
