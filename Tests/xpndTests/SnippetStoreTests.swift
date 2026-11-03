@@ -109,4 +109,49 @@ struct SnippetStoreTests {
             #expect(try String(contentsOf: url, encoding: .utf8) == "groups: [")
         }
     }
+
+    @Test func inPlaceEditReloads() async throws {
+        try await withTempDir { dir in
+            let url = dir.appending(path: "snippets.yaml")
+            let store = SnippetStore(fileURL: url)
+            try store.update { $0.groups.append(group(";a")) }
+            store.startWatching()
+            defer { store.stopWatching() }
+            let yaml = SnippetYAML.encode(SnippetLibrary(groups: [group(";b")]))
+            try Data(yaml.utf8).write(to: url) // non-atomic: truncate + write
+            #expect(await eventually { store.library.groups.first?.snippets.first?.keyword == ";b" })
+        }
+    }
+
+    @Test func unreadableFileIsNeverOverwritten() async throws {
+        try await withTempDir { dir in
+            let url = dir.appending(path: "snippets.yaml")
+            let original = Data(SnippetYAML.encode(SnippetLibrary(groups: [group(";a")])).utf8)
+            try original.write(to: url)
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path) }
+            let store = SnippetStore(fileURL: url)
+            store.load()
+            #expect(store.loadError != nil)
+            #expect(throws: StoreError.fileUnreadable) { try store.update { $0.groups.append(group(";b")) } }
+            try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+            #expect(try Data(contentsOf: url) == original)
+        }
+    }
+
+    @Test func updateReloadsExternalEditFirst() async throws {
+        try await withTempDir { dir in
+            let url = dir.appending(path: "snippets.yaml")
+            let store = SnippetStore(fileURL: url)
+            try store.update { $0.groups.append(group(";a")) }
+            let external = SnippetYAML.encode(SnippetLibrary(groups: [group(";x")]))
+            try Data(external.utf8).write(to: url, options: .atomic)
+            try store.update { $0.groups.append(group(";b")) }
+            let keywords = store.library.groups.flatMap(\.snippets).map(\.keyword)
+            #expect(keywords == [";x", ";b"])
+            let other = SnippetStore(fileURL: url)
+            other.load()
+            #expect(other.library.groups.flatMap(\.snippets).map(\.keyword) == [";x", ";b"])
+        }
+    }
 }
