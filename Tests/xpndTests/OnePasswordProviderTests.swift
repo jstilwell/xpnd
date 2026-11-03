@@ -66,22 +66,28 @@ private final class Calls: @unchecked Sendable {
 
     @Test func passwordArguments() async throws {
         let calls = Calls()
-        let p = provider(calls, path: "/bin/sh") { _ in self.out("pa ss \n\n") }
-        // Only the single trailing newline is removed.
-        #expect(try await p.password(for: ref) == "pa ss \n")
-        #expect(calls.all == [["item", "get", "i1", "--vault", "v1", "--account", "ACC1", "--fields", "label=password", "--reveal"]])
+        let p = provider(calls, path: "/bin/sh") { _ in self.out(#"{"id":"password","value":"  a,b\"c\n "}"#) }
+        #expect(try await p.password(for: ref) == "  a,b\"c\n ")
+        #expect(calls.all == [["item", "get", "i1", "--vault", "v1", "--account", "ACC1", "--fields", "label=password", "--reveal", "--format", "json"]])
     }
 
-    @Test func emptyPasswordIsNoPassword() async {
-        let p = provider(path: "/bin/sh") { _ in self.out("\n") }
+    @Test func emptyPasswordIsNoPassword() async throws {
+        let p = provider(path: "/bin/sh") { _ in self.out(#"{"id":"password"}"#) }
         await #expect(throws: CredentialError.noPassword("Web Box")) { try await p.password(for: ref) }
+        let e = provider(path: "/bin/sh") { _ in self.out(#"{"value":""}"#) }
+        await #expect(throws: CredentialError.noPassword("Web Box")) { try await e.publicKey(for: ref) }
+        let a = provider(path: "/bin/sh") { _ in self.out(#"[{"value":"first"},{"value":"second"}]"#) }
+        #expect(try await a.password(for: ref) == "first")
+        let bad = provider(path: "/bin/sh") { _ in self.out("hunter2") }
+        do { _ = try await bad.password(for: ref); Issue.record("expected throw") }
+        catch { #expect(!error.message.contains("hunter2")) }
     }
 
     @Test func publicKeyArguments() async throws {
         let calls = Calls()
-        let p = provider(calls, path: "/bin/sh") { _ in self.out("ssh-ed25519 AAAA\n") }
+        let p = provider(calls, path: "/bin/sh") { _ in self.out(#"{"value":"ssh-ed25519 AAAA"}"#) }
         #expect(try await p.publicKey(for: ref) == "ssh-ed25519 AAAA")
-        #expect(calls.all == [["item", "get", "i1", "--vault", "v1", "--account", "ACC1", "--fields", "label=public key", "--reveal"]])
+        #expect(calls.all == [["item", "get", "i1", "--vault", "v1", "--account", "ACC1", "--fields", "label=public key", "--reveal", "--format", "json"]])
     }
 
     @Test func stderrMapsToErrors() async {
@@ -104,6 +110,20 @@ private final class Calls: @unchecked Sendable {
         }
         let missing = provider(path: "/bin/sh") { _ in nil }
         await #expect(throws: CredentialError.notInstalled) { try await missing.password(for: ref) }
+    }
+
+    @Test(arguments: ["--help", "--config=x", "-", "https://x", "", "a b", "é"])
+    func unsafeRefsNeverRun(bad: String) async {
+        let calls = Calls()
+        let p = provider(calls, path: "/bin/sh") { _ in self.out(#"{"value":"x"}"#) }
+        for r in [CredentialRef(account: "ACC1", vault: "v1", item: bad, title: "T", category: .login),
+                  CredentialRef(account: "ACC1", vault: bad, item: "i1", title: "T", category: .login),
+                  CredentialRef(account: bad, vault: "v1", item: "i1", title: "T", category: .login)] {
+            await #expect(throws: OnePasswordProvider.invalidRef) { try await p.password(for: r) }
+            await #expect(throws: OnePasswordProvider.invalidRef) { try await p.publicKey(for: r) }
+        }
+        await #expect(throws: OnePasswordProvider.invalidRef) { try await p.search("", account: bad) }
+        #expect(calls.all.isEmpty)
     }
 
     @Test func findOPChecksOverrideFirst() {

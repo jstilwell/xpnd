@@ -30,7 +30,7 @@ struct OnePasswordProvider: CredentialProvider {
         ["item", "list", "--account", account, "--categories", "Login,Password,SSH Key,Server", "--format", "json"]
     }
     static func fieldArguments(_ ref: CredentialRef, label: String) -> [String] {
-        ["item", "get", ref.item, "--vault", ref.vault, "--account", ref.account, "--fields", "label=\(label)", "--reveal"]
+        ["item", "get", ref.item, "--vault", ref.vault, "--account", ref.account, "--fields", "label=\(label)", "--reveal", "--format", "json"]
     }
 
     // MARK: provider
@@ -45,6 +45,7 @@ struct OnePasswordProvider: CredentialProvider {
     }
 
     func search(_ query: String, account: String) async throws(CredentialError) -> [CredentialItem] {
+        guard Self.isSafe(account) else { throw Self.invalidRef }
         let out = try await check(Self.listArguments(account: account), title: "")
         guard let data = out.stdout.data(using: .utf8),
               let rows = try? JSONDecoder().decode([Row].self, from: data) else { throw .failed("1Password returned an unexpected response.") }
@@ -55,9 +56,7 @@ struct OnePasswordProvider: CredentialProvider {
     }
 
     func password(for ref: CredentialRef) async throws(CredentialError) -> String {
-        let value = try await field(ref, "password")
-        if value.isEmpty { throw .noPassword(ref.title) }
-        return value
+        try await field(ref, "password")
     }
 
     func publicKey(for ref: CredentialRef) async throws(CredentialError) -> String {
@@ -66,15 +65,30 @@ struct OnePasswordProvider: CredentialProvider {
 
     // MARK: helpers
 
+    static let invalidRef = CredentialError.failed("This credential link isn't valid. Choose it again from 1Password.")
+
+    /// Refs come from a hand-editable file; a leading "-" would become an op flag.
+    static func isSafe(_ s: String) -> Bool {
+        guard let first = s.unicodeScalars.first, first.isASCII, first.properties.isAlphabetic || ("0"..."9").contains(Character(first))
+        else { return false }
+        return s.unicodeScalars.allSatisfy { $0.isASCII && ($0.properties.isAlphabetic || ("0"..."9").contains(Character($0)) || ".-_".unicodeScalars.contains($0)) }
+    }
+
     private func exec(_ args: [String]) async -> ProcessOutput? {
         guard let path = Self.findOP(override: opPath) else { return nil }
         return await run(URL(fileURLWithPath: path), args)
     }
 
     private func field(_ ref: CredentialRef, _ label: String) async throws(CredentialError) -> String {
+        guard Self.isSafe(ref.item), Self.isSafe(ref.vault), Self.isSafe(ref.account) else { throw Self.invalidRef }
         let out = try await check(Self.fieldArguments(ref, label: label), title: ref.title)
-        // op appends exactly one newline; passwords may legitimately end in other whitespace.
-        return out.stdout.hasSuffix("\n") ? String(out.stdout.dropLast()) : out.stdout
+        struct Field: Decodable { let value: String? }
+        let data = Data(out.stdout.utf8)
+        // op may return an array when a label is duplicated; take the first.
+        guard let f = (try? JSONDecoder().decode(Field.self, from: data)) ?? (try? JSONDecoder().decode([Field].self, from: data))?.first
+        else { throw .failed("1Password returned an unexpected response.") }
+        guard let v = f.value, !v.isEmpty else { throw .noPassword(ref.title) }
+        return v
     }
 
     private func check(_ args: [String], title: String) async throws(CredentialError) -> ProcessOutput {
