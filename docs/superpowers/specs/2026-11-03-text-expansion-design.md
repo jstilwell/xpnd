@@ -148,9 +148,10 @@ box per variable.)
 ### Shell variable safety
 
 `#{shell:}` takes only a path to a script, never inline code. On import, if
-any incoming snippet contains `#{shell:}`, `#{runShortcut:}` or `#{openApp:}`,
-the import screen lists those snippets and what they would run, and asks for
-confirmation before importing them. (My call.)
+any incoming snippet contains `#{shell:}`, `#{runShortcut:}`, `#{openApp:}` or
+`#{shortcut:}` (keys sent to the front app can open Terminal and type a
+command), the import screen lists those snippets and what they would run, and
+asks for confirmation before importing them. (My call.)
 
 ### Picker
 
@@ -187,7 +188,7 @@ separate hotkey in project 2.
   to fight with. Saving from the app rewrites the file and drops YAML comments
   and custom formatting. The editor's help text says so. (My calls.)
 - Hand edits to this file are trusted like the user's own shell config, so
-  the import confirmation for `#{shell:}`/`#{openApp:}`/`#{runShortcut:}`
+  the import confirmation for `#{shell:}`/`#{openApp:}`/`#{runShortcut:}`/`#{shortcut:}`
   applies to imports only, not to reloads. (My call.)
 - Keywords are unique across all snippets, including disabled ones, so two
   snippets can't share a keyword even in different groups. The editor refuses
@@ -266,7 +267,7 @@ groups:
 - Variable parser and evaluator: every variable, escapes, unknown variables,
   `#{combo:}` cycles, date shifts.
 - YAML: export/import round-trip, the conflict choice, a malformed file, and
-  detection of `#{shell:}`, `#{runShortcut:}` and `#{openApp:}` on import.
+  detection of `#{shell:}`, `#{runShortcut:}`, `#{openApp:}` and `#{shortcut:}` on import.
 - Action variables: a missing app path and an unknown shortcut name each
   produce an error, not a crash or silent no-op.
 

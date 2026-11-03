@@ -28,7 +28,7 @@
 - **Keywords**: type one and it's replaced. Keywords are case-sensitive. A strict snippet (the default) expands when the whole word matches; a loose one when what you typed ends with it. Space, Return, Tab, arrows, a click, or switching apps start the word over.
 - **Picker**: press Control-Option-Command-Space (changeable in Settings) to search snippets by keyword, name, or text, and press Return to insert one.
 - **Groups**: snippets sit in groups you can turn on or off together.
-- **Import and export**: share snippets as YAML. Importing asks before it adds a snippet that runs a script, opens an app, or runs a Shortcut.
+- **Import and export**: share snippets as YAML. Importing asks before it adds a snippet that runs a script, opens an app, runs a Shortcut, or sends a keyboard shortcut.
 
 ## Variables
 

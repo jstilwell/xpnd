@@ -14,7 +14,7 @@ All notable changes to this project will be documented in this file.
 - A picker, opened by a shortcut you can change (Control-Option-Command-Space to start), searches snippets and inserts the one you choose.
 - Settings has groups of snippets you can turn on or off, an editor with an Insert Variable menu, and general options for launching at login and turning expansion off.
 - Snippets live in a YAML file you can edit by hand, and xpnd reloads it when it changes.
-- Import and export snippets as YAML, choosing what happens to keywords that already exist, and confirming any imported snippet that would run a script, app, or Shortcut.
+- Import and export snippets as YAML, choosing what happens to keywords that already exist, and confirming any imported snippet that would run a script, open an app, run a Shortcut, or send a keyboard shortcut.
 - The menu bar icon turns expansion on or off, opens the picker and Settings, and offers update checks once releases are set up.
 - A welcome window walks you through allowing Input Monitoring and Accessibility.
 - Signed updates through Sparkle, which you can turn off in Settings.

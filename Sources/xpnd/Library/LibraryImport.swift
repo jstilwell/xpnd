@@ -3,7 +3,7 @@ import Foundation
 enum ConflictChoice: Sendable { case skip, replace }
 
 struct RiskyAction: Hashable, Sendable {
-    enum Kind: Sendable { case shell, openApp, runShortcut }
+    enum Kind: Sendable { case shell, openApp, runShortcut, shortcut }
     let snippetName: String
     let keyword: String
     let kind: Kind
@@ -58,6 +58,8 @@ enum LibraryImport {
                     if let r = target.range(of: #":\d+$"#, options: .regularExpression) { target.removeSubrange(r) }
                 case "openApp": kind = .openApp
                 case "runShortcut": kind = .runShortcut
+                // Keys sent to whatever is in front can open Terminal and type a command.
+                case "shortcut": kind = .shortcut
                 default: continue
                 }
                 found.append(RiskyAction(snippetName: snippet.name, keyword: snippet.keyword, kind: kind, target: target))

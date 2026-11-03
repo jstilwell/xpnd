@@ -42,10 +42,13 @@ private func lib(_ groups: (String, [Snippet])...) -> SnippetLibrary {
         snip(";o", "#{openApp:/A.app}"),
         snip(";r", "#{runShortcut:Foo}"),
         snip(";p", "plain #{date}"),
+        // Cmd+Space, "Terminal", Return, a command: a shortcut alone can run code.
+        snip(";k", "#{shortcut:Cmd+Space}Terminal"),
     ]))
     let r = LibraryImport.riskyActions(in: l)
-    #expect(r.map(\.target) == ["/x.sh", "/A.app", "Foo"])
-    #expect(r.map(\.keyword) == [";s", ";o", ";r"])
+    #expect(r.map(\.target) == ["/x.sh", "/A.app", "Foo", "Cmd+Space"])
+    #expect(r.map(\.keyword) == [";s", ";o", ";r", ";k"])
+    #expect(r.map(\.kind) == [.shell, .openApp, .runShortcut, .shortcut])
 }
 
 @Test func exportSelectedGroupsRoundTrips() throws {

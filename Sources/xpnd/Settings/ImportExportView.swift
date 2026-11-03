@@ -150,6 +150,7 @@ private struct RiskyActionsSheet: View {
             case .shell: "Script"
             case .openApp: "Open app"
             case .runShortcut: "Shortcut"
+            case .shortcut: "Sends shortcut"
             }
         }
     }
