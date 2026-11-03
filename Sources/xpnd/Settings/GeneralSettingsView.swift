@@ -3,6 +3,7 @@ import SwiftUI
 
 struct GeneralSettingsView: View {
     @Bindable var settings: AppSettings
+    @Bindable var updates = Updates.shared
 
     var body: some View {
         Form {
@@ -10,6 +11,9 @@ struct GeneralSettingsView: View {
             LaunchAtLoginToggle()
             LabeledContent("Picker shortcut") {
                 ShortcutRecorder(shortcut: $settings.pickerShortcut)
+            }
+            if updates.isAvailable {
+                Toggle("Check for updates automatically", isOn: $updates.checksAutomatically)
             }
         }
         .formStyle(.grouped)

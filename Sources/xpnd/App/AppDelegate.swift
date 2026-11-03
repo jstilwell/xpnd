@@ -54,6 +54,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.engine.resetBuffer() }
         }
 
+        // Updates don't depend on Accessibility, so a release that needs fixing can still be replaced.
+        Updates.shared.start()
+        followUpdates()
         permissions.onChange = { [weak self] in self?.permissionsChanged() }
         permissions.start()
         permissionsChanged()
@@ -168,6 +171,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func followUpdates() {
+        withObservationTracking { _ = (Updates.shared.isAvailable, Updates.shared.waitingVersion) } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.rebuildMenu()
+                self?.followUpdates()
+            }
+        }
+    }
+
     /// Later tasks add their items here, above Quit.
     func rebuildMenu() {
         menu.removeAllItems()
@@ -181,6 +193,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
+        let updates = Updates.shared
+        if updates.isAvailable {
+            let item = NSMenuItem(
+                title: updates.waitingVersion.map { "Update to \($0)…" } ?? "Check for Updates…",
+                action: #selector(checkForUpdates), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
         if store.loadError != nil {
             // No action, so the menu shows it disabled.
             menu.addItem(NSMenuItem(title: "Snippets file has an error", action: nil, keyEquivalent: ""))
@@ -191,6 +211,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openPicker() {
         picker.toggle()
+    }
+
+    @objc private func checkForUpdates() {
+        Updates.shared.checkForUpdates()
     }
 
     @objc private func showSettings() {
