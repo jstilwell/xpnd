@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import xpnd
 
@@ -92,4 +93,14 @@ groups:
           - {name: G2, snippets: [{name: b, keyword: ";a", text: t}]}
         """)
     }
+}
+
+/// `bin/run.sh --test-snippets` installs this file; it must stay valid as the schema evolves.
+@Test func manualTestSnippetsDecode() throws {
+    let url = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Manual/test-snippets.yaml")
+    let lib = try SnippetYAML.decode(String(contentsOf: url, encoding: .utf8))
+    #expect(lib.activeSnippets.count == 10)
+    #expect(lib.snippet(keyword: ";sig")?.text == "Best,\nJesse")
 }

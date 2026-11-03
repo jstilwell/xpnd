@@ -1,0 +1,40 @@
+# Test snippets that ./bin/run.sh --test-snippets installs, pointing the script path at this folder.
+version: 1
+groups:
+  - name: Test
+    description: One snippet per feature, for trying xpnd by hand
+    snippets:
+      - name: Signature
+        keyword: ";sig"
+        text: "Best,\nJesse"
+      - name: Ticket reply (input form)
+        keyword: ";tix"
+        text: |
+          Hi #{input:Name},
+          Ticket #{input:Ticket #} is resolved as of #{dateTime:yyyy-MM-dd}.
+          #{cursor}
+      - name: Arrow (loose matching)
+        keyword: "==>"
+        matching: loose
+        text: "→"
+      - name: Tomorrow
+        keyword: ";tmrw"
+        text: "#{dateTime:+1d:EEEE, MMMM d}"
+      - name: Clipboard in brackets
+        keyword: ";cb"
+        text: "[#{clipboard}]"
+      - name: Nested and uppercased
+        keyword: ";loud"
+        text: "#{upper:;sig}"
+      - name: Script output
+        keyword: ";sh"
+        text: "#{shell:__MANUAL__/hello.sh}"
+      - name: Open Calculator
+        keyword: ";calc"
+        text: "#{openApp:/System/Applications/Calculator.app}"
+      - name: Keys (tab between fields)
+        keyword: ";tab"
+        text: "one#{key:tab}two"
+      - name: Missing combo (should fail and leave the keyword)
+        keyword: ";bad"
+        text: "#{combo:;nope}"
