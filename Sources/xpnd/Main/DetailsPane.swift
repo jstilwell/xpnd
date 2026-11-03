@@ -28,7 +28,7 @@ struct DetailsPane: View {
             } else { nothingSelected }
         case .snippetGroup(let id):
             if let group = editing.group(id) {
-                snippetChrome { SnippetGroupDetails(editing: editing, group: group, selection: $selection) }
+                snippetChrome { SnippetGroupDetails(editing: editing, group: group, connections: connections.library, selection: $selection) }
             } else { nothingSelected }
         case .snippet(let id):
             if let snippet = editing.snippet(id) {

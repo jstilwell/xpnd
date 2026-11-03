@@ -92,10 +92,10 @@ final class SnippetEditing {
         save(at: group) { $0.groups.remove(at: $1) }
     }
 
-    /// The new snippet's id, or nil if it wasn't saved.
-    func addSnippet(to group: SnippetGroup) -> Snippet.ID? {
-        let library = store.library
-        let keyword = (1...).lazy.map { $0 == 1 ? ";new" : ";new\($0)" }.first { library.keywordProblem($0, for: nil) == nil }!
+    /// The new snippet's id, or nil if it wasn't saved. Its keyword is free in both files.
+    func addSnippet(to group: SnippetGroup, connections: ConnectionLibrary) -> Snippet.ID? {
+        let namespace = KeywordNamespace(snippets: store.library, connections: connections)
+        let keyword = (1...).lazy.map { $0 == 1 ? ";new" : ";new\($0)" }.first { namespace.problem($0, for: nil) == nil }!
         let new = Snippet(name: "New Snippet", keyword: keyword, text: "")
         return save(at: group) { $0.groups[$1].snippets.append(new) } ? new.id : nil
     }
@@ -109,6 +109,7 @@ final class SnippetEditing {
 struct SnippetGroupDetails: View {
     let editing: SnippetEditing
     let group: SnippetGroup
+    let connections: ConnectionLibrary
     @Binding var selection: SidebarItem?
     @State private var confirmingDelete = false
 
@@ -119,7 +120,7 @@ struct SnippetGroupDetails: View {
             Toggle("Enabled", isOn: editing.groupBinding(group, \.enabled))
             HStack {
                 Button("Add Snippet", systemImage: "plus") {
-                    if let id = editing.addSnippet(to: group) { selection = .snippet(id) }
+                    if let id = editing.addSnippet(to: group, connections: connections) { selection = .snippet(id) }
                 }
                 Spacer()
                 Button("Delete Group…", systemImage: "minus", role: .destructive) {

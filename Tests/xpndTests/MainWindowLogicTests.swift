@@ -78,6 +78,18 @@ private struct TwoAccountProvider: CredentialProvider {
         await #expect(throws: CredentialError.invalidRef) { try await editing.pick(item, account: "acct") }
     }
 
+    /// The default ";new" mustn't take a string a connection already owns.
+    @MainActor @Test func newSnippetKeywordSkipsConnectionStrings() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let editing = SnippetEditing(store: SnippetStore(fileURL: directory.appending(path: "snippets.yaml")))
+        let groupID = try #require(editing.addGroup())
+        let group = try #require(editing.group(groupID))
+        let connections = ConnectionLibrary(folders: [ConnectionFolder(name: "f", connections: [Connection(name: "c", host: "h", activation: ";new")])])
+        let id = try #require(editing.addSnippet(to: group, connections: connections))
+        #expect(editing.snippet(id)?.keyword == ";new2")
+    }
+
     @Test func plurals() {
         #expect(EditorRules.count(1, "connection") == "1 connection")
         #expect(EditorRules.count(0, "folder") == "0 folders")
