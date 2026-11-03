@@ -1,12 +1,12 @@
 import AppKit
 
 enum LaunchError: Error, Equatable {
-    case appleScriptDenied, appleScriptFailed(String), appMissing(String), failed(String)
+    case appleScriptDenied, appleScriptFailed(String), appMissing(String), failed(String), badTemplate(String)
 
     var message: String {
         switch self {
         case .appleScriptDenied: "xpnd isn't allowed to control the terminal. Turn it on in System Settings → Privacy & Security → Automation."
-        case .appleScriptFailed(let message), .failed(let message): message
+        case .appleScriptFailed(let message), .failed(let message), .badTemplate(let message): message
         case .appMissing(let name): "\(name) isn't installed."
         }
     }
@@ -66,10 +66,17 @@ enum LaunchError: Error, Equatable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        process.environment = Self.launchEnvironment(ProcessInfo.processInfo.environment)
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         do { try process.run() } catch { throw .failed("The terminal command couldn't start.") }
+    }
+
+    /// A GUI app's PATH leaves out Homebrew, so `tmux new-window {command}` would exit 127 unseen.
+    nonisolated static func launchEnvironment(_ inherited: [String: String]) -> [String: String] {
+        let path = inherited["PATH"].flatMap { $0.isEmpty ? nil : $0 } ?? "/usr/bin:/bin:/usr/sbin:/sbin" // an empty entry would mean the working directory
+        return inherited.merging(["PATH": "/opt/homebrew/bin:/usr/local/bin:" + path]) { $1 }
     }
 
     nonisolated static func appleScriptError(_ stderr: String) -> LaunchError {

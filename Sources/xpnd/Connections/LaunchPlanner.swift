@@ -11,31 +11,71 @@ enum LaunchPlanner {
     static let openExecutable = "/usr/bin/open"
     private static let placeholder = "{command}"
 
-    static func plan(_ command: SSHCommand, frontBundleID: String?, settings: TerminalSettings) -> LaunchPlan {
+    static func plan(_ command: SSHCommand, frontBundleID: String?, settings: TerminalSettings) throws(LaunchError) -> LaunchPlan {
         let line = command.shellLine
         if let frontBundleID, settings.terminalBundleIDs.contains(frontBundleID) { return .typeIntoFrontTerminal(line) }
         switch settings.whenNoTerminal {
         case .custom(let template):
-            return .run(executable: "/bin/sh", arguments: ["-c", fill(template, with: line)])
+            if let problem = templateProblem(template) { throw .badTemplate(problem) }
+            let script = completed(template).replacingOccurrences(of: placeholder, with: ShellQuote.quote(line), options: .literal)
+            return .run(executable: "/bin/sh", arguments: ["-c", script])
         case .preset(.terminal, _):
             return .appleScript(terminalScript(line))
         case .preset(.iterm2, let newTab):
             return .appleScript(iTermScript(line, newTab: newTab))
         case .preset(.ghostty, _):
-            // -e passes what follows as argv with no shell expansion, so the line stays one argument.
-            // Not `-e ssh …`: a Ghostty that joins -e's arguments with spaces would lose their quoting.
+            // The one /bin/sh -c besides templates: the line stays one argv entry, where `-e ssh …` loses its quoting on a Ghostty that joins -e's arguments.
             return .run(executable: openExecutable, arguments: ["-na", "Ghostty.app", "--args", "-e", "/bin/sh", "-c", line])
         }
     }
 
-    /// A host URLComponents can't represent gives an empty `vnc://`, so it can't change where the URL points.
-    static func vncURL(host: String, port: Int, user: String?) -> URL {
+    /// Refuses what can't be a real address, so a bad host fails here rather than opening nothing.
+    static func vncURL(host: String, port: Int, user: String?) throws(LaunchError) -> URL {
+        let invalid = LaunchError.failed("That VNC host isn't valid.")
+        let bare = host.hasPrefix("[") && host.hasSuffix("]") ? String(host.dropFirst().dropLast()) : host
+        var address = in6_addr()
+        let isIPv6 = !bare.utf8.contains(0) && inet_pton(AF_INET6, bare, &address) == 1
+        guard !host.isEmpty, (1...65535).contains(port), isIPv6 || bare == host else { throw invalid }
         var components = URLComponents()
         components.scheme = "vnc"
         components.user = user?.isEmpty == false ? user : nil
-        components.host = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
-        components.port = port < 0 ? nil : port // URLComponents traps on a negative port
-        return components.url ?? URL(string: "vnc://")!
+        components.host = isIPv6 ? "[\(bare)]" : host
+        components.port = port
+        guard let url = components.url else { throw invalid }
+        return url
+    }
+
+    /// Why a template can't be run, or nil. Plain substitution is only safe where `{command}` is
+    /// outside every quote: inside one, the word's own quotes flip the template's and unquote the value.
+    /// Scalars, not Characters, for the reason in `ShellQuote.quote`.
+    static func templateProblem(_ template: String) -> String? {
+        func has(_ text: String) -> Bool { template.range(of: text, options: .literal) != nil }
+        if ["`", "$(", "$'", "<<"].contains(where: has) {
+            return "Custom commands can't use backticks, $(…), $'…' or <<, because {command} can't stay quoted there."
+        }
+        // `${command}` would become `$'…'`, where backslashes are live.
+        if has("\\" + placeholder) || has("$" + placeholder) { return "{command} can't come right after a backslash or $." }
+        var rest = Substring(completed(template)).unicodeScalars
+        var open: Unicode.Scalar?
+        while let c = rest.popFirst() {
+            switch (open, c) {
+            case (nil, "'"), (nil, "\""):
+                open = c
+            case (nil, "\\"), ("\"", "\\"):
+                _ = rest.popFirst()
+            case (let quote?, _) where quote == c:
+                open = nil
+            default:
+                break
+            }
+            if open != nil, rest.starts(with: placeholder.unicodeScalars) { return "Leave {command} outside quotes: xpnd quotes it for you." }
+        }
+        return nil
+    }
+
+    /// The template as it will run: one without `{command}` gets it appended.
+    private static func completed(_ template: String) -> String {
+        template.range(of: placeholder, options: .literal) == nil ? template + " " + placeholder : template
     }
 
     /// The line as an AppleScript string literal. Replaces scalars, for the reason in `ShellQuote.quote`.
@@ -72,37 +112,5 @@ enum LaunchPlanner {
             tell current session of newWindow to write text \(text)
         end tell
         """
-    }
-
-    /// Puts `line` at each `{command}` as one quoted word. Where the template has a quote open, that
-    /// quote closes around the word and reopens, because a plain substitution would unquote the value.
-    /// shortcut: reads only `'`, `"` and `\`, so a placeholder inside `"$(…)"` isn't protected; a
-    /// template can't be refused here, so if that matters, have Settings reject such templates.
-    private static func fill(_ template: String, with line: String) -> String {
-        let source = template.contains(placeholder) ? template : template + " " + placeholder
-        var rest = Substring(source).unicodeScalars
-        var filled = String.UnicodeScalarView()
-        var open: Unicode.Scalar?
-        while let c = rest.first {
-            if rest.starts(with: placeholder.unicodeScalars) {
-                let edge = open.map { String($0) } ?? ""
-                filled.append(contentsOf: (edge + ShellQuote.quote(line) + edge).unicodeScalars)
-                rest = rest.dropFirst(placeholder.unicodeScalars.count)
-                continue
-            }
-            filled.append(c)
-            rest = rest.dropFirst()
-            switch (open, c) {
-            case (nil, "'"), (nil, "\""):
-                open = c
-            case (nil, "\\"), ("\"", "\\"): // the escaped scalar is copied as text, even a placeholder's `{`
-                if let next = rest.popFirst() { filled.append(next) }
-            case (let quote?, _) where quote == c:
-                open = nil
-            default:
-                break
-            }
-        }
-        return String(filled)
     }
 }
