@@ -50,11 +50,11 @@ enum LaunchPlanner {
     /// Scalars, not Characters, for the reason in `ShellQuote.quote`.
     static func templateProblem(_ template: String) -> String? {
         func has(_ text: String) -> Bool { template.range(of: text, options: .literal) != nil }
-        if ["`", "$(", "$'", "<<"].contains(where: has) {
-            return "Custom commands can't use backticks, $(…), $'…' or <<, because {command} can't stay quoted there."
+        // Each changes the quoting rules or expands a second time, which the scan below can't follow.
+        if ["`", "$(", "${", "$[", "$'", "<<"].contains(where: has) {
+            return "Custom commands can't use backticks, $(…), ${…}, $[…], $'…' or <<, because {command} can't stay quoted there."
         }
-        // `${command}` would become `$'…'`, where backslashes are live.
-        if has("\\" + placeholder) || has("$" + placeholder) { return "{command} can't come right after a backslash or $." }
+        if has("\\" + placeholder) { return "{command} can't come right after a backslash." }
         var rest = Substring(completed(template)).unicodeScalars
         var open: Unicode.Scalar?
         while let c = rest.popFirst() {

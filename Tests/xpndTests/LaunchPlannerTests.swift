@@ -142,6 +142,8 @@ private let hostileHosts = [
         "t '{command}'", #"t "{command}""#, #"t \{command}"#, #"t \\{command}"#, "t ${command}", #"t "$(echo {command})""#,
         "t $(echo {command})", "t `echo {command}`", "cat <<EOF", "t <<<{command}", "t $'{command}'", #"sh -c "sh -c '{command}'""#,
         "it's {command}", #"t " {command}"#, "t '", #"t ""#, #"t "it's {command}""#, "t '\u{301} {command}", "`\u{301} {command}",
+        #"printf %s "${X:-"{command}"}""#, #"sh -c "${WRAP:-"{command}"}""#, #""${X#"{command}}{command}x'"#, "t ${HOME} {command}",
+        "printf %s $[{command}]", "printf %s $[ {command} ]", #"printf %s $'\'' "' {command}""#,
     ])
     func unsafeTemplatesAreRefused(template: String) throws {
         let reason = try #require(LaunchPlanner.templateProblem(template))
@@ -150,7 +152,7 @@ private let hostileHosts = [
 
     @Test(arguments: [
         "t {command}", "t {command} {command}", "t x{command}y", "t", "", "t 'a b' {command}", #"t "it's" {command}"#,
-        #"t \' {command}"#, #"t "\"" {command}"#, "t $HOME {command}", "t ${HOME} {command}", "t {command} 'a'x",
+        #"t \' {command}"#, #"t "\"" {command}"#, "t $HOME {command}", "t {command} 'a'x",
     ])
     func safeTemplatesAreAccepted(template: String) {
         #expect(LaunchPlanner.templateProblem(template) == nil)
@@ -186,6 +188,10 @@ private let hostileHosts = [
     ])
     func vncURLRefusesBadHosts(host: String) {
         #expect(throws: LaunchError.failed("That VNC host isn't valid.")) { try LaunchPlanner.vncURL(host: host, port: 5900, user: "me") }
+    }
+
+    @Test func vncURLKeepsZoneID() throws {
+        #expect(try LaunchPlanner.vncURL(host: "fe80::1%en0", port: 5900, user: nil).absoluteString == "vnc://[fe80::1%25en0]:5900")
     }
 
     @Test(arguments: [-1, 0, 65536])
