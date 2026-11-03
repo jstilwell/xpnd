@@ -1,7 +1,7 @@
 <h1 align="center">xpnd</h1>
 
 <p align="center">
-  <strong>Text expansion for the Mac menu bar.</strong><br>
+  <strong>Text expansion and a connection manager for the Mac.</strong><br>
   Type a keyword in any app and it becomes your snippet: text with the date, the clipboard, or
   values you're asked for, and keywords that open an app or run a Shortcut. Type another and it
   opens an SSH or VNC connection.
@@ -22,13 +22,14 @@
 
 1. Download the DMG from the [latest release](https://github.com/jstilwell/xpnd/releases/latest) and drag xpnd to Applications. It needs macOS 14 or later.
 2. Open it. The welcome window asks for **Input Monitoring** (to notice a keyword as you type it) and **Accessibility** (to type the snippet in its place).
-3. Look for the icon in the menu bar. Open Settings to add snippets.
+3. The xpnd window opens: add snippets and connections in its sidebar. Closing it leaves xpnd running in the menu bar, where "Open xpnd…" brings it back.
 
 ## Using it
 
 - **Keywords**: type one and it's replaced. Keywords are case-sensitive. A strict snippet (the default) expands when the whole word matches; a loose one when what you typed ends with it. Space, Return, Tab, arrows, a click, or switching apps start the word over. If you switch apps while a snippet's form is open or its script runs, the expansion is cancelled rather than typed into the wrong app.
 - **Picker**: press Control-Option-Command-Space (changeable in Settings) to search snippets by keyword, name, or text, and press Return to insert one.
 - **Groups**: snippets sit in groups you can turn on or off together.
+- **Editing**: snippets are edited in the xpnd window. Its sidebar search filters snippets by keyword, name, or text, and connections by name, host, activation string, or folder.
 - **Import and export**: share snippets as YAML. Importing asks before it adds a snippet that runs a script, opens an app, runs a Shortcut, or sends a keyboard shortcut.
 
 ## Variables
@@ -57,7 +58,7 @@ If a value can't be worked out (a script fails, a form is cancelled), nothing ch
 
 ## Snippet file
 
-Snippets are kept in `~/Library/Application Support/xpnd/snippets.yaml`, the same format export writes. Edit it by hand and xpnd reloads it. Saving from the app rewrites the file and drops comments. If the file can't be read, xpnd leaves it alone and pauses expansion until it's fixed.
+Snippets are kept in `~/Library/Application Support/xpnd/snippets.yaml`, the same format export writes. Edit it by hand and xpnd reloads it. Saving from the app rewrites the file and drops comments. If the file can't be read, xpnd leaves it alone and pauses snippets until it's fixed; connection strings keep working.
 
 ```yaml
 version: 1
@@ -80,14 +81,14 @@ groups:
 
 Keep your SSH and VNC connections in folders and open them by typing, from the launcher, or from the xpnd window (it has a Dock icon; closing it leaves xpnd running in the menu bar).
 
-- **Activation strings**: give a connection a string such as `;aws` and typing it connects. A folder opens a numbered menu instead: press 1 to 9 to connect, the arrows and Return to pick, Esc to close. A folder named `prod` gets `;prod` unless you set another or none. Snippets and connections share one set of strings, and xpnd flags one used twice.
+- **Activation strings**: give a connection a string such as `;aws` and typing it connects. A folder opens a numbered menu instead: press 1 to 9 to connect, the arrows and Return to pick, Esc to close. A folder named `prod` gets `;prod` unless you set another or none. It gets none if `;prod` is taken, or would cut off a longer snippet keyword or a string you set, such as `;prod2`. Snippets and connections share one set of strings, and xpnd flags one used twice.
 - **Launcher**: press Control-Option-Command-C (changeable in Settings) to search connections and press Return to connect.
 - **Terminal**: if a terminal (Terminal, iTerm2, Ghostty, Warp, or others you add in Settings → Terminal) is in front, the command is typed into it. Otherwise xpnd opens a new Terminal window, or whatever you pick under "Open in" (iTerm2, Ghostty, or your own command with `{command}`, which is how to reach Warp). A VNC connection opens its `vnc://` address in your default viewer, Screen Sharing unless you changed it.
 - **Credentials**: a connection uses its own 1Password item, else its folder's (nearest first), else the global one from Settings → Password Manager. A sudo item falls back the same way, then to the login password. An SSH key is used through the 1Password SSH agent. A password is copied to the clipboard, marked concealed, and cleared after 30 seconds unless you've copied something else since. xpnd never types it. With "Auto-sudo" on, it offers the sudo password after the login one.
 - **1Password setup**: install the [1Password CLI](https://developer.1password.com/docs/cli/get-started/) (`op`), turn on Integrate with 1Password CLI in 1Password → Settings → Developer, then pick items in Settings → Password Manager or a connection's details. SSH keys also need the 1Password SSH agent turned on.
-- **Import and export**: Settings → Import/Export shares connections as YAML (1Password references only). Importing shows every connection, its jump host, and its SSH options before anything is added, because they run when you connect.
+- **Import and export**: Settings → Import/Export shares connections as YAML (1Password references only). Importing shows every connection, its jump host, and its SSH options before anything is added, because they run when you connect. With Replace, it also lists the existing connections it removes and those whose jump host moves to an imported one.
 
-Connections are kept in `~/Library/Application Support/xpnd/connections.yaml`, edited like the snippet file.
+Connections are kept in `~/Library/Application Support/xpnd/connections.yaml`, edited like the snippet file. If it can't be read, xpnd leaves it alone and pauses connection strings until it's fixed; snippets keep working.
 
 ```yaml
 version: 1
@@ -110,7 +111,7 @@ folders:
           autoSudo: true
 ```
 
-A jump host chosen from your saved connections must be an SSH connection whose login credential is a 1Password SSH key, or connecting shows an error; a typed jump host (`text:`) has no such requirement.
+A jump host chosen from your saved connections must be an SSH connection whose login credential is a 1Password SSH key, or connecting shows an error; a typed jump host (`text:`) has no such requirement. A chain of saved jump hosts can be at most 5 hops long.
 
 Credentials are 1Password references (`credential` and `sudoCredential` on a connection, folder, or the file) that Settings fills in for you.
 

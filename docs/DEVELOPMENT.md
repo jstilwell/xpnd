@@ -45,9 +45,14 @@ again after every build.
   lists `RiskyAction`s for confirmation.
 - `PickerPanel` is the search panel opened by the `GlobalShortcut` hotkey (Carbon); `PickerFilter`
   filters it. `AppSettings` keeps preferences in UserDefaults.
-- Settings (`SettingsWindowController`): `GeneralSettingsView`, `SnippetsSettingsView` with
-  `SnippetEditorView` and `TemplateTextView`, and `ImportExportView`. `ShortcutRecorder` records the
-  picker hotkey.
+- Settings (`SettingsWindowController`): `GeneralSettingsView`, `TerminalSettingsView`,
+  `PasswordManagerSettingsView`, and `ImportExportView`. `ShortcutRecorder` records the picker and
+  launcher hotkeys.
+- The main window (`MainWindowController`): `Sidebar` (with a search that filters snippets through
+  `PickerFilter` and connections through `ConnectionFilter`) and `DetailsPane`. Snippets are edited
+  through `SnippetEditing`, `SnippetGroupDetails`, and `SnippetDetails` (in
+  `Settings/SnippetsSettingsView.swift`) with `SnippetEditorView` and `TemplateTextView`; connections
+  through `ConnectionEditing` with `ConnectionEditorView` and `FolderEditorView`.
 - Connections: `ConnectionStore` owns the library and atomically saves `connections.yaml` through
   `ConnectionYAML` (an unreadable file is left untouched, like snippets). `KeywordNamespace` makes
   snippet keywords and connection and folder activation strings one namespace; `ExpansionEngine`
@@ -60,7 +65,10 @@ again after every build.
   URL), and `LiveLaunchExecutor` runs it. Only then does `OnePasswordProvider` fetch passwords, which go
   to `SecretClipboard` (concealed and transient markers, cleared after 30 s or on quit).
   `OnePasswordProvider` shells out to `op` through `ProcessRunner` (`item list`, `item get`, `account
-  list`, `whoami`) and caches public keys in `keys/`.
+  list`, `whoami`) and keeps nothing. Public keys are written to `keys/` by `ConnectionEditing` (when an
+  SSH key item is picked or refreshed) and by `ConnectionService` (when one is missing at connect),
+  both through `SSHCommandBuilder.writeKeyFile`. `SSHCommandBuilder` refuses jump-host chains longer
+  than `maxJumpHops` (5), because the quoting grows about fourfold per hop.
 - `xpnd.entitlements` has `com.apple.security.automation.apple-events` and `Info.plist` has
   `NSAppleEventsUsageDescription`: the hardened release build needs both to send AppleScript to Terminal
   and iTerm2. The 1Password CLI needs "Integrate with 1Password CLI" (Settings → Developer) to answer.
