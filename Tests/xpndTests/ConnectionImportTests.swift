@@ -63,7 +63,13 @@ struct ConnectionImportTests {
         let existing = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [conn("x", host: "old")])])
         let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [
             conn("1", host: "zeta"), conn("2", host: "alpha"), conn("3", host: "alpha")])])
-        #expect(ConnectionImport.hostsAdded(incoming: incoming, existing: existing) == ["alpha", "zeta"])
+        #expect(ConnectionImport.hostsAdded(incoming: incoming, existing: existing, choice: .replace) == ["alpha", "zeta"])
+        let clash = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [
+            conn("x", host: "old", act: ";k")])])
+        let inc2 = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [
+            conn("1", host: "skipped", act: ";k"), conn("2", host: "kept")])])
+        #expect(ConnectionImport.hostsAdded(incoming: inc2, existing: clash, choice: .skip) == ["kept"])
+        #expect(ConnectionImport.hostsAdded(incoming: inc2, existing: clash, choice: .replace) == ["kept", "skipped"])
     }
 
     @Test func exportSelectedFoldersRoundTrips() throws {
@@ -76,5 +82,42 @@ struct ConnectionImportTests {
         let nested = try ConnectionYAML.decode(ConnectionImport.export(lib, folders: [inner.id]))
         #expect(nested.folders == [inner])
         #expect(try ConnectionYAML.decode(ConnectionImport.export(lib, folders: nil)) == lib)
+    }
+
+    @Test func jumpsRepointedAfterRemoval() {
+        // Replace: existing connection evicted; an existing jump to it follows the replacement.
+        let old = conn("old", act: ";x")
+        let user = conn("user", jump: .connection(old.id))
+        let existing = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [old, user])])
+        let new = conn("new", act: ";x")
+        let r = ConnectionImport.merge(ConnectionLibrary(folders: [ConnectionFolder(name: "b", connections: [new])]),
+                                       into: existing, choice: .replace)
+        #expect(r.connection(user.id)?.jumpHost == .connection(new.id))
+
+        // Skip: dropped incoming connection; incoming jumps to it follow the kept existing one.
+        let dropped = conn("dropped", act: ";x")
+        let via = conn("via", jump: .connection(dropped.id))
+        let s = ConnectionImport.merge(
+            ConnectionLibrary(folders: [ConnectionFolder(name: "b", connections: [dropped, via])]),
+            into: existing, choice: .skip)
+        #expect(s.connection(via.id)?.jumpHost == .connection(old.id))
+    }
+
+    @Test func mergedFolderActivation() {
+        let victim = conn("v", act: ";f")
+        func lib(_ folderAct: String?) -> ConnectionLibrary {
+            ConnectionLibrary(folders: [ConnectionFolder(name: "a", activation: folderAct), ConnectionFolder(name: "o", connections: [victim])])
+        }
+        let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "a", activation: ";f")])
+        // No conflict with the folder itself having none: adopted.
+        let free = ConnectionImport.merge(incoming, into: ConnectionLibrary(folders: [ConnectionFolder(name: "a")]), choice: .skip)
+        #expect(free.folders[0].activation == ";f")
+        // Conflict with another owner.
+        let skipped = ConnectionImport.merge(incoming, into: lib(nil), choice: .skip)
+        #expect(skipped.folders[0].activation == nil)
+        #expect(skipped.folders[1].connections.count == 1)
+        let replaced = ConnectionImport.merge(incoming, into: lib(nil), choice: .replace)
+        #expect(replaced.folders[0].activation == ";f")
+        #expect(replaced.folders[1].connections.isEmpty)
     }
 }
