@@ -184,10 +184,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Later tasks add their items here, above Quit.
     func rebuildMenu() {
         menu.removeAllItems()
-        let toggle = NSMenuItem(title: "Expansion On", action: #selector(toggleExpansion), keyEquivalent: "")
+        // A file error pauses expansion (the error item says why), so the toggle greys out instead of
+        // offering a click that would really turn expansion off.
+        let toggle = NSMenuItem(
+            title: "Expansion On", action: store.loadError == nil ? #selector(toggleExpansion) : nil,
+            keyEquivalent: "")
         toggle.target = self
-        // Checked only while expanding actually works; a file error pauses it (the error item says why).
-        toggle.state = settings.expansionEnabled && store.loadError == nil ? .on : .off
+        toggle.state = settings.expansionEnabled ? .on : .off
         menu.addItem(toggle)
         let open = NSMenuItem(title: "Open Picker", action: #selector(openPicker), keyEquivalent: "")
         open.target = self
