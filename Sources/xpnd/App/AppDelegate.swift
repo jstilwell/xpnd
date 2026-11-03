@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var picker: PickerPanel!
     private let pickerHotKey = GlobalShortcut()
     private var welcome: WelcomeWindowController?
+    private var settingsWindow: SettingsWindowController?
+    /// The picker shortcut last registered, so a settings change re-registers only when it differs.
+    private var registeredPickerShortcut: Shortcut?
     /// Whether the tap has run since launch: losing access after that isn't a first launch.
     private var hasStarted = false
 
@@ -38,7 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.isEnabled = settings.expansionEnabled
         picker = PickerPanel(store: store, engine: engine)
         pickerHotKey.action = { [weak self] in self?.picker.toggle() }
-        if !pickerHotKey.register(settings.pickerShortcut) { hud.flash("Picker shortcut is in use by another app") }
+        registerPickerShortcut()
+        followSettings()
         tap = KeyEventTap(
             onKey: { [weak self] in self?.engine.handle($0) },
             onMouseDown: { [weak self] in self?.engine.resetBuffer() }
@@ -113,6 +117,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func registerPickerShortcut() {
+        registeredPickerShortcut = settings.pickerShortcut
+        if !pickerHotKey.register(settings.pickerShortcut) { hud.flash("Picker shortcut is in use by another app") }
+    }
+
+    /// Applies changes made in Settings (or the menu) at once.
+    private func followSettings() {
+        withObservationTracking { _ = (settings.expansionEnabled, settings.pickerShortcut) } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.engine.isEnabled = self.settings.expansionEnabled
+                self.engine.resetBuffer()
+                if self.settings.pickerShortcut != self.registeredPickerShortcut { self.registerPickerShortcut() }
+                self.rebuildMenu()
+                self.followSettings()
+            }
+        }
+    }
+
     /// Later tasks add their items here, above Quit.
     func rebuildMenu() {
         menu.removeAllItems()
@@ -123,6 +146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let open = NSMenuItem(title: "Open Picker", action: #selector(openPicker), keyEquivalent: "")
         open.target = self
         menu.addItem(open)
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         if store.loadError != nil {
             // No action, so the menu shows it disabled.
             menu.addItem(NSMenuItem(title: "Snippets file has an error", action: nil, keyEquivalent: ""))
@@ -135,10 +161,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         picker.toggle()
     }
 
+    @objc private func showSettings() {
+        if settingsWindow == nil { settingsWindow = SettingsWindowController(settings: settings, store: store) }
+        settingsWindow?.show()
+    }
+
+    /// `followSettings` applies it.
     @objc private func toggleExpansion() {
         settings.expansionEnabled.toggle()
-        engine.isEnabled = settings.expansionEnabled
-        engine.resetBuffer()
-        rebuildMenu()
     }
 }
