@@ -134,11 +134,13 @@ import Foundation
     private func copyPasswords(for connection: Connection, in library: ConnectionLibrary) async {
         let name = connection.name
         let login = library.loginCredential(for: connection.id)?.ref
-        let needsLogin = connection.type == .vnc ? login != nil : login?.hasPassword == true
+        let needsLogin = login?.hasPassword == true
         if needsLogin, let login {
             guard await copyPassword(login) else { return }
             notify("Password copied for \(name)")
         }
+        // Screen Sharing always asks for a password; an SSH login may well need none.
+        if connection.type == .vnc, !needsLogin { return notify("No password set for \(name)") }
         guard connection.type == .ssh, connection.autoSudo else { return }
         guard let sudo = library.sudoCredential(for: connection.id)?.ref, sudo.hasPassword else {
             return notify("No sudo password set for \(name)")

@@ -278,7 +278,15 @@ struct ConnectionServiceTests {
         let h = try Harness(mac)
         await h.connect(mac)
         #expect(h.executor.plans == [.openURL(URL(string: "vnc://you@mac.local:5901")!)])
-        #expect(h.log.events == ["execute"])
+        #expect(h.log.events == ["execute", "notify No password set for mac"])
+    }
+
+    /// An SSH key has no password to copy, so VNC opens and says so instead of failing in op.
+    @Test func vncWithKeyCredentialSaysNoPassword() async throws {
+        let mac = Connection(name: "mac", type: .vnc, host: "mac.local", credential: key)
+        let h = try Harness(mac)
+        await h.connect(mac)
+        #expect(h.log.events == ["execute", "notify No password set for mac"])
     }
 
     @Test func vncFromATerminalIsNotTyped() async throws {
