@@ -1,6 +1,63 @@
 import AppKit
 import SwiftUI
 
+/// What a key press means in the quick menu.
+enum QuickMenuKey: Equatable {
+    case pick(Int), up, down, choose, back, close
+
+    /// nil for anything else, and for any press with Command, Control or Option held.
+    static func key(keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags) -> QuickMenuKey? {
+        guard modifiers.isDisjoint(with: [.command, .control, .option]) else { return nil }
+        switch keyCode {
+        case 36, 76: return .choose // Return, keypad Enter
+        case 53: return .close
+        case 123: return .back
+        case 125: return .down
+        case 126: return .up
+        default:
+            guard characters.count == 1, let n = Int(characters), (1...9).contains(n) else { return nil }
+            return .pick(n)
+        }
+    }
+}
+
+/// The menu's state, driven by the panel's key handler rather than SwiftUI focus.
+@MainActor @Observable
+final class QuickMenuState {
+    var model: QuickMenuModel
+    var highlighted = 0
+    @ObservationIgnored let choose: (Connection.ID) -> Void
+    @ObservationIgnored let cancel: () -> Void
+
+    init(model: QuickMenuModel, choose: @escaping (Connection.ID) -> Void, cancel: @escaping () -> Void) {
+        self.model = model
+        self.choose = choose
+        self.cancel = cancel
+    }
+
+    func handle(_ key: QuickMenuKey) {
+        let rows = model.rows
+        switch key {
+        case .pick(let n): if let row = model.row(number: n) { pick(row) }
+        case .up: highlighted = max(highlighted - 1, 0)
+        case .down: highlighted = min(highlighted + 1, max(rows.count - 1, 0))
+        case .choose: if highlighted < rows.count { pick(rows[highlighted]) }
+        case .back: back()
+        case .close: cancel()
+        }
+    }
+
+    func pick(_ row: QuickMenuRow) {
+        if let id = model.choose(row) { choose(id) } else { highlighted = 0 }
+    }
+
+    func back() {
+        guard model.canGoBack else { return }
+        model.back()
+        highlighted = 0
+    }
+}
+
 /// The numbered menu a folder's activation string opens: 1–9 connect, arrows and Return pick, ← goes back, Esc closes.
 @MainActor
 final class QuickMenuPanel: LauncherPanel {
@@ -10,34 +67,37 @@ final class QuickMenuPanel: LauncherPanel {
         onOpenApp: @escaping () -> Void,
         connect: @escaping (Connection.ID, pid_t?) async -> Void
     ) {
-        present(QuickMenuView(
+        let state = QuickMenuState(
             model: QuickMenuModel(library: library, folder: folder),
             choose: { [weak self] id in
                 guard let self else { return }
                 close()
                 Task { await connect(id, await self.refocusPrevious()) }
             },
-            openApp: { [weak self] in self?.close(); onOpenApp() },
             cancel: { [weak self] in self?.close() }
-        ))
+        )
+        // Swallow every key so nothing beeps; the panel is key but has no text field.
+        onKeyDown = { event in
+            if let key = QuickMenuKey.key(
+                keyCode: event.keyCode, characters: event.charactersIgnoringModifiers ?? "", modifiers: event.modifierFlags
+            ) { state.handle(key) }
+            return true
+        }
+        present(QuickMenuView(state: state, openApp: { [weak self] in self?.close(); onOpenApp() }))
     }
 }
 
 private struct QuickMenuView: View {
-    @State var model: QuickMenuModel
-    let choose: (Connection.ID) -> Void
+    let state: QuickMenuState
     let openApp: () -> Void
-    let cancel: () -> Void
-    @State private var highlighted = 0
-    // No text field here, so the view itself takes focus to receive key presses.
-    @FocusState private var focused: Bool
 
     var body: some View {
+        let model = state.model
         let rows = model.rows
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 if model.canGoBack {
-                    Button { back() } label: { Image(systemName: "chevron.left") }
+                    Button { state.back() } label: { Image(systemName: "chevron.left") }
                         .buttonStyle(.plain).accessibilityLabel("Back")
                 }
                 Text(model.title).font(.headline)
@@ -54,8 +114,8 @@ private struct QuickMenuView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(Array(rows.enumerated()), id: \.element) { index, row in
-                            rowView(row, selected: index == highlighted)
-                                .onTapGesture { pick(row) }
+                            rowView(row, selected: index == state.highlighted)
+                                .onTapGesture { state.pick(row) }
                         }
                     }
                 }
@@ -63,20 +123,6 @@ private struct QuickMenuView: View {
         }
         .frame(width: 560, height: 360)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .focusable()
-        .focusEffectDisabled()
-        .focused($focused)
-        .onAppear { focused = true }
-        .onKeyPress(.downArrow) { highlighted = min(highlighted + 1, max(rows.count - 1, 0)); return .handled }
-        .onKeyPress(.upArrow) { highlighted = max(highlighted - 1, 0); return .handled }
-        .onKeyPress(.return) { if highlighted < rows.count { pick(rows[highlighted]) }; return .handled }
-        .onKeyPress(.leftArrow) { back(); return .handled }
-        .onKeyPress(.escape) { cancel(); return .handled }
-        .onKeyPress(characters: .decimalDigits, phases: .down) { press in
-            guard let n = Int(press.characters), let row = model.row(number: n) else { return .handled }
-            pick(row)
-            return .handled
-        }
     }
 
     private func rowView(_ row: QuickMenuRow, selected: Bool) -> some View {
@@ -100,14 +146,5 @@ private struct QuickMenuView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel([row.number.map { "\($0)" }, row.title, kind].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(.isButton)
-    }
-
-    private func pick(_ row: QuickMenuRow) {
-        if let id = model.choose(row) { choose(id) } else { highlighted = 0 }
-    }
-
-    private func back() {
-        model.back()
-        highlighted = 0
     }
 }

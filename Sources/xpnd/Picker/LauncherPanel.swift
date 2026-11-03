@@ -15,6 +15,11 @@ class LauncherPanel {
     /// The app in front when the panel opened; nil when that was xpnd itself.
     var previousApp: NSRunningApplication?
     var isVisible: Bool { panel.isVisible }
+    /// Sees key-downs before the panel's views; return true to swallow one. nil leaves keys to the views.
+    var onKeyDown: ((NSEvent) -> Bool)? {
+        get { panel.onKeyDown }
+        set { panel.onKeyDown = newValue }
+    }
 
     init() {
         panel.onResignKey = { [weak self] in self?.close() }
@@ -62,6 +67,12 @@ class LauncherPanel {
 private final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     var onResignKey: (() -> Void)?
+    var onKeyDown: ((NSEvent) -> Bool)?
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, onKeyDown?(event) == true { return }
+        super.sendEvent(event)
+    }
 
     // Clicking into another app doesn't deactivate xpnd (the panel is non-activating), so close here.
     override func resignKey() {
