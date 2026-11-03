@@ -1,0 +1,46 @@
+import Foundation
+
+struct ProviderAccount: Hashable, Sendable {
+    let id: String
+    let email: String
+    let url: String
+}
+
+enum ProviderStatus: Equatable, Sendable {
+    case notInstalled, notSignedIn(String), ready([ProviderAccount])
+}
+
+struct CredentialItem: Hashable, Sendable {
+    let id: String
+    let vaultID: String
+    let vaultName: String
+    let title: String
+    let category: CredentialCategory
+    let username: String?
+
+    func ref(account: String) -> CredentialRef {
+        CredentialRef(account: account, vault: vaultID, item: id, title: title, category: category, username: username)
+    }
+}
+
+enum CredentialError: Error, Equatable, Sendable {
+    case notInstalled, locked, notFound(String), noPassword(String), failed(String)
+
+    /// One line, never contains secret material.
+    var message: String {
+        switch self {
+        case .notInstalled: "1Password CLI (op) isn't installed."
+        case .locked: "1Password is locked or not signed in."
+        case .notFound(let title): "\"\(title)\" wasn't found in 1Password."
+        case .noPassword(let title): "\"\(title)\" has no password."
+        case .failed(let message): message
+        }
+    }
+}
+
+protocol CredentialProvider: Sendable {
+    func status() async -> ProviderStatus
+    func search(_ query: String, account: String) async throws(CredentialError) -> [CredentialItem]
+    func password(for ref: CredentialRef) async throws(CredentialError) -> String
+    func publicKey(for ref: CredentialRef) async throws(CredentialError) -> String
+}

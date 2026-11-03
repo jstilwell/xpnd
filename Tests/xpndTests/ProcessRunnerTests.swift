@@ -54,6 +54,15 @@ import Testing
         #expect(try await ScriptRunner.run(path: path, timeoutMs: 10_000).count == 1_000_000)
     }
 
+    @Test func largeStderrDoesNotDeadlockAndIsCaptured() async throws {
+        let (path, dir) = try script("head -c 1500000 /dev/zero | tr '\\0' e >&2\necho out")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let r = try await ProcessRunner.run(URL(fileURLWithPath: path), arguments: [], timeoutMs: 10_000)
+        #expect(r.status == 0)
+        #expect(r.stdout == "out\n")
+        #expect(r.stderr.count == 1_500_000)
+    }
+
     @Test func relativeScriptPathIsNotFound() async throws {
         // Resolves to /bin/echo against any working directory, so it would run if relative paths were allowed.
         let relative = String(repeating: "../", count: 30) + "bin/echo"
