@@ -5,9 +5,14 @@ import SwiftUI
 enum QuickMenuKey: Equatable {
     case pick(Int), up, down, choose, back, close
 
+    /// Whether the panel eats a key press; Command, Control and Option presses go on to the system.
+    static func swallows(modifiers: NSEvent.ModifierFlags) -> Bool {
+        modifiers.isDisjoint(with: [.command, .control, .option])
+    }
+
     /// nil for anything else, and for any press with Command, Control or Option held.
     static func key(keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags) -> QuickMenuKey? {
-        guard modifiers.isDisjoint(with: [.command, .control, .option]) else { return nil }
+        guard swallows(modifiers: modifiers) else { return nil }
         switch keyCode {
         case 36, 76: return .choose // Return, keypad Enter
         case 53: return .close
@@ -78,6 +83,7 @@ final class QuickMenuPanel: LauncherPanel {
         )
         // Swallow every key so nothing beeps; the panel is key but has no text field.
         onKeyDown = { event in
+            guard QuickMenuKey.swallows(modifiers: event.modifierFlags) else { return false }
             if let key = QuickMenuKey.key(
                 keyCode: event.keyCode, characters: event.charactersIgnoringModifiers ?? "", modifiers: event.modifierFlags
             ) { state.handle(key) }

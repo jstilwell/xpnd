@@ -28,4 +28,12 @@ struct QuickMenuKeyTests {
         #expect(key(18, "1", .option) == nil)
         #expect(key(0, "a") == nil)
     }
+
+    @Test func onlyUnmodifiedKeysAreSwallowed() {
+        for mods: NSEvent.ModifierFlags in [.command, .control, .option] {
+            #expect(!QuickMenuKey.swallows(modifiers: mods))
+        }
+        #expect(QuickMenuKey.swallows(modifiers: []))
+        #expect(QuickMenuKey.swallows(modifiers: .shift))
+    }
 }
