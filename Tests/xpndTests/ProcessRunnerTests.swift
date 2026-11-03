@@ -27,23 +27,25 @@ import Testing
     }
 
     @Test func timeoutKillsScript() async throws {
-        let (path, dir) = try script("exec sleep 30")
+        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+        defer { try? FileManager.default.removeItem(atPath: pidFile) }
+        // Background grandchild (not exec'd) so only a group kill can stop it.
+        let (path, dir) = try script("sleep 30 &\necho $! > '\(pidFile)'\nwait")
         defer { try? FileManager.default.removeItem(at: dir) }
         let start = ContinuousClock.now
         await #expect(throws: ExpansionError.scriptTimedOut(path: path)) {
-            try await ScriptRunner.run(path: path, timeoutMs: 200)
+            try await ScriptRunner.run(path: path, timeoutMs: 300)
         }
         #expect(ContinuousClock.now - start < .seconds(2))
-    }
-
-    @Test func timeoutWithForkedChildDoesNotHang() async throws {
-        let (path, dir) = try script("sleep 30; echo x")
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let start = ContinuousClock.now
-        await #expect(throws: ExpansionError.scriptTimedOut(path: path)) {
-            try await ScriptRunner.run(path: path, timeoutMs: 200)
+        let pid = pid_t(try String(contentsOfFile: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? -1
+        #expect(pid > 0)
+        var gone = false
+        for _ in 0..<50 {
+            if kill(pid, 0) == -1 && errno == ESRCH { gone = true; break }
+            try await Task.sleep(for: .milliseconds(10))
         }
-        #expect(ContinuousClock.now - start < .seconds(2))
+        if !gone { kill(pid, SIGKILL) }
+        #expect(gone)
     }
 
     @Test func largeOutputDoesNotDeadlock() async throws {

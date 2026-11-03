@@ -47,11 +47,12 @@ enum ProcessRunner {
         var timedOut = false
         if timeoutMs > 0, exited.wait(timeout: .now() + .milliseconds(timeoutMs)) == .timedOut {
             timedOut = true
-            process.terminate()
-            if exited.wait(timeout: .now() + 1) == .timedOut {
-                kill(process.processIdentifier, SIGKILL)
-                exited.wait()
-            }
+            // Foundation makes the child its own group leader; children that setsid/daemonize still escape.
+            let pid = process.processIdentifier
+            kill(-pid, SIGTERM)
+            let leaderGone = exited.wait(timeout: .now() + 1) == .success
+            kill(-pid, SIGKILL) // unconditional: the leader may be gone while group members linger
+            if !leaderGone { exited.wait() }
         } else if timeoutMs <= 0 {
             exited.wait()
         }
