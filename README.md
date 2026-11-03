@@ -119,7 +119,7 @@ Credentials are 1Password references (`credential` and `sudoCredential` on a con
 - xpnd keeps up to the last 128 characters you typed, in memory only, to match keywords. They're never stored, logged, or sent anywhere.
 - It puts your clipboard back after each expansion.
 - xpnd stores no passwords or keys, only references to 1Password items and the public key of an SSH key item (under `~/Library/Application Support/xpnd/keys`).
-- It runs `op` when you connect, pick or refresh a credential, or open Settings → Password Manager, never in the background. A password is copied concealed and cleared after 30 seconds (unless you've copied something else since), or when you quit.
+- It runs `op` when you connect, pick or refresh a credential, open Settings → Password Manager, or save a new `op` path there, never in the background. A password is copied concealed and cleared after 30 seconds (unless you've copied something else since), or when you quit.
 - Its only network use is the optional update check against GitHub, which you can turn off in Settings.
 
 ## Building
