@@ -7,7 +7,7 @@ extension AppDelegate {
         return ConnectionService(
             connections: connections,
             provider: { [unowned self] in self.provider },
-            executor: LiveLaunchExecutor(), sender: sender,
+            executor: LiveLaunchExecutor(), openTab: { _, _ in }, sender: sender,
             terminal: { AppSettings.shared.terminal },
             frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.bundleIdentifier) } },
             notify: { hud.flash($0) },
@@ -40,9 +40,10 @@ extension AppDelegate {
     }
 
     /// For the quick menu, the launcher and the main window. `pid`: the app to guard, nil for none.
-    func connectExclusively(_ id: Connection.ID, from pid: pid_t?, deleting: Int = 0, sudo: Bool = false) async {
+    func connectExclusively(_ id: Connection.ID, from pid: pid_t?, deleting: Int = 0, sudo: Bool = false,
+                           preferBuiltIn: Bool = false) async {
         let service = service
-        guard await engine.exclusive({ await service?.connect(id, typedInto: pid, deletingCharacters: deleting, sudo: sudo) }) else {
+        guard await engine.exclusive({ await service?.connect(id, typedInto: pid, deletingCharacters: deleting, sudo: sudo, preferBuiltIn: preferBuiltIn) }) else {
             return hud.flash("Another action is still running.")
         }
     }

@@ -121,6 +121,7 @@ private let sudo = ref("sudo", .password)
     var settings = TerminalSettings.standard
     /// Stands in for the wiring through `ExpansionEngine.whenIdle`.
     var onCopy: () -> Void = {}
+    var opened: [(SSHCommand, Connection)] = []
 
     init(library: ConnectionLibrary) throws {
         provider = FakeProvider(log: log)
@@ -140,7 +141,12 @@ private let sudo = ref("sudo", .password)
 
     func service() -> ConnectionService {
         ConnectionService(
-            connections: store, provider: { [provider] in provider }, executor: executor, sender: sender,
+            connections: store, provider: { [provider] in provider }, executor: executor,
+            openTab: { [unowned self] in
+                opened.append(($0, $1))
+                log.events.append("tab \($1.name)")
+            },
+            sender: sender,
             terminal: { [unowned self] in settings },
             frontmost: { [unowned self] in front },
             notify: { [log] in log.events.append("notify \($0)") },
@@ -151,9 +157,10 @@ private let sudo = ref("sudo", .password)
             prompt: prompt, keysDirectory: keys)
     }
 
-    func connect(_ connection: Connection, typedInto target: pid_t? = terminalPID, deleting: Int = 0, sudo: Bool = false) async {
+    func connect(_ connection: Connection, typedInto target: pid_t? = terminalPID, deleting: Int = 0, sudo: Bool = false,
+                 preferBuiltIn: Bool = false) async {
         let service = service()
-        await service.connect(connection.id, typedInto: target, deletingCharacters: deleting, sudo: sudo)
+        await service.connect(connection.id, typedInto: target, deletingCharacters: deleting, sudo: sudo, preferBuiltIn: preferBuiltIn)
         await service.passwordPhase?.value
     }
 
@@ -582,5 +589,32 @@ struct ConnectionServiceTests {
         let h = try Harness(aws)
         await h.connect(aws)
         #expect(!h.log.events.contains { $0.hasPrefix("notify") && $0.contains("secret-") })
+    }
+
+    @Test func preferBuiltInOpensATabAndStillCopiesThePassword() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login)
+        let h = try Harness(aws)
+        await h.connect(aws, typedInto: nil, preferBuiltIn: true)
+        #expect(h.opened.count == 1 && h.opened[0].1.id == aws.id && h.opened[0].0.arguments.first == "ssh")
+        #expect(h.executor.plans.isEmpty)
+        #expect(h.log.events == ["tab aws", "password login", "copy secret-login", "notify Password copied for aws"])
+    }
+
+    @Test func missingConnectionOpensNoTab() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login)
+        let h = try Harness(aws)
+        await h.service().connect(UUID(), typedInto: nil, preferBuiltIn: true)
+        #expect(h.opened.isEmpty && h.log.events == ["notify That connection no longer exists."])
+    }
+
+    @Test func cancelPasswordPhaseStopsIt() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login)
+        let h = try Harness(aws)
+        h.provider.held = ["login"]
+        let service = h.service()
+        await service.connect(aws.id, typedInto: nil, preferBuiltIn: true)
+        service.cancelPasswordPhase()
+        #expect(service.passwordPhase == nil)
+        #expect(!h.log.events.contains { $0.hasPrefix("copy") })
     }
 }

@@ -13,6 +13,7 @@ import Foundation
     /// Asked at each use, so a changed op path in Settings applies at once.
     private let provider: @MainActor () -> any CredentialProvider
     private let executor: any LaunchExecuting
+    private let openTab: @MainActor (SSHCommand, Connection) -> Void
     private let sender: any KeystrokeSending
     private let terminal: @MainActor () -> TerminalSettings
     private let frontmost: @MainActor () -> (pid: pid_t, bundleID: String?)?
@@ -25,7 +26,7 @@ import Foundation
 
     init(
         connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider, executor: any LaunchExecuting,
-        sender: any KeystrokeSending, terminal: @escaping @MainActor () -> TerminalSettings,
+        openTab: @escaping @MainActor (SSHCommand, Connection) -> Void, sender: any KeystrokeSending, terminal: @escaping @MainActor () -> TerminalSettings,
         frontmost: @escaping @MainActor () -> (pid: pid_t, bundleID: String?)?,
         notify: @escaping @MainActor (String) -> Void, copySecret: @escaping @MainActor (String) async -> Void,
         prompt: any PasswordPrompting, keysDirectory: URL
@@ -33,6 +34,7 @@ import Foundation
         self.connections = connections
         self.provider = provider
         self.executor = executor
+        self.openTab = openTab
         self.sender = sender
         self.terminal = terminal
         self.frontmost = frontmost
@@ -42,24 +44,29 @@ import Foundation
         self.keysDirectory = keysDirectory
     }
 
+    func cancelPasswordPhase() {
+        passwordPhase?.cancel()
+        passwordPhase = nil
+    }
+
     /// `target`: the app the action was started from, which must still be in front to act.
     /// nil means the user clicked in xpnd itself, so there is nothing to guard.
     /// `deletingCharacters`: a typed string still sitting in that app (a folder's), deleted right before acting.
     /// `sudo`: ⌘ was held on the pick, so this connect runs with auto-sudo on whatever the saved setting is.
-    func connect(_ id: Connection.ID, typedInto target: pid_t?, deletingCharacters: Int = 0, sudo: Bool = false) async {
-        passwordPhase?.cancel()
-        passwordPhase = nil
+    func connect(_ id: Connection.ID, typedInto target: pid_t?, deletingCharacters: Int = 0, sudo: Bool = false,
+                 preferBuiltIn: Bool = false) async {
+        cancelPasswordPhase()
         var library = connections.library // one snapshot, since the file can change across the awaits
         if sudo { library.editConnection(id) { $0.autoSudo = true } }
         guard let connection = library.connection(id) else { return notify("That connection no longer exists.") }
-        guard let plan = plan(for: connection, in: library),
+        guard let plan = plan(for: connection, in: library, preferBuiltIn: preferBuiltIn),
               await fetchMissingKeys(for: connection, in: library),
-              await launch(plan, into: target, deletingCharacters: deletingCharacters) else { return }
+              await launch(plan, for: connection, into: target, deletingCharacters: deletingCharacters) else { return }
         passwordPhase = Task { await copyPasswords(for: connection, in: library) }
     }
 
     /// Runs first, before any provider call: a connection that can't be built shouldn't ask for Touch ID.
-    private func plan(for connection: Connection, in library: ConnectionLibrary) -> LaunchPlan? {
+    private func plan(for connection: Connection, in library: ConnectionLibrary, preferBuiltIn: Bool) -> LaunchPlan? {
         do throws(LaunchError) {
             if connection.type == .vnc {
                 return .openURL(try LaunchPlanner.vncURL(
@@ -72,7 +79,7 @@ import Foundation
                 notify(error.message)
                 return nil
             }
-            return try LaunchPlanner.plan(command, frontBundleID: frontmost()?.bundleID, settings: terminal())
+            return try LaunchPlanner.plan(command, frontBundleID: frontmost()?.bundleID, settings: terminal(), preferBuiltIn: preferBuiltIn)
         } catch {
             notify(error.message)
             return nil
@@ -111,9 +118,13 @@ import Foundation
     }
 
     /// Checks the front app here, after any Touch ID prompt for a key has had its chance to move focus.
-    private func launch(_ plan: LaunchPlan, into target: pid_t?, deletingCharacters: Int) async -> Bool {
+    private func launch(_ plan: LaunchPlan, for connection: Connection, into target: pid_t?, deletingCharacters: Int) async -> Bool {
         guard stillInFront(target) else { return false }
         if deletingCharacters > 0 { await sender.backspace(times: deletingCharacters) }
+        if case .builtInTab(let command) = plan {
+            openTab(command, connection)
+            return true
+        }
         if case .typeIntoFrontTerminal(let line) = plan {
             await sender.paste(line)
             guard stillInFront(target) else { return false } // paste takes ~150 ms, and Return would go to whatever is in front
