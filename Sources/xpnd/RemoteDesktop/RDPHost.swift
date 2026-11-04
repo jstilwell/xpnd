@@ -45,11 +45,6 @@ import xpndRDP
         }
     }
 
-    isolated deinit {
-        retry?.cancel()
-        session?.stop()
-    }
-
     func terminate() {
         retry?.cancel()
         dismissSheet()
