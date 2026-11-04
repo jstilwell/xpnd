@@ -48,4 +48,21 @@ struct RDPOptionsTests {
         #expect(ConnectionType.rdp.defaultPort == 3389)
         #expect(Connection(name: "w", type: .rdp, host: "w").effectivePort == 3389)
     }
+
+    @Test func gatewayDecodesWithoutPort() throws {
+        let g = try JSONDecoder().decode(RDPOptions.Gateway.self, from: Data(#"{"host":"gw"}"#.utf8))
+        #expect(g == RDPOptions.Gateway(host: "gw", port: 443, credential: nil))
+        let yaml = """
+        folders:
+          - name: f
+            connections:
+              - name: w
+                type: rdp
+                host: win
+                rdp: { gateway: { host: gw } }
+        """
+        let lib = try ConnectionYAML.decode(yaml)
+        #expect(lib.allConnections.first?.rdp?.gateway?.port == 443)
+        #expect(try ConnectionYAML.decode(ConnectionYAML.encode(lib)) == lib)
+    }
 }

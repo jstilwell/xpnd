@@ -30,6 +30,16 @@ struct RDPOptions: Codable, Hashable, Sendable {
     var consoleSession: Bool?
 }
 
+/// In an extension to keep the memberwise init; `port` and `credential` may be omitted in hand-written YAML.
+extension RDPOptions.Gateway {
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        host = try c.decode(String.self, forKey: .host)
+        port = try c.decodeIfPresent(Int.self, forKey: .port) ?? 443
+        credential = try c.decodeIfPresent(CredentialRef.self, forKey: .credential)
+    }
+}
+
 /// Reads and writes as `fit` or `1280x720`, which stays hand-editable in YAML.
 extension RDPOptions.Display: Codable {
     init(from decoder: any Decoder) throws {
