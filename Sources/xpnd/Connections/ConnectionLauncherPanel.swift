@@ -8,20 +8,20 @@ final class ConnectionLauncherPanel: LauncherPanel {
     func toggle(
         library: ConnectionLibrary,
         onOpenApp: @escaping () -> Void,
-        connect: @escaping (Connection.ID, pid_t?) async -> Void
+        connect: @escaping (Connection.ID, pid_t?, _ sudo: Bool) async -> Void
     ) {
         if isVisible { close(); return }
         // A fresh view each time, so the query and highlight start clean.
         present(ConnectionLauncherView(
             library: library,
-            choose: { [weak self] id in
+            choose: { [weak self] id, sudo in
                 guard let self else { return }
                 close()
                 // Guarded against the app that was in front when the panel opened, not whatever is in front after refocusing.
                 let target = previousApp?.processIdentifier
                 Task {
                     await self.refocusPrevious()
-                    await connect(id, target)
+                    await connect(id, target, sudo)
                 }
             },
             cancel: { [weak self] in self?.close() },
@@ -32,16 +32,20 @@ final class ConnectionLauncherPanel: LauncherPanel {
 
 private struct ConnectionLauncherView: View {
     let library: ConnectionLibrary
-    let choose: (Connection.ID) -> Void
+    let choose: (Connection.ID, _ sudo: Bool) -> Void
     let cancel: () -> Void
     let openApp: () -> Void
+    /// ⌘ on Return, keypad Enter or a double-click connects with sudo.
+    private var commandHeld: Bool { NSEvent.modifierFlags.contains(.command) }
+    /// Return with ⌘ may reach both the field's submit and the key handler; the first one wins.
+    @State private var activated = false
     @State private var query = ""
     @State private var selected: UUID?
     @State private var expanded: Set<ConnectionFolder.ID>
     @FocusState private var focused: Bool
 
     init(
-        library: ConnectionLibrary, choose: @escaping (Connection.ID) -> Void,
+        library: ConnectionLibrary, choose: @escaping (Connection.ID, _ sudo: Bool) -> Void,
         cancel: @escaping () -> Void, openApp: @escaping () -> Void
     ) {
         self.library = library
@@ -84,7 +88,7 @@ private struct ConnectionLauncherView: View {
                                 }
                                 .tag(entry.connection.id)
                                 .contentShape(Rectangle())
-                                .onTapGesture(count: 2) { choose(entry.connection.id) }
+                                .onTapGesture(count: 2) { pick(entry.connection.id) }
                             }
                         } else {
                             ForEach(tree) { row in
@@ -106,6 +110,11 @@ private struct ConnectionLauncherView: View {
         .onKeyPress(.rightArrow) { searching ? .ignored : expand() }
         .onKeyPress(.leftArrow) { searching ? .ignored : collapseOrAscend() }
         .onKeyPress(.escape) { cancel(); return .handled }
+        .onKeyPress(keys: [.return], phases: .down) { press in
+            guard press.modifiers.contains(.command) else { return .ignored }
+            activate()
+            return .handled
+        }
     }
 
     private func treeRow(_ row: ConnectionTreeRow) -> some View {
@@ -126,12 +135,18 @@ private struct ConnectionLauncherView: View {
     }
 
     private func activate() {
-        if searching { if let id = current { choose(id) } } else if let row = tree.first(where: { $0.id == current }) { activate(row) }
+        if searching { if let id = current { pick(id) } } else if let row = tree.first(where: { $0.id == current }) { activate(row) }
+    }
+
+    private func pick(_ id: Connection.ID) {
+        guard !activated else { return }
+        activated = true
+        choose(id, commandHeld)
     }
 
     private func activate(_ row: ConnectionTreeRow) {
         switch row.kind {
-        case .connection(let c): choose(c.id)
+        case .connection(let c): pick(c.id)
         case .folder(let open): if open { expanded.remove(row.id) } else { expanded.insert(row.id) }
         }
     }

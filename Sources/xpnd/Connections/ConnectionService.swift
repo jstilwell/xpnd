@@ -45,10 +45,12 @@ import Foundation
     /// `target`: the app the action was started from, which must still be in front to act.
     /// nil means the user clicked in xpnd itself, so there is nothing to guard.
     /// `deletingCharacters`: a typed string still sitting in that app (a folder's), deleted right before acting.
-    func connect(_ id: Connection.ID, typedInto target: pid_t?, deletingCharacters: Int = 0) async {
+    /// `sudo`: ⌘ was held on the pick, so this connect runs with auto-sudo on whatever the saved setting is.
+    func connect(_ id: Connection.ID, typedInto target: pid_t?, deletingCharacters: Int = 0, sudo: Bool = false) async {
         passwordPhase?.cancel()
         passwordPhase = nil
-        let library = connections.library // one snapshot, since the file can change across the awaits
+        var library = connections.library // one snapshot, since the file can change across the awaits
+        if sudo { library.editConnection(id) { $0.autoSudo = true } }
         guard let connection = library.connection(id) else { return notify("That connection no longer exists.") }
         guard let plan = plan(for: connection, in: library),
               await fetchMissingKeys(for: connection, in: library),

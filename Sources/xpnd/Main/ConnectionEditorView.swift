@@ -63,7 +63,7 @@ struct ConnectionEditorView: View {
             .disabled(editing.readOnly)
             HStack {
                 Spacer()
-                Button("Connect") { editing.connect(connection.id) }
+                Button("Connect") { editing.connect(connection.id, false) }
             }
             .padding(8)
         }

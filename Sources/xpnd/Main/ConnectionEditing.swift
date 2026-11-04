@@ -295,12 +295,12 @@ final class ConnectionEditing {
     /// Settings' chosen account id, if any.
     private let preferredAccount: @MainActor () -> String?
     let keysDirectory: URL
-    let connect: (Connection.ID) -> Void
+    let connect: (Connection.ID, _ sudo: Bool) -> Void
     var saveProblem: String?
 
     init(store: ConnectionStore, snippets: SnippetStore, provider: @escaping @MainActor () -> any CredentialProvider,
          preferredAccount: @escaping @MainActor () -> String? = { nil }, keysDirectory: URL,
-         connect: @escaping (Connection.ID) -> Void) {
+         connect: @escaping (Connection.ID, _ sudo: Bool) -> Void) {
         self.store = store
         self.snippets = snippets
         self.currentProvider = provider

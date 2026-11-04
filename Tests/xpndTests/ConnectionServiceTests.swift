@@ -151,9 +151,9 @@ private let sudo = ref("sudo", .password)
             prompt: prompt, keysDirectory: keys)
     }
 
-    func connect(_ connection: Connection, typedInto target: pid_t? = terminalPID, deleting: Int = 0) async {
+    func connect(_ connection: Connection, typedInto target: pid_t? = terminalPID, deleting: Int = 0, sudo: Bool = false) async {
         let service = service()
-        await service.connect(connection.id, typedInto: target, deletingCharacters: deleting)
+        await service.connect(connection.id, typedInto: target, deletingCharacters: deleting, sudo: sudo)
         await service.passwordPhase?.value
     }
 
@@ -212,6 +212,22 @@ struct ConnectionServiceTests {
             "password login", "copy secret-login", "notify Password copied for aws",
             "offerSudo aws", "password sudo", "copy secret-sudo", "notify Sudo password copied",
         ])
+    }
+
+    /// ⌘ on a pick: sudo for this one connect, from the same cascade, without changing the saved setting.
+    @Test func commandKeySudoForcesSudoForThisConnect() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login, sudoCredential: sudo, autoSudo: false)
+        let h = try Harness(aws)
+        var withSudo = h.store.library
+        withSudo.editConnection(aws.id) { $0.autoSudo = true }
+        let line = try SSHCommandBuilder.build(aws.id, in: withSudo, keysDirectory: h.keys).shellLine
+        await h.connect(aws, sudo: true)
+        #expect(line.contains("sudo -i"))
+        #expect(h.log.events == ["paste \(line)", "key enter x1",
+            "password login", "copy secret-login", "notify Password copied for aws",
+            "offerSudo aws", "password sudo", "copy secret-sudo", "notify Sudo password copied",
+        ])
+        #expect(h.store.library.connection(aws.id)?.autoSudo == false)
     }
 
     @Test func declinedSudoOfferFetchesNothing() async throws {

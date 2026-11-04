@@ -13,6 +13,16 @@ struct QuickMenuKeyTests {
         #expect(key(29, "0") == nil)
     }
 
+    @Test func commandPicksWithSudo() {
+        #expect(key(18, "1", .command) == .pickSudo(1))
+        #expect(key(36, "", .command) == .chooseSudo)
+        #expect(key(76, "", .command) == .chooseSudo)
+        // Only ⌘ alone, and only picks: ⌘Q, ⌘↓ and ⌃⌘1 stay the system's.
+        #expect(key(12, "q", .command) == nil)
+        #expect(key(125, "", .command) == nil)
+        #expect(key(18, "1", [.command, .control]) == nil)
+    }
+
     @Test func navigation() {
         #expect(key(126) == .up)
         #expect(key(125) == .down)
@@ -23,7 +33,7 @@ struct QuickMenuKeyTests {
     }
 
     @Test func otherKeysAndModifiersAreNil() {
-        #expect(key(18, "1", .command) == nil)
+        // ⌘1 is a sudo pick (see commandPicksWithSudo); other modifiers still pass through.
         #expect(key(18, "1", .control) == nil)
         #expect(key(18, "1", .option) == nil)
         #expect(key(0, "a") == nil)
@@ -43,10 +53,13 @@ struct QuickMenuKeyTests {
         let list = (1...12).map { Connection(name: "c\($0)", host: "h") }
         let folder = ConnectionFolder(name: "prod", connections: list)
         var chosen: Connection.ID?
+        var sudo = false
         let state = QuickMenuState(model: QuickMenuModel(library: ConnectionLibrary(folders: [folder]), folder: folder.id),
-                                   choose: { chosen = $0 }, cancel: {})
+                                   choose: { chosen = $0; sudo = $1 }, cancel: {})
         for _ in 0..<15 { state.handle(.down) }
         #expect(state.highlighted == 11)
+        state.handle(.chooseSudo)
+        #expect(sudo)
         state.handle(.choose)
         #expect(chosen == list[11].id)
         for _ in 0..<15 { state.handle(.up) }

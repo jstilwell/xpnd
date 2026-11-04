@@ -59,7 +59,7 @@ struct Sidebar: View {
         .contextMenu(forSelectionType: SidebarItem.self) { items in
             menu(for: items)
         } primaryAction: { items in
-            if let id = Self.connection(in: items) { connections.connect(id) }
+            if let id = Self.connection(in: items) { connections.connect(id, NSEvent.modifierFlags.contains(.command)) }
         }
         .confirmationDialog(
             "Delete “\(confirmingDelete?.name ?? "")” and everything in it?",
@@ -249,7 +249,7 @@ struct Sidebar: View {
             }
             .disabled(readOnly)
         case .connection(let id)?:
-            Button("Connect") { connections.connect(id) }
+            Button("Connect") { connections.connect(id, false) }
             Group {
                 Button("Duplicate") { select(connections.duplicate(id).map(SidebarItem.connection), focus: .name, else: .connection(id)) }
                 moveMenu(.connection(id))
