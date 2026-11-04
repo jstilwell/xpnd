@@ -202,12 +202,12 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
 
         for value in hostileValues {
             let option = ShellQuote.quote(value)
-            let c = Connection(name: "a", host: value, port: 2222, username: value, credential: ref(value, .sshKey),
+            let c = Connection(name: "a", host: value.isEmpty ? "h" : value, port: 2222, username: value, credential: ref(value, .sshKey),
                                jumpHost: .text(value), sshOptions: "-o \(option)", autoSudo: true)
             let command = try build(c)
             #expect(command.arguments.contains(value))
             #expect(try ShellQuote.split(command.shellLine) == command.arguments)
-            #expect(try ShellQuote.split(build(Connection(name: "a", host: value)).shellLine) == ["ssh", value])
+            #expect(try ShellQuote.split(build(Connection(name: "a", host: value.isEmpty ? "h" : value)).shellLine) == ["ssh", value.isEmpty ? "h" : value])
         }
         #expect(throws: SSHCommandError.controlCharacter("a")) { try build(Connection(name: "a", host: "a\nb")) }
         // Not in controlValues: URL turns a NUL in the key item into a harmless literal %00.
@@ -232,7 +232,7 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
         for c in direct { #expect(throws: refused) { try build(c) } }
 
         let hops = [
-            Connection(name: "j", host: value, credential: key),
+            Connection(name: "j", host: value.isEmpty ? "h" : value, credential: key),
             Connection(name: "j", host: "j", username: value, credential: key),
             Connection(name: "j", host: "j", credential: ref(value, .sshKey)),
             Connection(name: "j", host: "j", credential: key, jumpHost: .text(value)),
@@ -249,7 +249,7 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
 
     @Test func hostileJumpValuesAreQuotedTwice() throws {
         for value in hostileValues where !value.isEmpty {
-            let jump = Connection(name: "j", host: value, username: value, credential: ref("k", .sshKey), sshOptions: "-o \(ShellQuote.quote(value))")
+            let jump = Connection(name: "j", host: value.isEmpty ? "h" : value, username: value, credential: ref("k", .sshKey), sshOptions: "-o \(ShellQuote.quote(value))")
             let c = Connection(name: "a", host: "host", jumpHost: .connection(jump.id))
             let command = try build(c, with: jump)
             let parts = try ShellQuote.split(try proxyCommand(command))
@@ -325,7 +325,7 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
     @Test(arguments: ["/bin/sh", "/bin/bash", "/bin/zsh"])
     func shellLineSurvivesRealShells(shell: String) async throws {
         for value in hostileValues {
-            let c = Connection(name: "a", host: value, username: value, sshOptions: "-o \(ShellQuote.quote(value))")
+            let c = Connection(name: "a", host: value.isEmpty ? "h" : value, username: value, sshOptions: "-o \(ShellQuote.quote(value))")
             let command = try build(c)
             let script = #"ssh() { printf '%s\0' ssh "$@"; }; "# + command.shellLine
             let result = try await ProcessRunner.run(URL(fileURLWithPath: shell), arguments: ["-c", script], timeoutMs: 10_000)
