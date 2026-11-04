@@ -106,7 +106,7 @@ folders:
       - name: web-01
         activation: ";web1"       # optional
         host: web-01.internal
-        port: 2222                # omit for 22 (SSH) or 5900 (VNC)
+        port: 2222                # omit for 22 (SSH), 5900 (VNC) or 3389 (RDP)
         username: deploy
         type: ssh                 # ssh | vnc | rdp
         advanced:
@@ -114,6 +114,15 @@ folders:
             connection: 6F1B0C52-3A41-4E5B-9D0A-1C2D3E4F5A01   # or text: user@host
           sshOptions: "-o ServerAliveInterval=30"
           autoSudo: true
+      - name: win-01
+        host: win-01.corp.example.com
+        type: rdp
+        username: jdoe            # or CORP\jdoe, or jdoe@corp.example.com
+        domain: CORP              # optional
+        rdp:                      # optional; unset keys use Settings → Remote Desktop
+          display: 1920x1080      # or fit
+          gateway:
+            host: gw.corp.example.com
 ```
 
 A jump host chosen from your saved connections must be an SSH connection whose login credential is a 1Password SSH key, or connecting shows an error; a typed jump host (`text:`) has no such requirement. A chain of saved jump hosts can be at most 5 hops long.

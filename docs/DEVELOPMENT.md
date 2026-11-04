@@ -102,7 +102,8 @@ again after every build.
   `TerminalHost` (`TerminalSession.kind` is `.remoteDesktop`), `RDPErrorText` words `ERRCONNECT_*`/`ERRINFO_*`,
   `RDPReconnectPolicy` decides auto-reconnect, and `RDPPrompts` and `RDPOptionLabels` serve the sheets
   and Settings → Remote Desktop. `ConnectionService` fetches the password before the `.rdpTab` plan opens
-  the tab; it goes into the session's memory and is zeroed on close, never the clipboard or a log.
+  the tab; it goes into the session's memory, never the clipboard or a log. On close xpnd's copies are
+  zeroed; FreeRDP frees its own.
   Snippets type as keystrokes in an RDP tab (`focusedSessionKind`).
 - `xpnd.entitlements` has `com.apple.security.automation.apple-events` and `Info.plist` has
   `NSAppleEventsUsageDescription`: the hardened release build needs both to send AppleScript to Terminal
