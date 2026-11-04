@@ -7,6 +7,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
         .package(url: "https://github.com/jpsim/Yams", exact: "6.2.2"),
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm", exact: "1.99.2"),
     ],
     targets: [
         .executableTarget(
@@ -14,6 +15,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Yams", package: "Yams"),
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
             // Sparkle.framework goes in the app's Contents/Frameworks.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
