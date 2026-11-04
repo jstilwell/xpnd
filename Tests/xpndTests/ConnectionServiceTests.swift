@@ -685,6 +685,16 @@ struct ConnectionServiceTests {
         #expect(try h.desktop().gateway == "secret-gw")
     }
 
+    @Test func rdpGatewayWithTheSameCredentialsGetsTheLoginPassword() async throws {
+        var win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
+        win.rdp = RDPOptions(gateway: .init(host: "gw.example"))
+        let h = try Harness(win)
+        await h.connect(win)
+        #expect(h.log.events == ["password login", "tab win (remoteDesktop)"])
+        let tab = try h.desktop()
+        #expect(tab.password == "secret-login" && tab.gateway == "secret-login")
+    }
+
     @Test func rdpGatewayFailureOpensNoTab() async throws {
         var win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
         win.rdp = RDPOptions(gateway: .init(host: "gw.example", credential: ref("gw", .login)))

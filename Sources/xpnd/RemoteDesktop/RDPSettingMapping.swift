@@ -6,9 +6,21 @@ struct RDPSetting: Equatable, Sendable {
     let value: String
 }
 
+/// FreeRDP splits `DOMAIN\user` only in its command-line and .rdp parsers (`freerdp_parse_username`);
+/// its core hands the username to NTLM as is, so xpnd splits it. `user@domain` stays whole, as there.
+enum RDPLogin {
+    /// At the first `\`; a non-empty `domain` wins over the prefix. An empty domain is nil.
+    static func split(username: String, domain: String?) -> (username: String, domain: String?) {
+        let domain = domain?.isEmpty == false ? domain : nil
+        guard let slash = username.firstIndex(of: "\\") else { return (username, domain) }
+        let prefix = String(username[..<slash])
+        return (String(username[username.index(after: slash)...]), domain ?? (prefix.isEmpty ? nil : prefix))
+    }
+}
+
 extension RDPSessionConfig {
     /// Everything but the password, in a stable order; `configPath` is xpnd's Application Support/xpnd/freerdp.
-    func freerdpSettings(configPath: String, viewPixelSize: (width: Int, height: Int), gatewayUsername: String? = nil) -> [RDPSetting] {
+    func freerdpSettings(configPath: String, viewPixelSize: (width: Int, height: Int)) -> [RDPSetting] {
         func s(_ name: String, _ value: String) -> RDPSetting { RDPSetting(name: "FreeRDP_" + name, value: value) }
         func s(_ name: String, _ value: Int) -> RDPSetting { s(name, String(value)) }
         func s(_ name: String, _ value: Bool) -> RDPSetting { s(name, value ? "TRUE" : "FALSE") }
@@ -48,12 +60,16 @@ extension RDPSessionConfig {
             s("SupportGraphicsPipeline", true), s("RemoteFxCodec", true), s("GfxProgressive", true),
             s("GfxH264", false), s("GfxAVC444", false),
         ]
-        if let username, !username.isEmpty { out.append(s("Username", username)) }
-        if let domain, !domain.isEmpty { out.append(s("Domain", domain)) }
+        let login = RDPLogin.split(username: username ?? "", domain: domain)
+        if !login.username.isEmpty { out.append(s("Username", login.username)) }
+        if let domain = login.domain { out.append(s("Domain", domain)) }
         if !alternateShell.isEmpty { out.append(s("AlternateShell", alternateShell)) }
         if let gateway {
             out += [s("GatewayHostname", gateway.host), s("GatewayPort", gateway.port), s("GatewayUseSameCredentials", sameCredentials)]
-            if !sameCredentials, let gatewayUsername { out.append(s("GatewayUsername", gatewayUsername)) }
+            // FreeRDP copies the login to the gateway only in its command-line post-processing, which xpnd doesn't run.
+            let gatewayLogin = gateway.credential.map { RDPLogin.split(username: $0.username ?? "", domain: nil) } ?? login
+            if !gatewayLogin.username.isEmpty { out.append(s("GatewayUsername", gatewayLogin.username)) }
+            if let domain = gatewayLogin.domain { out.append(s("GatewayDomain", domain)) }
         }
         return out
     }

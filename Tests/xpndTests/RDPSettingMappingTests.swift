@@ -9,8 +9,8 @@ import Testing
         return c
     }
 
-    private func value(_ c: RDPSessionConfig, _ name: String, size: (width: Int, height: Int) = (2880, 1800), gatewayUsername: String? = nil) -> String? {
-        c.freerdpSettings(configPath: "/tmp/freerdp", viewPixelSize: size, gatewayUsername: gatewayUsername).first { $0.name == name }?.value
+    private func value(_ c: RDPSessionConfig, _ name: String, size: (width: Int, height: Int) = (2880, 1800)) -> String? {
+        c.freerdpSettings(configPath: "/tmp/freerdp", viewPixelSize: size).first { $0.name == name }?.value
     }
 
     @Test func fitUsesViewSizeAndDynamicResolution() {
@@ -47,22 +47,47 @@ import Testing
         }
     }
 
-    @Test func gatewayOnOff() {
+    @Test func aBackslashLoginIsSplitIntoDomainAndUser() {
+        let c = config { $0.username = #"CORP\me"#; $0.domain = nil }
+        #expect(value(c, "FreeRDP_Username") == "me")
+        #expect(value(c, "FreeRDP_Domain") == "CORP")
+    }
+
+    @Test func anExplicitDomainWinsOverTheBackslash() {
+        let c = config { $0.username = #"OTHER\me"#; $0.domain = "CORP" }
+        #expect(value(c, "FreeRDP_Username") == "me")
+        #expect(value(c, "FreeRDP_Domain") == "CORP")
+    }
+
+    @Test func aUPNLoginStaysWhole() {
+        let c = config { $0.username = "me@corp.local"; $0.domain = nil }
+        #expect(value(c, "FreeRDP_Username") == "me@corp.local")
+        #expect(value(c, "FreeRDP_Domain") == nil)
+    }
+
+    @Test func gatewayWithTheSameCredentialsSendsTheLogin() {
         #expect(value(config(), "FreeRDP_GatewayEnabled") == "FALSE")
-        let c = config { $0.gateway = .init(host: "gw.example.com", port: 8443, credential: nil) }
+        #expect(value(config(), "FreeRDP_GatewayUsername") == nil)
+        let c = config { $0.username = #"CORP\me"#; $0.domain = nil; $0.gateway = .init(host: "gw.example.com", port: 8443, credential: nil) }
         #expect(value(c, "FreeRDP_GatewayEnabled") == "TRUE")
         #expect(value(c, "FreeRDP_GatewayHostname") == "gw.example.com")
         #expect(value(c, "FreeRDP_GatewayPort") == "8443")
         #expect(value(c, "FreeRDP_GatewayUseSameCredentials") == "TRUE")
+        #expect(value(c, "FreeRDP_GatewayUsername") == "me")
+        #expect(value(c, "FreeRDP_GatewayDomain") == "CORP")
     }
 
-    @Test func gatewayWithOwnCredential() {
-        let ref = CredentialRef(account: "a", vault: "v", item: "i", title: "t", category: .login)
+    @Test func gatewayWithOwnCredentialSendsItsLoginSplit() {
+        let ref = CredentialRef(account: "a", vault: "v", item: "i", title: "t", category: .login, username: #"GW\svc"#)
         let c = config { $0.gateway = .init(host: "gw", port: 443, credential: ref) }
-        #expect(value(c, "FreeRDP_GatewayUseSameCredentials", gatewayUsername: "gwuser") == "FALSE")
-        #expect(value(c, "FreeRDP_GatewayUsername", gatewayUsername: "gwuser") == "gwuser")
         #expect(value(c, "FreeRDP_GatewayUseSameCredentials") == "FALSE")
-        #expect(value(c, "FreeRDP_GatewayUsername") == nil)
+        #expect(value(c, "FreeRDP_GatewayUsername") == "svc")
+        #expect(value(c, "FreeRDP_GatewayDomain") == "GW")
+        #expect(value(c, "FreeRDP_Username") == "bob")
+        #expect(value(c, "FreeRDP_Domain") == "CORP")
+        let noUser = config { $0.gateway = .init(host: "gw", port: 443, credential: CredentialRef(account: "a", vault: "v", item: "i", title: "t", category: .login)) }
+        #expect(value(noUser, "FreeRDP_GatewayUsername") == nil)
+        #expect(value(noUser, "FreeRDP_GatewayDomain") == nil)
     }
 
     @Test func performancePresets() {

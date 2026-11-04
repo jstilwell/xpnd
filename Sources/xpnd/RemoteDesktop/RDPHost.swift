@@ -51,8 +51,7 @@ extension XPRDPSession: RDPSessionControlling {}
         let scale = window?.backingScaleFactor ?? 2
         let size = window?.contentLayoutRect.size ?? NSSize(width: 1000, height: 640)
         let settings = config.freerdpSettings(
-            configPath: Self.configPath, viewPixelSize: (Int(size.width * scale), Int(size.height * scale)),
-            gatewayUsername: config.gateway?.credential?.username)
+            configPath: Self.configPath, viewPixelSize: (Int(size.width * scale), Int(size.height * scale)))
         session = makeSession(settings, password, gatewayPassword, self)
         session.commandAsWindowsKey = config.commandAsWindowsKey
         if !session.start() {

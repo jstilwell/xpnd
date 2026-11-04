@@ -80,8 +80,9 @@ import Foundation
             if let login = library.loginCredential(for: connection.id)?.ref, login.hasPassword {
                 password = try await provider().password(for: login)
             }
-            if let gateway = config.gateway?.credential {
-                gatewayPassword = try await provider().password(for: gateway)
+            if let gateway = config.gateway {
+                // Same credentials: FreeRDP's core never copies the login password to the gateway itself.
+                gatewayPassword = if let ref = gateway.credential { try await provider().password(for: ref) } else { password }
             }
         } catch {
             return notify(error.message)
