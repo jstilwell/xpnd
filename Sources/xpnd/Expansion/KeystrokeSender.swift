@@ -103,19 +103,33 @@ enum SyntheticEvent {
 
     /// Presses the modifier keys around the key: Screen Sharing and VNC forward modifiers to the
     /// remote machine as their own key presses, not as flags on the key, so ⌘V alone arrived as "v".
+    /// Each modifier event keeps the flags `CGEvent` presets for its key, which include the device bit
+    /// saying it's the *left* Shift or ⌘: VNC has only Shift_L and Shift_R keysyms, and Screen Sharing
+    /// picks one by that bit, so a bare `.maskShift` sent nothing to the remote machine.
     private func post(_ keyCode: CGKeyCode, flags: CGEventFlags, times: Int) {
         let modifiers = Self.modifierKeys.filter { flags.contains($0.0) }.map(\.1)
-        for key in modifiers { send(key, down: true, flags: flags) }
-        for _ in 0..<max(times, 0) {
-            send(keyCode, down: true, flags: flags)
-            send(keyCode, down: false, flags: flags)
+        var held: CGEventFlags = []
+        var pressed: [(key: CGKeyCode, bits: CGEventFlags)] = []
+        for key in modifiers {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true) else { continue }
+            pressed.append((key, event.flags))
+            held.formUnion(event.flags)
+            send(event, flags: held)
         }
-        for key in modifiers.reversed() { send(key, down: false, flags: []) }
+        for _ in 0..<max(times, 0) {
+            for down in [true, false] {
+                guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down) else { continue }
+                send(event, flags: held)
+            }
+        }
+        for (key, bits) in pressed.reversed() {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false) else { continue }
+            held.subtract(bits)
+            send(event, flags: held)
+        }
     }
 
-    /// A modifier key code makes a `flagsChanged` event; any other, a key down or up.
-    private func send(_ keyCode: CGKeyCode, down: Bool, flags: CGEventFlags) {
-        guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down) else { return }
+    private func send(_ event: CGEvent, flags: CGEventFlags) {
         event.flags = flags
         event.setIntegerValueField(.eventSourceUserData, value: SyntheticEvent.marker)
         event.post(tap: .cghidEventTap)
