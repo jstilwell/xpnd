@@ -111,6 +111,15 @@ struct ConnectionImportTests {
         #expect(skipped.rejumped.isEmpty)
     }
 
+    /// A folder's string evicts an existing connection too, so the sheet must list Removed with nothing added.
+    @Test func folderOnlyReplaceStillRemoves() {
+        let existing = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [conn("old", act: ";x")])])
+        let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "b", activation: ";x")])
+        let preview = ConnectionImport.preview(incoming: incoming, existing: existing, choice: .replace)
+        #expect(preview.added.isEmpty)
+        #expect(preview.removed == ["old"])
+    }
+
     @Test func previewShowsHiddenCharacters() {
         #expect(ConnectionImport.visible("-o A=1\n-o ProxyCommand=x") == "-o A=1⏎-o ProxyCommand=x")
         #expect(ConnectionImport.visible("a\tb\u{1B}[2Kc\r\u{7F}") == "a⇥b␛[2Kc␍␡")

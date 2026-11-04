@@ -302,7 +302,9 @@ private struct ConnectionPreviewSheet: View {
             Text("These connections will be added").font(.headline)
             if preview.added.isEmpty {
                 Text("None: the file adds only folders.").foregroundStyle(.secondary)
-            } else {
+            }
+            // A folder's string evicts an existing connection too, so Removed shows even with nothing added.
+            if !preview.added.isEmpty || !preview.removed.isEmpty || !preview.rejumped.isEmpty {
                 // Blocks of wrapping text, not table cells, so a long or multi-line option is never cut off.
                 List {
                     ForEach(preview.added) { row in
@@ -316,7 +318,7 @@ private struct ConnectionPreviewSheet: View {
                         .textSelection(.enabled)
                         .padding(.vertical, 4)
                     }
-                    // Only an added connection can evict or re-point one, so these sit in the same list.
+                    // Existing connections the import changes sit in the same list as the added ones.
                     if !preview.removed.isEmpty {
                         Section("Removed") {
                             ForEach(Array(preview.removed.enumerated()), id: \.offset) { Text(ConnectionImport.visible($1)) }
