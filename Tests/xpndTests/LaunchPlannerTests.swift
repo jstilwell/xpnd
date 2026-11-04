@@ -29,6 +29,20 @@ private let hostileHosts = [
 ]
 
 @Suite struct LaunchPlannerTests {
+    @Test func preferBuiltInWinsEvenWithATerminalInFront() throws {
+        #expect(try LaunchPlanner.plan(line, frontBundleID: "com.apple.Terminal", settings: .standard, preferBuiltIn: true) == .builtInTab(line))
+    }
+
+    @Test func builtInIsTheNoTerminalChoice() throws {
+        #expect(try plan(line, .builtIn) == .builtInTab(line))
+        #expect(try LaunchPlanner.plan(line, frontBundleID: "com.apple.Terminal", settings: settings(.builtIn)) == .typeIntoFrontTerminal(line.shellLine))
+    }
+
+    @Test func builtInActionRoundTripsThroughJSON() throws {
+        let data = try JSONEncoder().encode(settings(.builtIn))
+        #expect(try JSONDecoder().decode(TerminalSettings.self, from: data).whenNoTerminal == .builtIn)
+    }
+
     @Test func terminalInFrontTypes() throws {
         for id in ["com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable"] {
             #expect(try LaunchPlanner.plan(line, frontBundleID: id, settings: .standard) == .typeIntoFrontTerminal(line.shellLine))

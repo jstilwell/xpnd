@@ -7,7 +7,7 @@ extension AppDelegate {
         return ConnectionService(
             connections: connections,
             provider: { [unowned self] in self.provider },
-            executor: LiveLaunchExecutor(), sender: sender,
+            executor: LiveLaunchExecutor(), openTab: { [weak self] command, connection in self?.openTab(command, for: connection) }, sender: sender,
             terminal: { AppSettings.shared.terminal },
             frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.bundleIdentifier) } },
             notify: { hud.flash($0) },
@@ -26,23 +26,25 @@ extension AppDelegate {
         switch target {
         case .connection(let id):
             guard library.connection(id) != nil else { return hud.flash("That connection no longer exists.") }
-            await service.connect(id, typedInto: pid)
+            await service.connect(id, typedInto: pid, preferBuiltIn: mainWindow?.terminalHasFocus == true)
         case .folder(let id):
             guard library.folder(id) != nil else { return hud.flash("That folder no longer exists.") }
+            let preferBuiltIn = mainWindow?.terminalHasFocus == true
             quickMenu.show(
                 folder: id, library: library,
                 onOpenApp: { [weak self] in self?.showMainWindow(selecting: .folder(id)) },
                 connect: { [weak self] connection, pid, sudo in
-                    await self?.connectExclusively(connection, from: pid, deleting: typed, sudo: sudo)
+                    await self?.connectExclusively(connection, from: pid, deleting: typed, sudo: sudo, preferBuiltIn: preferBuiltIn)
                 }
             )
         }
     }
 
     /// For the quick menu, the launcher and the main window. `pid`: the app to guard, nil for none.
-    func connectExclusively(_ id: Connection.ID, from pid: pid_t?, deleting: Int = 0, sudo: Bool = false) async {
+    func connectExclusively(_ id: Connection.ID, from pid: pid_t?, deleting: Int = 0, sudo: Bool = false,
+                           preferBuiltIn: Bool = false) async {
         let service = service
-        guard await engine.exclusive({ await service?.connect(id, typedInto: pid, deletingCharacters: deleting, sudo: sudo) }) else {
+        guard await engine.exclusive({ await service?.connect(id, typedInto: pid, deletingCharacters: deleting, sudo: sudo, preferBuiltIn: preferBuiltIn) }) else {
             return hud.flash("Another action is still running.")
         }
     }
@@ -55,11 +57,21 @@ extension AppDelegate {
                 keysDirectory: keysDirectory,
                 connect: { [weak self] id, sudo in
                     // Clicked in xpnd itself, so there's no other app to guard.
-                    Task { await self?.connectExclusively(id, from: nil, sudo: sudo) }
+                    Task { await self?.connectExclusively(id, from: nil, sudo: sudo, preferBuiltIn: true) }
                 },
+                duplicate: { [weak self] id in
+                    Task { await self?.connectExclusively(id, from: nil, preferBuiltIn: true) }
+                },
+                cancelPasswordPhase: { [weak self] in self?.service.cancelPasswordPhase() },
                 openSettings: { [weak self] in self?.showSettings() })
         }
         mainWindow?.show(selecting: item)
+    }
+
+    /// The window is shown first, so the new tab's terminal has a window to take focus in.
+    private func openTab(_ command: SSHCommand, for connection: Connection) {
+        showMainWindow(selecting: nil)
+        mainWindow?.openTab(command, for: connection, color: connections.library.color(for: .connection(connection.id))?.color)
     }
 
     @objc func openMainWindow() {

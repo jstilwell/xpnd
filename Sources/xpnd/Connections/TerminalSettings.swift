@@ -27,6 +27,7 @@ enum TerminalPreset: String, Codable, CaseIterable, Sendable {
 enum NoTerminalAction: Codable, Hashable, Sendable {
     case preset(TerminalPreset, newTab: Bool)
     case custom(template: String)
+    case builtIn
 }
 
 struct TerminalSettings: Codable, Hashable, Sendable {

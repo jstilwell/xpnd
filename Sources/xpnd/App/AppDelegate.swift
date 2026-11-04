@@ -68,15 +68,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         launcher = ConnectionLauncherPanel()
         launcherHotKey.action = { [weak self] in
             guard let self else { return }
+            let preferBuiltIn = mainWindow?.terminalHasFocus == true
             launcher.toggle(
                 library: connections.library, onOpenApp: { [weak self] in self?.showMainWindow(selecting: nil) },
-                connect: { [weak self] id, pid, sudo in await self?.connectExclusively(id, from: pid, sudo: sudo) }
+                connect: { [weak self] id, pid, sudo in
+                    await self?.connectExclusively(id, from: pid, sudo: sudo, preferBuiltIn: preferBuiltIn)
+                }
             )
         }
         registerLauncherShortcut()
         followSettings()
         tap = KeyEventTap(
-            onKey: { [weak self] in self?.engine.handle($0, targetsXpnd: $1) },
+            onKey: { [weak self] key, keyTargetsProcess in
+                let focused = self?.mainWindow?.terminalHasFocus ?? false
+                self?.engine.handle(key, targetsXpnd: ExpansionTargeting.targetsXpnd(keyTargetsProcess: keyTargetsProcess, terminalFocused: focused))
+            },
             onMouseDown: { [weak self] in self?.engine.resetBuffer() }
         )
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -99,6 +105,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A login-item launch stays in the menu bar; any other opens the window (and the Dock icon).
         if !Self.launchedAsLoginItem() { showMainWindow(selecting: nil) }
         log.info("xpnd launched")
+    }
+
+    /// A synchronous modal (no window passed), so the answer is known before returning.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let sessions = mainWindow?.sessions, sessions.liveCount > 0 else { return .terminateNow }
+        var confirmed = false
+        confirmTerminate(count: sessions.liveCount, in: nil) { confirmed = true }
+        guard confirmed else { return .terminateCancel }
+        sessions.terminateAll()
+        service.cancelPasswordPhase()
+        return .terminateNow
     }
 
     func applicationWillTerminate(_ notification: Notification) {

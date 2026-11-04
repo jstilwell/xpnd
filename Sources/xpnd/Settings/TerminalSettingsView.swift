@@ -15,10 +15,10 @@ struct TerminalSettingsView: View {
 
     /// A Picker tag: the custom template lives in `template`, not here.
     private enum Mode: Hashable {
-        case preset(TerminalPreset, newTab: Bool), custom
+        case preset(TerminalPreset, newTab: Bool), custom, builtIn
     }
 
-    private static let modes: [Mode] = TerminalPreset.allCases.flatMap { preset in
+    private static let modes: [Mode] = [.builtIn] + TerminalPreset.allCases.flatMap { preset in
         [Mode.preset(preset, newTab: false)] + (preset.supportsTabs ? [.preset(preset, newTab: true)] : [])
     } + [.custom]
 
@@ -68,6 +68,31 @@ struct TerminalSettingsView: View {
                         .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                 }
             }
+            Section {
+                Picker("Font", selection: $settings.builtInTerminal.fontName) {
+                    Text("System").tag(String?.none)
+                    ForEach(Self.monospacedFamilies, id: \.self) { Text($0).tag(String?.some($0)) }
+                }
+                Stepper("Size: \(Int(settings.builtInTerminal.fontSize))", value: $settings.builtInTerminal.fontSize, in: 9...24)
+                Picker("Colors", selection: $settings.builtInTerminal.scheme) {
+                    Text("System").tag(BuiltInTerminalSettings.Scheme.system)
+                    Text("Light").tag(BuiltInTerminalSettings.Scheme.light)
+                    Text("Dark").tag(BuiltInTerminalSettings.Scheme.dark)
+                }
+                Picker("Cursor", selection: $settings.builtInTerminal.cursor) {
+                    Text("Block").tag(BuiltInTerminalSettings.Cursor.block)
+                    Text("Bar").tag(BuiltInTerminalSettings.Cursor.bar)
+                    Text("Underline").tag(BuiltInTerminalSettings.Cursor.underline)
+                }
+                Toggle("Blink", isOn: $settings.builtInTerminal.cursorBlinks)
+                VStack(alignment: .leading) {
+                    Stepper("Scrollback lines: \(settings.builtInTerminal.scrollback.formatted())",
+                            value: $settings.builtInTerminal.scrollback, in: 1_000...100_000, step: 1_000)
+                    Text("Applies to new sessions.").font(.callout).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Built-in terminal")
+            }
         }
         .formStyle(.grouped)
         .frame(width: 460)
@@ -76,12 +101,18 @@ struct TerminalSettingsView: View {
         .onAppear {
             switch settings.terminal.whenNoTerminal {
             case .preset(let preset, let newTab): mode = .preset(preset, newTab: newTab && preset.supportsTabs)
+            case .builtIn: mode = .builtIn
             case .custom(let saved):
                 mode = .custom
                 template = saved
             }
         }
     }
+
+    /// Fixed-pitch family names, the values stored in `fontName`.
+    private static let monospacedFamilies: [String] = Set(
+        NSFontManager.shared.availableFontNames(with: .fixedPitchFontMask)?.compactMap { NSFont(name: $0, size: 12)?.familyName } ?? []
+    ).sorted()
 
     /// Empty counts as a problem, since it would run nothing but the command itself.
     private var templateProblem: String? {
@@ -94,6 +125,7 @@ struct TerminalSettingsView: View {
         let action: NoTerminalAction
         switch mode {
         case .preset(let preset, let newTab): action = .preset(preset, newTab: newTab)
+        case .builtIn: action = .builtIn
         case .custom:
             guard templateProblem == nil else { return }
             action = .custom(template: template)
@@ -104,6 +136,7 @@ struct TerminalSettingsView: View {
     private static func label(_ mode: Mode) -> String {
         switch mode {
         case .preset(let preset, let newTab): "\(preset.displayName), \(newTab ? "new tab" : "new window")"
+        case .builtIn: "xpnd (built-in)"
         case .custom: "Custom command"
         }
     }
