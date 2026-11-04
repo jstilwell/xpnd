@@ -52,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connections.seedIfFirstLaunch(defaults: .standard)
         connections.startWatching()
         let store = store, hud = hud
-        let sender = CGEventKeystrokeSender()
+        let sender = CGEventKeystrokeSender(focusedSessionKind: { [weak self] in self?.mainWindow?.focusedSessionKind })
         service = makeConnectionService(sender: sender)
         engine = ExpansionEngine(
             store: store, connections: connections, player: Player(sender: sender, actions: ActionRunner()),

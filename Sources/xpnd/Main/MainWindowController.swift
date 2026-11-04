@@ -83,6 +83,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return sessions.sessions.contains { responder.isDescendant(of: $0.host.view) }
     }
 
+    /// The kind of the session whose view holds the first responder, under the same key-window rule.
+    var focusedSessionKind: TerminalSession.Kind? {
+        guard let window, window.isKeyWindow, let responder = window.firstResponder as? NSView else { return nil }
+        return sessions.sessions.first { responder.isDescendant(of: $0.host.view) }?.kind
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard sessions.liveCount > 0 else { return true }
         confirmTerminate(count: sessions.liveCount, in: sender) { [weak self] in
