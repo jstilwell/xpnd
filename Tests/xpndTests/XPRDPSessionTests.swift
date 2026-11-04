@@ -59,6 +59,43 @@ struct XPRDPSessionTests {
         s.stop()
     }
 
+    // FreeRDP error codes: class << 16 | type (error.h); ERRINFO class 1, CONNECT class 2.
+    static let connectFailed: UInt32 = 2 << 16 | 0x06, tlsConnectFailed: UInt32 = 2 << 16 | 0x08
+    static let logoffByUser: UInt32 = 1 << 16 | 0x0C
+    // LogonErrorInfo values (settings_types.h); the type of a failure is an NTSTATUS.
+    static let badPassword: UInt32 = 0, statusLogonFailure: UInt32 = 0xC000_006D
+    static let sessionBusy: UInt32 = 0xFFFF_FFF8, sessionContinue: UInt32 = 0xFFFF_FFFE
+
+    @MainActor @Test func disconnectNamesFollowFreeRDPsErrors() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        #expect(s.disconnectErrorName(forCode: 0) == nil)
+        #expect(s.disconnectErrorName(forCode: Self.logoffByUser) == nil)
+        #expect(s.disconnectErrorName(forCode: Self.connectFailed) == "ERRCONNECT_CONNECT_FAILED")
+        #expect(s.disconnectErrorName(forCode: Self.tlsConnectFailed) == "ERRCONNECT_TLS_CONNECT_FAILED")
+    }
+
+    @MainActor @Test func aLogonFailureNamesAGenericDisconnect() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        s.noteLogonErrorData(Self.badPassword, type: Self.statusLogonFailure)
+        #expect(s.disconnectErrorName(forCode: 0) == "ERRCONNECT_LOGON_FAILURE")
+        #expect(s.disconnectErrorName(forCode: Self.connectFailed) == "ERRCONNECT_LOGON_FAILURE")
+        #expect(s.disconnectErrorName(forCode: Self.tlsConnectFailed) == "ERRCONNECT_TLS_CONNECT_FAILED")
+    }
+
+    @MainActor @Test func sessionMessagesAreNotLogonFailures() {
+        // For LOGON_MSG_* types `data` is a session id, and session 0 equals LOGON_FAILED_BAD_PASSWORD.
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        s.noteLogonErrorData(0, type: Self.sessionBusy)
+        #expect(s.disconnectErrorName(forCode: 0) == nil)
+    }
+
+    @MainActor @Test func continuingPastTheLogonScreenClearsTheFailure() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        s.noteLogonErrorData(Self.badPassword, type: Self.statusLogonFailure)
+        s.noteLogonErrorData(1, type: Self.sessionContinue)
+        #expect(s.disconnectErrorName(forCode: 0) == nil)
+    }
+
     @Test func clipboardFilterHidesConcealedItems() {
         #expect(!XPRDPClipboardFilter.shouldOfferPasteboardTypes(["public.utf8-plain-text", "org.nspasteboard.ConcealedType"]))
         #expect(!XPRDPClipboardFilter.shouldOfferPasteboardTypes(["com.jessestilwell.xpnd.secret"]))

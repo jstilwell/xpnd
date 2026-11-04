@@ -88,7 +88,6 @@ static void XPPostDisconnect(freerdp *);
 - (void)deliver:(void (^)(id<XPRDPSessionDelegate> delegate))call;
 - (nullable id)waitForAnswer:(void (^)(id<XPRDPSessionDelegate> delegate, void (^answer)(id _Nullable value)))ask;
 - (void)rememberSecret:(NSMutableData *)secret gateway:(BOOL)gateway;
-- (void)noteLogonFailure;
 - (void)setDisp:(nullable DispClientContext *)disp;
 - (void)didConnect;
 - (void)didDisconnectWithCode:(UINT32)code;
@@ -296,6 +295,19 @@ static BOOL XPSetSecret(rdpSettings *settings, FreeRDP_Settings_Keys_String key,
     return freerdp_settings_get_bool(_context->settings, (FreeRDP_Settings_Keys_Bool)key);
 }
 
+- (nullable NSString *)disconnectErrorNameForCode:(uint32_t)code {
+    [_lock lock];
+    const BOOL logonFailed = _logonFailed;
+    [_lock unlock];
+    // A server that rejects the password at its own logon screen ends with a generic error.
+    if (logonFailed && (code == FREERDP_ERROR_SUCCESS || code == FREERDP_ERROR_CONNECT_FAILED))
+        code = FREERDP_ERROR_CONNECT_LOGON_FAILURE;
+    // Logging off or disconnecting from Windows ends the session as the user asked, like closing the tab.
+    if (code == FREERDP_ERROR_SUCCESS || code == FREERDP_ERROR_LOGOFF_BY_USER || code == FREERDP_ERROR_RPC_INITIATED_DISCONNECT_BY_USER)
+        return nil;
+    return XPString(freerdp_get_last_error_name(code));
+}
+
 #pragma mark Talking to the delegate
 
 /// Any thread: runs `call` on main unless the session stopped or started again in between.
@@ -375,7 +387,9 @@ static DWORD XPAskAboutCertificate(freerdp *instance, const char *host, UINT16 p
             answer(@(value));
         }];
     }];
-    return trust.boolValue ? 2 : 0;  // 2: accept and store in ConfigPath's known hosts; 0: reject
+    // 1 accepts and stores in ConfigPath's known hosts (tls.c), so a later change shows as Changed;
+    // 2 would accept for this session only.
+    return trust.boolValue ? 1 : 0;
 }
 
 static DWORD XPVerifyCertificate(freerdp *instance, const char *host, UINT16 port, const char *commonName,
@@ -429,10 +443,7 @@ static BOOL XPAuthenticate(freerdp *instance, char **username, char **password, 
 }
 
 static int XPLogonErrorInfo(freerdp *instance, UINT32 data, UINT32 type) {
-    if (type == LOGON_FAILED_BAD_PASSWORD || type == LOGON_FAILED_UPDATE_PASSWORD || type == LOGON_FAILED_OTHER) {
-        XPRDPSession *s = XPSessionFor(instance->context);
-        [s noteLogonFailure];
-    }
+    [XPSessionFor(instance->context) noteLogonErrorData:data type:type];
     return 1;
 }
 
@@ -518,9 +529,15 @@ static void XPPostDisconnect(freerdp *instance) {
         _password = secret;
 }
 
-- (void)noteLogonFailure {
+/// FreeRDP's `data` is the ErrorNotificationData (LOGON_FAILED_*) and `type` the ErrorNotificationType
+/// (LOGON_MSG_* or an NTSTATUS); for LOGON_MSG_* types `data` is a session id, so 0 isn't BAD_PASSWORD.
+- (void)noteLogonErrorData:(uint32_t)data type:(uint32_t)type {
     [_lock lock];
-    _logonFailed = YES;
+    if (type == LOGON_MSG_SESSION_CONTINUE)
+        _logonFailed = NO;  // the user got past Windows' logon screen after all
+    else if (type < LOGON_MSG_SESSION_BUSY_OPTIONS &&
+             (data == LOGON_FAILED_BAD_PASSWORD || data == LOGON_FAILED_UPDATE_PASSWORD || data == LOGON_FAILED_OTHER))
+        _logonFailed = YES;
     [_lock unlock];
 }
 
@@ -537,6 +554,7 @@ static void XPPostDisconnect(freerdp *instance) {
 - (void)didConnect {
     [_lock lock];
     _connected = YES;
+    _logonFailed = NO;  // with NLA a failure comes before this; with TLS the server reports it afterwards
     [_lock unlock];
     [self deliver:^(id<XPRDPSessionDelegate> delegate) {
         [delegate sessionDidConnect:self];
@@ -549,17 +567,10 @@ static void XPPostDisconnect(freerdp *instance) {
     _reported = YES;
     _connected = NO;
     _disp = NULL;
-    const BOOL logonFailed = _logonFailed;
     [_lock unlock];
     if (!first)
         return;
-    // A server that rejects the password at its own logon screen ends with a generic error.
-    if (logonFailed && (code == FREERDP_ERROR_SUCCESS || code == FREERDP_ERROR_CONNECT_FAILED))
-        code = FREERDP_ERROR_CONNECT_LOGON_FAILURE;
-    // Logging off or disconnecting from Windows ends the session as the user asked, like closing the tab.
-    NSString *name = nil;
-    if (code != FREERDP_ERROR_SUCCESS && code != FREERDP_ERROR_LOGOFF_BY_USER && code != FREERDP_ERROR_RPC_INITIATED_DISCONNECT_BY_USER)
-        name = XPString(freerdp_get_last_error_name(code));
+    NSString *name = [self disconnectErrorNameForCode:code];
     [self deliver:^(id<XPRDPSessionDelegate> delegate) {
         [delegate session:self didDisconnectWithErrorName:name];
     }];

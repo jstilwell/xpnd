@@ -69,6 +69,10 @@ NS_SWIFT_UI_ACTOR
 /// Test hooks: a setting by its `FreeRDP_<Name>`; nil / NO for an unknown name, another type, or no context.
 - (nullable NSString *)stringSettingNamed:(NSString *)name;
 - (BOOL)boolSettingNamed:(NSString *)name;
+/// Test hooks: what FreeRDP's LogonErrorInfo callback records (`data`, then `type`, in its order), and
+/// the name a disconnect with FreeRDP's last error `code` would report now.
+- (void)noteLogonErrorData:(uint32_t)data type:(uint32_t)type;
+- (nullable NSString *)disconnectErrorNameForCode:(uint32_t)code;
 @end
 
 NS_ASSUME_NONNULL_END
