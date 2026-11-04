@@ -46,6 +46,25 @@ import Testing
         #expect(sessions.selected == c)
     }
 
+    @Test func removingAnUnselectedTabKeepsTheSelection() {
+        open("a")
+        let b = open("b"), c = open("c")
+        sessions.selected = b
+        hosts.all[0].exit(0)
+        #expect(sessions.selected == b)
+        sessions.close(c)
+        #expect(sessions.sessions.map(\.id) == [b])
+        #expect(sessions.selected == b)
+    }
+
+    @Test func cleanExitOfSelectedLastTabSelectsPrevious() {
+        open("a")
+        let b = open("b"), c = open("c")
+        #expect(sessions.selected == c)
+        hosts.all[2].exit(0)
+        #expect(sessions.selected == b)
+    }
+
     @Test func lastCleanExitLeavesNoSelection() {
         open("a")
         hosts.all[0].exit(0)
