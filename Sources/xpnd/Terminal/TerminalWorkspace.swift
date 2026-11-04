@@ -16,7 +16,10 @@ struct TerminalWorkspace: View {
             Divider()
             if let session = sessions.selectedSession {
                 // Per-session ids, so switching tabs swaps the view and the new one takes the keyboard.
+                // A little room around the text; the margin matches the terminal's own background.
                 TerminalHostView(view: session.host.view).id(session.id)
+                    .padding(8)
+                    .background(Color(nsColor: settings.colors.background))
                 if case .ended(let status) = session.state {
                     endedBar(status, session)
                 }

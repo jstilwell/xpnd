@@ -32,7 +32,9 @@ struct ConnectionEditorView: View {
                         Text("SSH").tag(ConnectionType.ssh)
                         Text("VNC").tag(ConnectionType.vnc)
                     }
-                    TextField("Host", text: binding(\.host))
+                    field(problem: connection.host.trimmingCharacters(in: .whitespaces).isEmpty ? "A host is required." : nil) {
+                        TextField("Host", text: binding(\.host))
+                    }
                     field(problem: EditorRules.parsePort(portText, type: connection.type).problem) {
                         TextField("Port", text: Binding(get: { portText }, set: editPort), prompt: Text(String(connection.type.defaultPort)))
                     }
