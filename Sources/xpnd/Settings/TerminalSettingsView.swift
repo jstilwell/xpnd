@@ -68,6 +68,30 @@ struct TerminalSettingsView: View {
                         .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                 }
             }
+            Section {
+                Picker("Font", selection: $settings.builtInTerminal.fontName) {
+                    Text("System").tag(String?.none)
+                    ForEach(Self.monospacedFamilies, id: \.self) { Text($0).tag(String?.some($0)) }
+                }
+                Stepper("Size: \(Int(settings.builtInTerminal.fontSize))", value: $settings.builtInTerminal.fontSize, in: 9...24)
+                Picker("Colours", selection: $settings.builtInTerminal.scheme) {
+                    Text("System").tag(BuiltInTerminalSettings.Scheme.system)
+                    Text("Light").tag(BuiltInTerminalSettings.Scheme.light)
+                    Text("Dark").tag(BuiltInTerminalSettings.Scheme.dark)
+                }
+                Picker("Cursor", selection: $settings.builtInTerminal.cursor) {
+                    Text("Block").tag(BuiltInTerminalSettings.Cursor.block)
+                    Text("Bar").tag(BuiltInTerminalSettings.Cursor.bar)
+                    Text("Underline").tag(BuiltInTerminalSettings.Cursor.underline)
+                }
+                Toggle("Blink", isOn: $settings.builtInTerminal.cursorBlinks)
+                Stepper("Scrollback lines: \(settings.builtInTerminal.scrollback.formatted())",
+                        value: $settings.builtInTerminal.scrollback, in: 1_000...100_000, step: 1_000)
+            } header: {
+                Text("Built-in terminal")
+            } footer: {
+                Text("Applies to new sessions.").font(.callout).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .frame(width: 460)
@@ -83,6 +107,11 @@ struct TerminalSettingsView: View {
             }
         }
     }
+
+    /// Fixed-pitch family names, the values stored in `fontName`.
+    private static let monospacedFamilies: [String] = Set(
+        NSFontManager.shared.availableFontNames(with: .fixedPitchFontMask)?.compactMap { NSFont(name: $0, size: 12)?.familyName } ?? []
+    ).sorted()
 
     /// Empty counts as a problem, since it would run nothing but the command itself.
     private var templateProblem: String? {

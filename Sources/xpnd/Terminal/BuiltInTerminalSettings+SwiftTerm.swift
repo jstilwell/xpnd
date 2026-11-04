@@ -4,7 +4,7 @@ import SwiftTerm
 extension BuiltInTerminalSettings {
     var nsFont: NSFont {
         let size = CGFloat(fontSize)
-        return fontName.flatMap { NSFont(name: $0, size: size) } ?? .monospacedSystemFont(ofSize: size, weight: .regular)
+        return fontName.flatMap { NSFontManager.shared.font(withFamily: $0, traits: [], weight: 5, size: size) } ?? .monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
     var cursorStyle: CursorStyle {
