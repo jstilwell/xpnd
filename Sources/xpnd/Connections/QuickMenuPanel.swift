@@ -159,8 +159,7 @@ private struct QuickMenuView: View {
     private func rowView(_ row: QuickMenuRow, selected: Bool) -> some View {
         let symbol: String, kind: String
         switch row.kind {
-        case .connection(_, .ssh): (symbol, kind) = ("terminal", "ssh")
-        case .connection(_, .vnc): (symbol, kind) = ("display", "vnc")
+        case .connection(_, let type): (symbol, kind) = (type.symbol, type.rawValue)
         case .folder: (symbol, kind) = ("folder", "folder")
         }
         return HStack(spacing: 10) {

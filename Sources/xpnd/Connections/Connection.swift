@@ -1,9 +1,23 @@
 import Foundation
 
 enum ConnectionType: String, Codable, Sendable {
-    case ssh, vnc
+    case ssh, vnc, rdp
 
-    var defaultPort: Int { self == .ssh ? 22 : 5900 }
+    var defaultPort: Int {
+        switch self {
+        case .ssh: 22
+        case .vnc: 5900
+        case .rdp: 3389
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .ssh: "terminal"
+        case .vnc: "display"
+        case .rdp: "pc"
+        }
+    }
 }
 
 enum CredentialCategory: String, Codable, Sendable {
@@ -47,12 +61,16 @@ struct Connection: Identifiable, Hashable, Sendable {
     /// nil means the type's default port.
     var port: Int?
     var username: String?
+    /// RDP only: the Windows domain for `username`.
+    var domain: String?
     var activation: String?
     var credential: CredentialRef?
     var sudoCredential: CredentialRef?
     var jumpHost: JumpHost?
     var sshOptions = ""
     var autoSudo = false
+    /// RDP only; nil behaves as empty options.
+    var rdp: RDPOptions?
     /// nil inherits the nearest folder's.
     var color: ItemColor?
 

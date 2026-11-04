@@ -35,10 +35,12 @@ enum ConnectionYAML {
         var host: String
         var port: Int?
         var username: String?
+        var domain: String?
         var activation: String?
         var credential: CredentialRef?
         var sudoCredential: CredentialRef?
         var color: ItemColor?
+        var rdp: RDPOptions?
         var advanced: Advanced?
     }
 
@@ -88,9 +90,10 @@ enum ConnectionYAML {
                 }
                 return Connection(
                     id: c.id ?? UUID(), name: c.name, type: c.type ?? .ssh, host: c.host, port: c.port,
-                    username: c.username, activation: c.activation, credential: c.credential,
+                    username: c.username, domain: c.domain, activation: c.activation, credential: c.credential,
                     sudoCredential: c.sudoCredential, jumpHost: jump,
-                    sshOptions: c.advanced?.sshOptions ?? "", autoSudo: c.advanced?.autoSudo ?? false, color: c.color)
+                    sshOptions: c.advanced?.sshOptions ?? "", autoSudo: c.advanced?.autoSudo ?? false,
+                    rdp: c.rdp, color: c.color)
             },
             folders: (f.folders ?? []).map(model), color: f.color)
     }
@@ -110,8 +113,9 @@ enum ConnectionYAML {
                                         autoSudo: c.autoSudo ? true : nil)
                 let hasAdvanced = jump != nil || advanced.sshOptions != nil || c.autoSudo
                 return Item(id: c.id, name: c.name, type: c.type, host: c.host, port: c.port,
-                            username: c.username, activation: c.activation, credential: c.credential,
-                            sudoCredential: c.sudoCredential, color: c.color, advanced: hasAdvanced ? advanced : nil)
+                            username: c.username, domain: c.domain, activation: c.activation, credential: c.credential,
+                            sudoCredential: c.sudoCredential, color: c.color, rdp: c.rdp,
+                            advanced: hasAdvanced ? advanced : nil)
             },
             folders: f.folders.isEmpty ? nil : f.folders.map(dto))
     }

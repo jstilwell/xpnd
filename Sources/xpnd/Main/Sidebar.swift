@@ -427,7 +427,7 @@ private struct ConnectionNode {
         id = .connection(connection.id)
         title = connection.name
         detail = connection.activation.flatMap { $0.isEmpty ? nil : $0 }
-        symbol = connection.type == .ssh ? "terminal" : "display"
+        symbol = connection.type.symbol
         color = connection.color ?? inherited
     }
 }

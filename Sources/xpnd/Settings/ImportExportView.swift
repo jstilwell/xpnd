@@ -312,6 +312,7 @@ private struct ConnectionPreviewSheet: View {
                             Text(ConnectionImport.visible(row.name)).bold()
                             Text(ConnectionImport.visible(row.address)).font(.body.monospaced())
                             if let jump = row.jumpHost { field("Jump host", jump) }
+                            if let gateway = row.gateway { field("Gateway", gateway) }
                             if !row.sshOptions.isEmpty { field("SSH options", row.sshOptions) }
                         }
                         .fixedSize(horizontal: false, vertical: true)
