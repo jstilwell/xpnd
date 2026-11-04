@@ -28,7 +28,7 @@ enum SidebarItem: Hashable {
 }
 
 /// The main window's sidebar: the connection tree, then snippet groups as one-level folders.
-/// Double-clicking a connection (or Connect in its menu) connects. Searching filters both: the
+/// Double-clicking a connection (or Connect in its menu) connects; double-clicking a group opens or closes it. Searching filters both: the
 /// connections as a flat list, as the launcher shows them, and each group's snippets as the picker does.
 /// Rows drag (`draggable`, carrying `SidebarItem.dragText`): between rows to reorder or move into
 /// that list (`dropDestination` on the `ForEach`, which reports the index before the item is taken
@@ -59,7 +59,11 @@ struct Sidebar: View {
         .contextMenu(forSelectionType: SidebarItem.self) { items in
             menu(for: items)
         } primaryAction: { items in
-            if let id = Self.connection(in: items) { connections.connect(id, NSEvent.modifierFlags.contains(.command)) }
+            switch items.count == 1 ? items.first : nil {
+            case .connection(let id)?: connections.connect(id, NSEvent.modifierFlags.contains(.command))
+            case .snippetGroup(let id)?: expandedGroups.formSymmetricDifference([id])
+            default: break
+            }
         }
         .confirmationDialog(
             "Delete “\(confirmingDelete?.name ?? "")” and everything in it?",
@@ -318,11 +322,6 @@ struct Sidebar: View {
         } else {
             selection = item
         }
-    }
-
-    private static func connection(in items: Set<SidebarItem>) -> Connection.ID? {
-        guard items.count == 1, case .connection(let id)? = items.first else { return nil }
-        return id
     }
 
 }
