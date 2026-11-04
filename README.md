@@ -79,13 +79,14 @@ groups:
 
 ## Connections
 
-Keep your SSH and VNC connections in folders and open them by typing, from the launcher, or from the xpnd window (it has a Dock icon; closing it leaves xpnd running in the menu bar).
+Keep your SSH, VNC and RDP connections in folders and open them by typing, from the launcher, or from the xpnd window (it has a Dock icon; closing it leaves xpnd running in the menu bar).
 
 - **Activation strings**: give a connection a string such as `;aws` and typing it connects. A folder opens a numbered menu instead: press 1 to 9 to connect, the arrows and Return to pick, Esc to close and keep what you typed. A folder named `prod` gets `;prod` unless you set another or none. It gets none if `;prod` is taken, or would cut off a longer snippet keyword or a string you set, such as `;prod2`. Snippets and connections share one set of strings, and xpnd flags one used twice.
 - **Colors**: give a folder or connection a color (red, orange, yellow, green, blue, purple or gray) in its Details. A connection without one takes the nearest folder's, and its name shows in that color in the sidebar, the folder menu and the launcher. In YAML it is `color: blue`.
 - **⌘ for sudo**: hold ⌘ while picking a connection in a folder menu (⌘1, ⌘Return or a ⌘-click), in the launcher (⌘Return or ⌘-double-click), or when double-clicking it in the window, and that one connect runs with auto-sudo on, using the connection's sudo credential, its folder's or the global one.
 - **Launcher**: press Control-Option-Command-C (changeable in Settings) to search connections and press Return to connect.
 - **Built-in terminal**: double-clicking a connection in the window (or Connect) opens it as a tab in xpnd's own terminal, on the right; duplicate or close a tab from its menu. Typed strings still go to your external terminal as below (a string typed inside a tab opens a new tab), and the choice of default is in Settings → Terminal (pick "xpnd (built-in)" to open tabs instead). Closing the window or quitting asks before it ends open sessions.
+- **Remote desktop (RDP)**: double-clicking an RDP connection opens the Windows desktop as a tab beside your terminals, using the FreeRDP library bundled in xpnd. The login (user, domain, password) comes from 1Password; the password goes straight to the session and is never copied or typed. It resizes with the tab, asks about unknown or changed certificates and bad passwords, and reconnects after a drop. Defaults are in Settings → Remote Desktop and can be overridden in a connection's RDP options. Snippets are typed into the tab as keystrokes.
 - **Terminal**: if a terminal (Terminal, iTerm2, Ghostty, Warp, or others you add in Settings → Terminal) is in front, the command is typed into it. Otherwise xpnd opens a new Terminal window, or whatever you pick under "Open in" (iTerm2, Ghostty, or your own command with `{command}`, which is how to reach Warp). A VNC connection opens its `vnc://` address in your default viewer, Screen Sharing unless you changed it.
 - **Credentials**: a connection uses its own 1Password item, else its folder's (nearest first), else the global one from Settings → Password Manager. A sudo item falls back the same way, then to the login password. An SSH key is used through the 1Password SSH agent. A password is copied to the clipboard, marked concealed, and cleared after 30 seconds unless you've copied something else since. xpnd never types it. With "Auto-sudo" on, it offers the sudo password after the login one.
 - **1Password setup**: install the [1Password CLI](https://developer.1password.com/docs/cli/get-started/) (`op`), turn on Integrate with 1Password CLI in 1Password → Settings → Developer, then pick items in Settings → Password Manager or a connection's details. SSH keys also need the 1Password SSH agent turned on.
@@ -107,7 +108,7 @@ folders:
         host: web-01.internal
         port: 2222                # omit for 22 (SSH) or 5900 (VNC)
         username: deploy
-        type: ssh                 # ssh | vnc
+        type: ssh                 # ssh | vnc | rdp
         advanced:
           jumpHost:
             connection: 6F1B0C52-3A41-4E5B-9D0A-1C2D3E4F5A01   # or text: user@host
@@ -129,4 +130,4 @@ Credentials are 1Password references (`credential` and `sudoCredential` on a con
 
 ## Building
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). xpnd is MIT licensed.
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Building needs Xcode and [CMake](https://cmake.org) (`brew install cmake` is fine). The first build runs `make freerdp`, which compiles FreeRDP and OpenSSL into `vendor/FreeRDP.xcframework` (about 5 minutes; later builds reuse it), and `make build` and `make test` run it when it is missing. xpnd is MIT licensed; the app bundles FreeRDP and OpenSSL (Apache 2.0), and their licences ship in the app's Resources.

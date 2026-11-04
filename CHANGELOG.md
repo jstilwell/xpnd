@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 - With more than one 1Password account, Settings → Password Manager asks which is yours instead of guessing the first, and the status check now asks 1Password for access rather than reporting "not signed in" on a working setup.
 
 ### Added
+- RDP connections: Windows desktops open as tabs beside SSH, with the domain login and password from 1Password, dynamic resize, certificate and password prompts, and auto-reconnect. Settings → Remote Desktop and each connection's RDP options set the display, clipboard and sound. FreeRDP (Apache 2.0) is bundled.
+- Snippets are typed into a Windows desktop tab as keystrokes.
 - Snippets typed in Screen Sharing, VNC and RDP clients, and VMs are typed as keystrokes on the remote machine instead of pasted; Settings → General can type them everywhere.
 - A “+” on each snippet group row and “New Snippet” in its right-click menu add a snippet to it; double-clicking a folder or group opens or closes it.
 - Hold ⌘ while picking a connection in a folder menu, the launcher, or when double-clicking it in the window, to connect with sudo just that once, using its sudo credential, its folder's or the global one.
