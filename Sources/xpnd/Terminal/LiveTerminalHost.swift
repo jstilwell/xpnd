@@ -61,9 +61,10 @@ import SwiftTerm
     }
 }
 
-/// Sits between a `LocalProcessTerminalView` and itself as its `terminalDelegate` to deny OSC 52 clipboard
-/// reads: the view answers them from the general pasteboard, which would send a copied password to the
-/// remote host. Everything else goes to the view unchanged. `terminalDelegate` is weak, so the host keeps this.
+/// Sits between a `LocalProcessTerminalView` and itself as its `terminalDelegate` to deny remote clipboard
+/// reads (OSC 52 and Kitty's OSC 5522): the view answers OSC 52 from the general pasteboard, which would
+/// send a copied password to the remote host. Everything else goes to the view unchanged.
+/// `terminalDelegate` is weak, so the host keeps this.
 @MainActor final class ClipboardReadGuard: TerminalViewDelegate {
     private let view: LocalProcessTerminalView
 
@@ -73,6 +74,20 @@ import SwiftTerm
     }
 
     func clipboardRead(source: TerminalView) -> Data? { nil }
+
+    // OSC 5522: no read capability, and the read callbacks never return nil, which means "use the pasteboard".
+    func kittyClipboardCapabilities(source: TerminalView) -> KittyClipboardCapabilities {
+        view.kittyClipboardCapabilities(source: source).subtracting([.standardRead, .primaryRead])
+    }
+    func kittyClipboardAvailableMimeTypes(source: TerminalView, location: KittyClipboardLocation) -> [String]? { [] }
+    func kittyClipboardRead(
+        source: TerminalView, location: KittyClipboardLocation, mimeType: String
+    ) -> KittyClipboardReadResult? { .denied }
+    func kittyClipboardRequestPermission(
+        source: TerminalView, request: KittyClipboardPermissionRequest
+    ) -> KittyClipboardPermissionResult {
+        request.direction == .read ? .deny : view.kittyClipboardRequestPermission(source: source, request: request)
+    }
 
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
         view.sizeChanged(source: source, newCols: newCols, newRows: newRows)
@@ -88,26 +103,10 @@ import SwiftTerm
     }
     func bell(source: TerminalView) { view.bell(source: source) }
     func clipboardCopy(source: TerminalView, content: Data) { view.clipboardCopy(source: source, content: content) }
-    func kittyClipboardCapabilities(source: TerminalView) -> KittyClipboardCapabilities {
-        view.kittyClipboardCapabilities(source: source)
-    }
-    func kittyClipboardAvailableMimeTypes(source: TerminalView, location: KittyClipboardLocation) -> [String]? {
-        view.kittyClipboardAvailableMimeTypes(source: source, location: location)
-    }
-    func kittyClipboardRead(
-        source: TerminalView, location: KittyClipboardLocation, mimeType: String
-    ) -> KittyClipboardReadResult? {
-        view.kittyClipboardRead(source: source, location: location, mimeType: mimeType)
-    }
     func kittyClipboardWrite(
         source: TerminalView, location: KittyClipboardLocation, content: KittyClipboardWriteContent
     ) -> KittyClipboardWriteResult {
         view.kittyClipboardWrite(source: source, location: location, content: content)
-    }
-    func kittyClipboardRequestPermission(
-        source: TerminalView, request: KittyClipboardPermissionRequest
-    ) -> KittyClipboardPermissionResult {
-        view.kittyClipboardRequestPermission(source: source, request: request)
     }
     func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {
         view.iTermContent(source: source, content: content)
