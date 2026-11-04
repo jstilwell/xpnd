@@ -72,10 +72,11 @@ again after every build.
   SSH key item is picked or refreshed) and by `ConnectionService` (when one is missing at connect),
   both through `SSHCommandBuilder.writeKeyFile`. `SSHCommandBuilder` refuses jump-host chains longer
   than `maxJumpHops` (5), because the quoting grows about fourfold per hop.
-- The built-in terminal (`Sources/xpnd/Terminal/`, the only code that imports SwiftTerm):
+- The built-in terminal (`Sources/xpnd/Terminal/`, the only app code that imports SwiftTerm):
   `TerminalSessions` owns the `TerminalSession`s, each backed by a `TerminalHost`; `LiveTerminalHost`
   wraps SwiftTerm's `LocalProcessTerminalView` and runs `/usr/bin/ssh` with the argv from
-  `SSHCommandBuilder`. `BuiltInTerminalSettings` (with `+SwiftTerm` mapping) holds font, colours,
+  `SSHCommandBuilder`; its `ClipboardReadGuard` is the view's `terminalDelegate` and denies the remote
+  host's clipboard reads (OSC 52, OSC 5522). `BuiltInTerminalSettings` (with `+SwiftTerm` mapping) holds font, colors,
   cursor and scrollback. `MainWindowController` owns `TerminalSessions` and shows `TerminalWorkspace`
   (tab bar, ended bar, shortcuts, `confirmTerminate`) when any exist, with the editor as an overlay card.
   `LaunchPlanner.plan(... preferBuiltIn:)` yields `LaunchPlan.builtInTab` (also the
