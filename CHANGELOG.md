@@ -15,6 +15,10 @@ All notable changes to this project will be documented in this file.
 - A “+” on each snippet group row and “New Snippet” in its right-click menu add a snippet to it; double-clicking a folder or group opens or closes it.
 - Hold ⌘ while picking a connection in a folder menu, the launcher, or when double-clicking it in the window, to connect with sudo just that once, using its sudo credential, its folder's or the global one.
 - Folders and connections can have a color from a small palette; a connection without one takes the nearest folder's, and the name shows in that color in the sidebar, the folder menu and the launcher.
+- A built-in terminal: double-clicking a connection (or Connect) opens it as a tab on the right of the main window, and a tab can be duplicated or closed. The editor opens over the tabs as a card.
+- "xpnd (built-in)" is a choice in Settings → Terminal for when no terminal is in front; typing a connection's string while a tab is focused opens a new tab.
+- Settings → Terminal → Built-in terminal sets the font, size, colors, cursor, blink and scrollback.
+- Closing the window or quitting asks before it terminates open terminal sessions.
 
 - Connections to SSH and VNC servers, kept in folders and in a YAML file you can edit by hand.
 - Typing a connection's activation string connects, and typing a folder's opens a numbered menu of its connections.

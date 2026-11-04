@@ -72,6 +72,15 @@ again after every build.
   SSH key item is picked or refreshed) and by `ConnectionService` (when one is missing at connect),
   both through `SSHCommandBuilder.writeKeyFile`. `SSHCommandBuilder` refuses jump-host chains longer
   than `maxJumpHops` (5), because the quoting grows about fourfold per hop.
+- The built-in terminal (`Sources/xpnd/Terminal/`, the only code that imports SwiftTerm):
+  `TerminalSessions` owns the `TerminalSession`s, each backed by a `TerminalHost`; `LiveTerminalHost`
+  wraps SwiftTerm's `LocalProcessTerminalView` and runs `/usr/bin/ssh` with the argv from
+  `SSHCommandBuilder`. `BuiltInTerminalSettings` (with `+SwiftTerm` mapping) holds font, colours,
+  cursor and scrollback. `MainWindowController` owns `TerminalSessions` and shows `TerminalWorkspace`
+  (tab bar, ended bar, shortcuts, `confirmTerminate`) when any exist, with the editor as an overlay card.
+  `LaunchPlanner.plan(... preferBuiltIn:)` yields `LaunchPlan.builtInTab` (also the
+  `NoTerminalAction.builtIn` choice), which `ConnectionService` hands to its `openTab` closure.
+  `ExpansionTargeting` lets snippets expand inside a focused tab, and typed activations there open a new tab.
 - `xpnd.entitlements` has `com.apple.security.automation.apple-events` and `Info.plist` has
   `NSAppleEventsUsageDescription`: the hardened release build needs both to send AppleScript to Terminal
   and iTerm2. The 1Password CLI needs "Integrate with 1Password CLI" (Settings → Developer) to answer.
