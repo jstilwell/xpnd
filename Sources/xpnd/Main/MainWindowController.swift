@@ -61,6 +61,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window?.showFromMenuBar()
     }
 
+    /// Opens a session's tab over any editor card, and shows the window.
+    func openTab(_ command: SSHCommand, for connection: Connection, color: ItemColor?) {
+        model.hideEditor()
+        show(selecting: nil)
+        sessions.open(command, for: connection, color: color)
+    }
+
     /// Whether the keyboard is in a session's terminal.
     var terminalHasFocus: Bool {
         guard let responder = window?.firstResponder as? NSView else { return false }
