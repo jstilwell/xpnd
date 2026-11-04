@@ -2,6 +2,7 @@ import Foundation
 
 enum SSHCommandError: Error, Equatable {
     case unbalancedQuote, jumpHostMissing, jumpHostCycle, jumpHostChainTooLong, jumpHostNeedsKey(String), notSSH, controlCharacter(String)
+    case emptyHost(String)
 
     var message: String {
         switch self {
@@ -11,6 +12,7 @@ enum SSHCommandError: Error, Equatable {
         case .jumpHostChainTooLong: "Jump-host chains can be at most \(SSHCommandBuilder.maxJumpHops) hops."
         case .jumpHostNeedsKey(let name): "The jump host “\(name)” must be an SSH connection that uses an SSH key."
         case .notSSH: "This isn't an SSH connection."
+        case .emptyHost(let name): "“\(name)” has no host."
         case .controlCharacter(let name): "“\(name)” has a control character in its settings, so xpnd won't type it."
         }
     }
@@ -42,6 +44,8 @@ enum SSHCommandBuilder {
     /// A connection that no longer exists also throws `.notSSH`: the error set has no closer case.
     static func build(_ id: Connection.ID, in library: ConnectionLibrary, keysDirectory: URL) throws(SSHCommandError) -> SSHCommand {
         guard let connection = library.connection(id), connection.type == .ssh else { throw .notSSH }
+        // ssh would otherwise report "Could not resolve hostname :", which doesn't name the connection.
+        guard !connection.host.trimmingCharacters(in: .whitespaces).isEmpty else { throw .emptyHost(connection.name) }
         var arguments = ["ssh"]
         arguments += try options(for: connection, visited: [id], library, keysDirectory)
         if connection.autoSudo { arguments.append("-t") }

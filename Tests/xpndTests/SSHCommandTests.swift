@@ -177,13 +177,16 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
     @Test func notSSH() {
         let c = Connection(name: "a", type: .vnc, host: "host")
         #expect(throws: SSHCommandError.notSSH) { try build(c) }
+        var blank = Connection(name: "aws-ec2", host: " ")
+        blank.username = "54.242.245.93"
+        #expect(throws: SSHCommandError.emptyHost("aws-ec2")) { try build(blank) }
         #expect(throws: SSHCommandError.notSSH) {
             try SSHCommandBuilder.build(UUID(), in: library([c]), keysDirectory: keys)
         }
     }
 
     @Test func messages() {
-        let errors: [SSHCommandError] = [.unbalancedQuote, .jumpHostMissing, .jumpHostCycle, .jumpHostNeedsKey("bastion"), .notSSH, .controlCharacter("aws"),
+        let errors: [SSHCommandError] = [.unbalancedQuote, .jumpHostMissing, .jumpHostCycle, .jumpHostNeedsKey("bastion"), .notSSH, .controlCharacter("aws"), .emptyHost("aws-ec2"),
                                        .jumpHostChainTooLong]
         #expect(errors.allSatisfy { !$0.message.isEmpty && !$0.message.contains("\n") })
         #expect(SSHCommandError.jumpHostNeedsKey("bastion").message.contains("“bastion”"))
