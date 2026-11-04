@@ -34,7 +34,7 @@ struct RDPFields: View {
             RDPOptionRow(value: $options.display, defaultValue: d?.display, describe: RDPOptionLabels.label(for:)) { DisplayPicker(display: $0) }
             toggle("Scale to fit window", \.scaleToFit, d?.scaleToFit)
             RDPOptionRow(value: $options.colorDepth, defaultValue: d?.colorDepth, describe: { "\($0)-bit" }) { depth in
-                Picker("Color depth", selection: depth) { ForEach([32, 24, 16], id: \.self) { Text("\($0)-bit").tag($0) } }
+                Picker("Color depth", selection: depth) { ForEach([32, 16], id: \.self) { Text("\($0)-bit").tag($0) } }
             }
             toggle("Retina resolution", \.retina, d?.retina)
         }
@@ -87,16 +87,14 @@ struct RDPFields: View {
 /// The display presets plus Custom… with width and height.
 private struct DisplayPicker: View {
     @Binding var display: RDPOptions.Display
-    @State private var custom = false
 
-    private var isCustom: Bool { custom || !RDPOptionLabels.presets.contains(display) }
+    /// Custom is a size that isn't a preset, so it can't go stale when the value is reset.
+    private var isCustom: Bool { !RDPOptionLabels.presets.contains(display) }
 
     var body: some View {
         Picker("Display", selection: Binding<RDPOptions.Display?>(get: { isCustom ? nil : display }, set: { choice in
-            if let choice { custom = false; display = choice } else {
-                custom = true
-                if case .fit = display { display = .fixed(width: 1600, height: 900) }
-            }
+            // Custom… seeds a non-preset size so its fields appear.
+            display = choice ?? .fixed(width: 1600, height: 900)
         })) {
             ForEach(RDPOptionLabels.presets, id: \.self) { Text(RDPOptionLabels.label(for: $0)).tag(Optional($0)) }
             Divider()
