@@ -43,6 +43,10 @@ struct ConnectionEditorView: View {
                         TextField("Activation string", text: Binding(get: { activationText }, set: editActivation), prompt: Text("None"))
                             .focused($focused, equals: .activation)
                     }
+                    ColorChoice(own: connection.color,
+                                inherited: library.path(of: connection.id).last.flatMap { library.color(for: .folder($0.id)) }) { color in
+                        editing.edit(connection: connection.id) { $0.color = color }
+                    }
                 }
                 Section("Credentials") {
                     CredentialRow(title: "Login", editing: editing, resolved: login, own: connection.credential) { ref in

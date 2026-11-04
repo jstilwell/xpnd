@@ -152,7 +152,7 @@ private struct QuickMenuView: View {
             Text(row.number.map(String.init) ?? "").font(.body.monospacedDigit()).foregroundStyle(.secondary)
                 .frame(width: 20, alignment: .trailing)
             Image(systemName: symbol).frame(width: 20).accessibilityHidden(true)
-            Text(row.title).lineLimit(1)
+            Text(row.title).lineLimit(1).foregroundStyle(row.color?.ui ?? Color.primary)
             Spacer()
             if kind != "folder" { Text(kind).font(.callout.monospaced()).foregroundStyle(.secondary) }
         }

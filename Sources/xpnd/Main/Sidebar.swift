@@ -86,12 +86,13 @@ struct Sidebar: View {
         return Section {
                 if searching {
                     ForEach(ConnectionFilter.filter(ConnectionFilter.entries(connections.library), query: search), id: \.connection.id) { entry in
-                        row(entry.connection.name, detail: entry.pathText, symbol: ConnectionNode(connection: entry.connection).symbol)
+                        sidebarRow(entry.connection.name, detail: entry.pathText, symbol: ConnectionNode(connection: entry.connection, inherited: nil).symbol,
+                                   color: entry.color)
                             .tag(SidebarItem.connection(entry.connection.id))
                     }
                 } else {
                     ForEach(connections.library.folders) { folder in
-                        FolderRows(folder: folder, namespace: namespace, drops: drops)
+                        FolderRows(folder: folder, namespace: namespace, drops: drops, inherited: nil)
                     }
                     .dropDestination(for: String.self) { texts, index in
                         for item in sidebarItems(texts) { drops.insert(item, nil, index, .folders) }
@@ -307,9 +308,6 @@ struct Sidebar: View {
         return id
     }
 
-    private func row(_ title: String, detail: String?, symbol: String) -> some View {
-        sidebarRow(title, detail: detail, symbol: symbol)
-    }
 }
 
 /// The sidebar items a drag carries; any other text is ignored.
@@ -317,9 +315,9 @@ private func sidebarItems(_ texts: [String]) -> [SidebarItem] {
     texts.compactMap(SidebarItem.init(dragText:))
 }
 
-private func sidebarRow(_ title: String, detail: String?, symbol: String) -> some View {
+private func sidebarRow(_ title: String, detail: String?, symbol: String, color: ItemColor? = nil) -> some View {
     HStack {
-        Label(title, systemImage: symbol).lineLimit(1)
+        Label(title, systemImage: symbol).lineLimit(1).foregroundStyle(color?.ui ?? Color.primary)
         if let detail {
             Text(detail).font(.callout.monospaced()).foregroundStyle(.secondary).lineLimit(1)
         }
@@ -341,7 +339,10 @@ private struct FolderRows: View {
     let folder: ConnectionFolder
     let namespace: KeywordNamespace
     let drops: SidebarDrops
+    /// The nearest ancestor's colour, for anything in here without its own.
+    let inherited: ItemColor?
     @State private var targeted = false
+    private var color: ItemColor? { folder.color ?? inherited }
 
     var body: some View {
         // An empty folder is a plain row: a DisclosureGroup would give it a pointless arrow.
@@ -350,8 +351,8 @@ private struct FolderRows: View {
         } else {
             DisclosureGroup {
                 ForEach(folder.connections) { connection in
-                    let node = ConnectionNode(connection: connection)
-                    sidebarRow(node.title, detail: node.detail, symbol: node.symbol)
+                    let node = ConnectionNode(connection: connection, inherited: color)
+                    sidebarRow(node.title, detail: node.detail, symbol: node.symbol, color: node.color)
                         .tag(node.id)
                         .draggable(node.id.dragText)
                 }
@@ -359,7 +360,7 @@ private struct FolderRows: View {
                     for item in sidebarItems(texts) { drops.insert(item, folder.id, index, .connections) }
                 }
                 ForEach(folder.folders) { child in
-                    FolderRows(folder: child, namespace: namespace, drops: drops)
+                    FolderRows(folder: child, namespace: namespace, drops: drops, inherited: color)
                 }
                 .dropDestination(for: String.self) { texts, index in
                     for item in sidebarItems(texts) { drops.insert(item, folder.id, index, .folders) }
@@ -372,7 +373,7 @@ private struct FolderRows: View {
 
     private var label: some View {
         let node = ConnectionNode(folder: folder, namespace)
-        return sidebarRow(node.title, detail: node.detail, symbol: node.symbol)
+        return sidebarRow(node.title, detail: node.detail, symbol: node.symbol, color: color)
             .tag(node.id)
             .draggable(node.id.dragText)
             .dropDestination(for: String.self) { texts, _ in
@@ -389,18 +390,21 @@ private struct ConnectionNode {
     let title: String
     let detail: String?
     let symbol: String
+    let color: ItemColor?
 
     init(folder: ConnectionFolder, _ namespace: KeywordNamespace) {
         id = .folder(folder.id)
         title = folder.name
         detail = namespace.effectiveActivation(ofFolder: folder.id).string
         symbol = "folder"
+        color = folder.color
     }
 
-    init(connection: Connection) {
+    init(connection: Connection, inherited: ItemColor?) {
         id = .connection(connection.id)
         title = connection.name
         detail = connection.activation.flatMap { $0.isEmpty ? nil : $0 }
         symbol = connection.type == .ssh ? "terminal" : "display"
+        color = connection.color ?? inherited
     }
 }

@@ -23,6 +23,7 @@ enum ConnectionYAML {
         var activation: String?
         var credential: CredentialRef?
         var sudoCredential: CredentialRef?
+        var color: ItemColor?
         var connections: [Item]?
         var folders: [Folder]?
     }
@@ -37,6 +38,7 @@ enum ConnectionYAML {
         var activation: String?
         var credential: CredentialRef?
         var sudoCredential: CredentialRef?
+        var color: ItemColor?
         var advanced: Advanced?
     }
 
@@ -88,15 +90,15 @@ enum ConnectionYAML {
                     id: c.id ?? UUID(), name: c.name, type: c.type ?? .ssh, host: c.host, port: c.port,
                     username: c.username, activation: c.activation, credential: c.credential,
                     sudoCredential: c.sudoCredential, jumpHost: jump,
-                    sshOptions: c.advanced?.sshOptions ?? "", autoSudo: c.advanced?.autoSudo ?? false)
+                    sshOptions: c.advanced?.sshOptions ?? "", autoSudo: c.advanced?.autoSudo ?? false, color: c.color)
             },
-            folders: (f.folders ?? []).map(model))
+            folders: (f.folders ?? []).map(model), color: f.color)
     }
 
     private static func dto(_ f: ConnectionFolder) -> Folder {
         Folder(
             id: f.id, name: f.name, activation: f.activation,
-            credential: f.credential, sudoCredential: f.sudoCredential,
+            credential: f.credential, sudoCredential: f.sudoCredential, color: f.color,
             connections: f.connections.isEmpty ? nil : f.connections.map { c in
                 let jump: Jump? = switch c.jumpHost {
                 case .connection(let id): Jump(connection: id)
@@ -109,7 +111,7 @@ enum ConnectionYAML {
                 let hasAdvanced = jump != nil || advanced.sshOptions != nil || c.autoSudo
                 return Item(id: c.id, name: c.name, type: c.type, host: c.host, port: c.port,
                             username: c.username, activation: c.activation, credential: c.credential,
-                            sudoCredential: c.sudoCredential, advanced: hasAdvanced ? advanced : nil)
+                            sudoCredential: c.sudoCredential, color: c.color, advanced: hasAdvanced ? advanced : nil)
             },
             folders: f.folders.isEmpty ? nil : f.folders.map(dto))
     }
