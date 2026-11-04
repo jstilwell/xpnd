@@ -58,6 +58,7 @@ extension AppDelegate {
                     // Clicked in xpnd itself, so there's no other app to guard.
                     Task { await self?.connectExclusively(id, from: nil, sudo: sudo) }
                 },
+                duplicate: { _ in }, cancelPasswordPhase: {},
                 openSettings: { [weak self] in self?.showSettings() })
         }
         mainWindow?.show(selecting: item)

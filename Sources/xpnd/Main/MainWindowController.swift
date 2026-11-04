@@ -6,6 +6,8 @@ final class MainWindowModel {
     var selection: SidebarItem?
     /// A field the sidebar asks the Details editor to focus.
     var focus: EditorFocus?
+    /// The Details editor, as a card over the terminal while sessions are open.
+    var editorShown = false
 }
 
 /// The main window: connections and snippets in the sidebar, the selection's Details on the right.
@@ -13,17 +15,25 @@ final class MainWindowModel {
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let model: MainWindowModel
+    let sessions = TerminalSessions(makeHost: { LiveTerminalHost(command: $0, settings: AppSettings.shared.builtInTerminal) })
+    private let cancelPasswordPhase: () -> Void
 
     init(store: SnippetStore, connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider,
          preferredAccount: @escaping @MainActor () -> String?, keysDirectory: URL,
-         connect: @escaping (Connection.ID, _ sudo: Bool) -> Void, openSettings: @escaping () -> Void) {
+         connect: @escaping (Connection.ID, _ sudo: Bool) -> Void, duplicate: @escaping (Connection.ID) -> Void,
+         cancelPasswordPhase: @escaping () -> Void, openSettings: @escaping () -> Void) {
         let model = MainWindowModel()
         self.model = model
+        self.cancelPasswordPhase = cancelPasswordPhase
         let editing = ConnectionEditing(
             store: connections, snippets: store, provider: provider, preferredAccount: preferredAccount,
-            keysDirectory: keysDirectory, connect: connect)
+            keysDirectory: keysDirectory, connect: { id, sudo in
+                connect(id, sudo)
+                model.editorShown = false
+            })
         let host = NSHostingController(rootView: MainView(
-            model: model, connections: editing, editing: SnippetEditing(store: store), openSettings: openSettings))
+            model: model, connections: editing, editing: SnippetEditing(store: store), sessions: sessions,
+            duplicate: duplicate, openSettings: openSettings))
         // The SwiftUI minimum becomes the window's; the user sizes it from there.
         host.sizingOptions = [.minSize]
         let window = NSWindow(contentViewController: host)
@@ -45,6 +55,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window?.showFromMenuBar()
     }
 
+    /// Whether the keyboard is in a session's terminal.
+    var terminalHasFocus: Bool {
+        guard let responder = window?.firstResponder as? NSView else { return false }
+        return sessions.sessions.contains { responder.isDescendant(of: $0.host.view) }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sessions.liveCount > 0 else { return true }
+        confirmTerminate(count: sessions.liveCount, in: sender) { [weak self] in
+            self?.sessions.terminateAll()
+            self?.cancelPasswordPhase()
+            sender.close()
+        }
+        return false
+    }
+
     /// Back to menu-bar only; xpnd keeps running.
     func windowWillClose(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -55,6 +81,8 @@ private struct MainView: View {
     @Bindable var model: MainWindowModel
     let connections: ConnectionEditing
     let editing: SnippetEditing
+    let sessions: TerminalSessions
+    let duplicate: (Connection.ID) -> Void
     let openSettings: () -> Void
     /// A reload from disk gives snippets new ids, so the selected group or snippet is found again by
     /// its name or keyword.
@@ -69,12 +97,42 @@ private struct MainView: View {
                     openSettings: openSettings)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
-            DetailsPane(connections: connections, editing: editing, selection: $model.selection, focus: $model.focus)
+            Group {
+                if sessions.sessions.isEmpty {
+                    details
+                } else {
+                    TerminalWorkspace(sessions: sessions, duplicate: duplicate, settings: AppSettings.shared.builtInTerminal)
+                        .overlay { if model.editorShown { editorCard } }
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 480, ideal: 700)
         }
         .frame(minWidth: 900, minHeight: 560)
+        .onChange(of: model.selection) { if !sessions.sessions.isEmpty { model.editorShown = true } }
+        // The next first tab shows its terminal, not a card left over from the last ones.
+        .onChange(of: sessions.sessions.isEmpty) { model.editorShown = false }
         .onChange(of: editing.store.library) { reselect() }
         .onChange(of: connections.library) { reselectConnection() }
         .onChange(of: model.selection, initial: true) { remember() }
+    }
+
+    private var details: some View {
+        DetailsPane(connections: connections, editing: editing, selection: $model.selection, focus: $model.focus)
+    }
+
+    private var editorCard: some View {
+        details
+            .padding(.top, 28)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(alignment: .topTrailing) {
+                Button("Close") {
+                    model.editorShown = false
+                    sessions.focusSelected()
+                }
+                .keyboardShortcut(.cancelAction)
+                .padding(8)
+            }
+            .padding(24)
     }
 
     private func remember() {
