@@ -222,8 +222,11 @@ folders:
   engine handles both.
 - **Connection string typed:** xpnd deletes the typed string, then connects
   (see Launching), relative to the app the string was typed in.
-- **Folder string typed:** xpnd deletes the typed string and opens the
-  **quick menu**:
+- **Folder string typed:** xpnd opens the **quick menu**, leaving the typed
+  string in place; it is deleted when a row is picked, right before the
+  command is typed. Esc leaves it, like a cancelled input form. (Changed
+  after live testing: keystrokes posted just before the panel becomes the
+  key window land in the panel, so deleting first lost most of them.)
   - A small panel near the screen center, in the same style as the picker:
     non-activating, closes on losing focus or on Esc.
   - It lists the folder's connections, then its subfolders, each numbered

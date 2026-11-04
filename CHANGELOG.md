@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 0.2.0 - Unreleased
 
 ### Fixed
+- A folder string like `;dev` is now deleted when you pick a row from its menu, not before the menu opens, so none of it is left behind in the terminal; Esc keeps what you typed.
 - With more than one 1Password account, Settings → Password Manager asks which is yours instead of guessing the first, and the status check now asks 1Password for access rather than reporting "not signed in" on a working setup.
 
 ### Added

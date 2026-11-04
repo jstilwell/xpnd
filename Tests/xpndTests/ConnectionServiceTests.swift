@@ -151,9 +151,9 @@ private let sudo = ref("sudo", .password)
             prompt: prompt, keysDirectory: keys)
     }
 
-    func connect(_ connection: Connection, typedInto target: pid_t? = terminalPID) async {
+    func connect(_ connection: Connection, typedInto target: pid_t? = terminalPID, deleting: Int = 0) async {
         let service = service()
-        await service.connect(connection.id, typedInto: target)
+        await service.connect(connection.id, typedInto: target, deletingCharacters: deleting)
         await service.passwordPhase?.value
     }
 
@@ -181,6 +181,20 @@ struct ConnectionServiceTests {
         try h.writeKey(key)
         await h.connect(aws)
         #expect(h.log.events == (try h.typed(aws)))
+    }
+
+    @Test func deletesTheTypedStringRightBeforeTyping() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: key)
+        let h = try Harness(aws)
+        try h.writeKey(key)
+        await h.connect(aws, deleting: 4)
+        #expect(h.log.events == ["backspace x4"] + (try h.typed(aws)))
+        // With no terminal in front the string sits in whatever app it was typed in, so it is deleted there too.
+        let launched = try Harness(aws)
+        launched.front = inSafari
+        try launched.writeKey(key)
+        await launched.connect(aws, typedInto: otherPID, deleting: 4)
+        #expect(launched.log.events.first == "backspace x4")
     }
 
     @Test func passwordLoginCopiesAfterTyping() async throws {
