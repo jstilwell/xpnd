@@ -17,7 +17,9 @@ enum SyntheticEvent {
     /// Tuning value: how long the target app gets to read the pasteboard after Cmd+V before it's restored.
     static let pasteSettle: Duration = .milliseconds(150)
 
-    private let source = CGEventSource(stateID: .privateState)
+    /// The HID system state, not a private one: Screen Sharing reads modifiers from the system's live
+    /// state table, which only events from this source update, so a posted Shift or ⌘ shows there.
+    private let source = CGEventSource(stateID: .hidSystemState)
 
     func backspace(times: Int) async { post(KeyName.delete.keyCode, flags: [], times: times) }
 
