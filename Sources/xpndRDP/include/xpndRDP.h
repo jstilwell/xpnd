@@ -4,3 +4,4 @@
 #import "XPRDPSession.h"
 #import "XPRDPClipboardFilter.h"
 #import "XPRDPResizeCoalescer.h"
+#import "XPRDPFitRect.h"

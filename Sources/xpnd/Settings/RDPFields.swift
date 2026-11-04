@@ -32,7 +32,8 @@ struct RDPFields: View {
         let d = defaults
         Section("Display") {
             RDPOptionRow(value: $options.display, defaultValue: d?.display, describe: RDPOptionLabels.label(for:)) { DisplayPicker(display: $0) }
-            toggle("Scale to fit window", \.scaleToFit, d?.scaleToFit)
+            // shortcut: 1:1 with scrolling not implemented (a fixed size is always scaled to fit, letterboxed),
+            // upgrade with an NSScrollView host; `scaleToFit` stays in the model so YAML is stable.
             RDPOptionRow(value: $options.colorDepth, defaultValue: d?.colorDepth, describe: { "\($0)-bit" }) { depth in
                 Picker("Color depth", selection: depth) { ForEach([32, 16], id: \.self) { Text("\($0)-bit").tag($0) } }
             }

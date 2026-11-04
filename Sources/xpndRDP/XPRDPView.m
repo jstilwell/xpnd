@@ -3,6 +3,7 @@
 #import <freerdp/client/Mac/Clipboard.h>
 
 #import "XPRDPClipboardFilter.h"
+#import "XPRDPFitRect.h"
 #import "XPRDPResizeCoalescer.h"
 
 /// Where ⌘ stands while it is held: nothing sent yet, used by xpnd (a shortcut or ⌘-click, so its release
@@ -55,13 +56,25 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     [_drawLock unlock];
 }
 
+/// The one rectangle drawing, invalidation and mouse mapping use for the desktop, in view points.
+- (NSRect)desktopRectForSize:(NSSize)desktop {
+    return _letterbox ? XPRDPFitRect(desktop, self.bounds) : self.bounds;
+}
+
+/// MRDPView's, drawn into `desktopRectForSize:` instead of the bounds.
 - (void)drawRect:(NSRect)rect {
     [_drawLock lock];
-    if (context && bitmap_context) {
-        [super drawRect:rect];
-    } else {
-        [NSColor.blackColor setFill];
-        NSRectFill(rect);
+    [NSColor.blackColor setFill];
+    NSRectFill(rect);
+    CGImageRef image = context && bitmap_context ? CGBitmapContextCreateImage(bitmap_context) : NULL;
+    if (image) {
+        const NSRect target = [self desktopRectForSize:NSMakeSize(CGImageGetWidth(image), CGImageGetHeight(image))];
+        CGContextRef cg = NSGraphicsContext.currentContext.CGContext;
+        CGContextSaveGState(cg);
+        CGContextClipToRect(cg, rect);
+        CGContextDrawImage(cg, target, image);
+        CGContextRestoreGState(cg);
+        CGImageRelease(image);
     }
     [_drawLock unlock];
 }
@@ -120,9 +133,9 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 - (void)invalidateDesktopRect:(NSRect)rect desktopSize:(NSSize)desktopSize {
     if (desktopSize.width < 1 || desktopSize.height < 1)
         return;
-    const NSRect b = self.bounds;
+    const NSRect b = [self desktopRectForSize:desktopSize];
     const CGFloat sx = b.size.width / desktopSize.width, sy = b.size.height / desktopSize.height;
-    const NSRect r = NSMakeRect(rect.origin.x * sx, b.size.height - (rect.origin.y + rect.size.height) * sy,
+    const NSRect r = NSMakeRect(b.origin.x + rect.origin.x * sx, NSMaxY(b) - (rect.origin.y + rect.size.height) * sy,
                                 rect.size.width * sx, rect.size.height * sy);
     [self setNeedsDisplayInRect:NSInsetRect(r, -1, -1)];
 }
@@ -139,6 +152,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
         return;
     }
     [super setFrameSize:size];
+    self.needsDisplay = YES;  // the whole image is rescaled, and the letterbox moves
     [_coalescer noteSize:size];
 }
 
@@ -176,17 +190,17 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 }
 
 /// MRDPView takes `locationInWindow` as view coordinates and the view's points as desktop pixels;
-/// in a tab neither holds. The image always fills the bounds, so map proportionally.
+/// in a tab neither holds. Map proportionally within the drawn image; the letterbox clamps to its edge.
 - (BOOL)desktopPointForEvent:(NSEvent *)event x:(UINT16 *)x y:(UINT16 *)y {
     if (!self.is_connected || !context)
         return NO;
-    const NSRect b = self.bounds;
     const UINT32 dw = freerdp_settings_get_uint32(context->settings, FreeRDP_DesktopWidth);
     const UINT32 dh = freerdp_settings_get_uint32(context->settings, FreeRDP_DesktopHeight);
+    const NSRect b = [self desktopRectForSize:NSMakeSize(dw, dh)];
     if (b.size.width < 1 || b.size.height < 1 || dw == 0 || dh == 0)
         return NO;
     const NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
-    const double fx = p.x / b.size.width * dw, fy = (1.0 - p.y / b.size.height) * dh;
+    const double fx = (p.x - b.origin.x) / b.size.width * dw, fy = (1.0 - (p.y - b.origin.y) / b.size.height) * dh;
     *x = (UINT16)MIN(MAX(fx, 0.0), (double)(dw - 1));
     *y = (UINT16)MIN(MAX(fy, 0.0), (double)(dh - 1));
     return YES;

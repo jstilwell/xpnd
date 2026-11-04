@@ -228,6 +228,7 @@ static BOOL XPSetLogin(rdpSettings *settings, BOOL gateway, NSArray<NSString *> 
     mfContext *mfc = (mfContext *)ctx;
     mfc->view = (__bridge void *)_view;
     mfc->view_ownership = NO;
+    _view.letterbox = !freerdp_settings_get_bool(settings, FreeRDP_DynamicResolutionUpdate);
     _context = ctx;
     return YES;
 }

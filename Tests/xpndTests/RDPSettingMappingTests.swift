@@ -31,12 +31,15 @@ import Testing
         #expect(value(c, "FreeRDP_DeviceScaleFactor") == "100")
     }
 
-    @Test func fixedWithScaleUsesSmartSizing() {
-        let c = config { $0.display = .fixed(width: 1280, height: 720); $0.scaleToFit = true }
-        #expect(value(c, "FreeRDP_DesktopWidth") == "1280")
-        #expect(value(c, "FreeRDP_DesktopHeight") == "720")
-        #expect(value(c, "FreeRDP_SmartSizing") == "TRUE")
-        #expect(value(c, "FreeRDP_DynamicResolutionUpdate") == "FALSE")
+    @Test func fixedUsesItsSizeAndIgnoresScaleToFit() {
+        // XPRDPView letterboxes a fixed size whatever scaleToFit says (1:1 isn't implemented).
+        for scale in [true, false] {
+            let c = config { $0.display = .fixed(width: 1280, height: 720); $0.scaleToFit = scale }
+            #expect(value(c, "FreeRDP_DesktopWidth") == "1280")
+            #expect(value(c, "FreeRDP_DesktopHeight") == "720")
+            #expect(value(c, "FreeRDP_DynamicResolutionUpdate") == "FALSE")
+            #expect(value(c, "FreeRDP_SmartSizing") == nil)
+        }
     }
 
     @Test func audioModes() {

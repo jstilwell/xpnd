@@ -43,7 +43,6 @@ extension RDPSessionConfig {
             s("ServerHostname", host), s("ServerPort", port),
             s("DesktopWidth", width), s("DesktopHeight", height),
             s("DynamicResolutionUpdate", fit), s("SupportDisplayControl", fit),
-            s("SmartSizing", !fit && scaleToFit),
             s("ColorDepth", colorDepth),
             s("DesktopScaleFactor", retina ? 200 : 100), s("DeviceScaleFactor", retina ? 180 : 100),
             s("RedirectClipboard", clipboard),

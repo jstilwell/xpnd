@@ -141,6 +141,22 @@ struct XPRDPSessionTests {
         #expect(s.disconnectErrorName(forCode: 0) == nil)
     }
 
+    @Test func aWideDesktopIsLetterboxedTopAndBottom() {
+        let r = XPRDPFitRect(desktop: CGSize(width: 2000, height: 1000), in: CGRect(x: 0, y: 0, width: 1000, height: 600))
+        #expect(r == CGRect(x: 0, y: 50, width: 1000, height: 500))
+    }
+
+    @Test func aTallDesktopIsLetterboxedLeftAndRight() {
+        let r = XPRDPFitRect(desktop: CGSize(width: 1280, height: 1024), in: CGRect(x: 10, y: 0, width: 1000, height: 400))
+        #expect(r == CGRect(x: 260, y: 0, width: 500, height: 400))
+    }
+
+    @Test func anEmptyDesktopFillsTheBounds() {
+        let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
+        #expect(XPRDPFitRect(desktop: .zero, in: bounds) == bounds)
+        #expect(XPRDPFitRect(desktop: CGSize(width: 1600, height: 1200), in: bounds) == bounds)  // same aspect: no letterbox
+    }
+
     @Test func clipboardFilterHidesConcealedItems() {
         #expect(!XPRDPClipboardFilter.shouldOfferPasteboardTypes(["public.utf8-plain-text", "org.nspasteboard.ConcealedType"]))
         #expect(!XPRDPClipboardFilter.shouldOfferPasteboardTypes(["com.jessestilwell.xpnd.secret"]))

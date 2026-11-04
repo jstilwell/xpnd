@@ -13,6 +13,9 @@ NS_ASSUME_NONNULL_BEGIN
 @interface XPRDPView : MRDPView
 @property (weak, nullable) XPRDPSession *session;
 @property BOOL commandAsWindowsKey;
+/// A fixed-size desktop keeps its aspect ratio, letterboxed in black; otherwise (resized to fit) it fills the view.
+/// Main thread, before the client thread starts.
+@property BOOL letterbox;
 
 /// Held while FreeRDP's thread swaps the desktop image (connect, resize, disconnect) and while drawing.
 - (void)lockDrawing;
