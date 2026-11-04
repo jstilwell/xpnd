@@ -39,6 +39,21 @@ struct ColorChoice: View {
     }
 
     private func swatch(_ color: ItemColor, _ text: String) -> some View {
-        Label { Text(text) } icon: { Image(systemName: "circle.fill").foregroundStyle(color.ui) }
+        Label { Text(text) } icon: { Image(nsImage: color.swatch) }
+    }
+}
+
+extension ItemColor {
+    /// A filled circle with the colour drawn in. A menu-style Picker turns its rows into NSMenuItems,
+    /// which paint a template image (such as a styled SF Symbol) in the menu's own tint; a
+    /// non-template bitmap keeps its colour.
+    var swatch: NSImage {
+        let image = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
+            NSColor(ui).setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            return true
+        }
+        image.isTemplate = false
+        return image
     }
 }
