@@ -22,7 +22,7 @@ struct ColorChoice: View {
     let own: ItemColor?
     /// What the item gets with no colour of its own: the nearest ancestor folder's.
     let inherited: ResolvedColor?
-    let set: (ItemColor?) -> Void
+    let set: @MainActor (ItemColor?) -> Void
 
     var body: some View {
         Picker("Color", selection: Binding(get: { own }, set: set)) {
