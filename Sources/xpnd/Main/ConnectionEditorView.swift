@@ -31,6 +31,7 @@ struct ConnectionEditorView: View {
                     Picker("Type", selection: binding(\.type)) {
                         Text("SSH").tag(ConnectionType.ssh)
                         Text("VNC").tag(ConnectionType.vnc)
+                        Text("RDP").tag(ConnectionType.rdp)
                     }
                     field(problem: connection.host.trimmingCharacters(in: .whitespaces).isEmpty ? "A host is required." : nil) {
                         TextField("Host", text: binding(\.host))
@@ -41,6 +42,11 @@ struct ConnectionEditorView: View {
                     TextField("Username", text: Binding(get: { connection.username ?? "" }, set: { name in
                         editing.edit(connection: connection.id) { $0.username = name.isEmpty ? nil : name }
                     }), prompt: Text(login?.ref.username ?? ""))
+                    if connection.type == .rdp {
+                        TextField("Domain", text: Binding(get: { connection.domain ?? "" }, set: { text in
+                            editing.edit(connection: connection.id) { $0.domain = text.isEmpty ? nil : text }
+                        }))
+                    }
                     field(problem: activationProblem(namespace)) {
                         TextField("Activation string", text: Binding(get: { activationText }, set: editActivation), prompt: Text("None"))
                             .focused($focused, equals: .activation)
@@ -60,6 +66,7 @@ struct ConnectionEditorView: View {
                     }
                 }
                 if connection.type == .ssh { advanced(library) }
+                if connection.type == .rdp { rdpOptions }
             }
             .formStyle(.grouped)
             .disabled(editing.readOnly)
@@ -89,6 +96,47 @@ struct ConnectionEditorView: View {
             focus = nil
             // Best-effort: the next turn, once this view is in the window.
             Task { focused = request }
+        }
+    }
+
+    private var rdpOptions: some View {
+        Section {
+            DisclosureGroup("RDP options") {
+                Form {
+                    RDPFields(options: Binding(get: { connection.rdp ?? RDPOptions() }, set: { options in
+                        editing.edit(connection: connection.id) { $0.rdp = options }
+                    }), defaults: AppSettings.shared.remoteDesktop)
+                    gatewaySection
+                }
+                .formStyle(.grouped)
+            }
+        }
+    }
+
+    /// No host means no gateway; the credential falls back to the connection's own.
+    private var gatewaySection: some View {
+        let gateway = connection.rdp?.gateway
+        return Section("Gateway") {
+            TextField("Gateway host", text: Binding(get: { gateway?.host ?? "" }, set: { host in
+                editing.edit(connection: connection.id) {
+                    var options = $0.rdp ?? RDPOptions()
+                    if host.isEmpty { options.gateway = nil } else if options.gateway == nil { options.gateway = .init(host: host) } else {
+                        options.gateway?.host = host
+                    }
+                    $0.rdp = options
+                }
+            }), prompt: Text("None"))
+            if let gateway {
+                TextField("Gateway port", value: Binding(get: { gateway.port }, set: { port in
+                    editing.edit(connection: connection.id) { $0.rdp?.gateway?.port = min(max(1, port), 65535) }
+                }), format: .number.grouping(.never))
+                CredentialRow(title: "Gateway login", editing: editing,
+                              resolved: (gateway.credential ?? editing.library.loginCredential(for: connection.id)?.ref)
+                                  .map { ResolvedCredential(ref: $0, source: .connection) },
+                              own: gateway.credential) { ref in
+                    editing.edit(connection: connection.id) { $0.rdp?.gateway?.credential = ref }
+                }
+            }
         }
     }
 
