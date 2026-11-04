@@ -48,8 +48,19 @@ extension ItemColor {
     /// which paint a template image (such as a styled SF Symbol) in the menu's own tint; a
     /// non-template bitmap keeps its colour.
     var swatch: NSImage {
+        // A fixed NSColor, not NSColor(ui): the menu rasterizes the image without an appearance to
+        // resolve a dynamic colour against, and the dot came out white.
+        let fill: NSColor = switch self {
+        case .red: .red
+        case .orange: .orange
+        case .yellow: .yellow
+        case .green: .green
+        case .blue: .blue
+        case .purple: .purple
+        case .gray: .gray
+        }
         let image = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
-            NSColor(ui).setFill()
+            fill.setFill()
             NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
             return true
         }
