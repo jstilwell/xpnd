@@ -5,8 +5,9 @@
 #import "XPRDPClipboardFilter.h"
 #import "XPRDPResizeCoalescer.h"
 
-/// Where ⌘ stands while it is held: nothing sent yet, or sent as the Windows key or as Ctrl.
-typedef NS_ENUM(NSInteger, XPCommandState) { XPCommandUp, XPCommandPending, XPCommandWindows, XPCommandControl };
+/// Where ⌘ stands while it is held: nothing sent yet, used by xpnd (a shortcut or ⌘-click, so its release
+/// isn't a bare tap), or sent as the Windows key or as Ctrl.
+typedef NS_ENUM(NSInteger, XPCommandState) { XPCommandUp, XPCommandPending, XPCommandUsed, XPCommandWindows, XPCommandControl };
 
 static const NSEventModifierFlags XPCommandFlag = NSEventModifierFlagCommand;
 
@@ -215,7 +216,11 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 - (void)mouseDragged:(NSEvent *)event { [self sendMouse:event flags:PTR_FLAGS_MOVE]; }
 - (void)rightMouseDragged:(NSEvent *)event { [self sendMouse:event flags:PTR_FLAGS_MOVE]; }
 - (void)otherMouseDragged:(NSEvent *)event { [self sendMouse:event flags:PTR_FLAGS_MOVE]; }
-- (void)mouseDown:(NSEvent *)event { [self sendButton:0 event:event down:YES]; }
+- (void)mouseDown:(NSEvent *)event {
+    if (_command == XPCommandPending)
+        _command = XPCommandUsed;  // ⌘-click
+    [self sendButton:0 event:event down:YES];
+}
 - (void)mouseUp:(NSEvent *)event { [self sendButton:0 event:event down:NO]; }
 - (void)rightMouseDown:(NSEvent *)event { [self sendButton:1 event:event down:YES]; }
 - (void)rightMouseUp:(NSEvent *)event { [self sendButton:1 event:event down:NO]; }
@@ -290,18 +295,43 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 }
 
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
+    const BOOL focused = self.is_connected && self.window.firstResponder == self;
     // Otherwise xpnd's Edit menu takes ⌘C/⌘V/⌘X/⌘Z/⌘A before Windows sees them.
-    if (self.is_connected && self.window.firstResponder == self && XPIsEditShortcut(event)) {
+    if (focused && XPIsEditShortcut(event)) {
         [self keyDown:event];
         return YES;
     }
+    // Another ⌘ shortcut is xpnd's (⌘1, ⌘⇧]...); if nothing takes it, keyDown: sends it on as before.
+    if (focused && _command == XPCommandPending)
+        _command = XPCommandUsed;
     return [super performKeyEquivalent:event];
 }
 
-- (void)windowDidResignKey:(NSNotification *)note {
-    // ⌘-Tab away: the ⌘ release goes elsewhere.
+/// Every modifier Windows holds down is released; Caps Lock and Num Lock, which toggle, are left alone.
+- (void)releaseModifiers {
     [self setCommandState:XPCommandUp];
-    kbdModFlags &= ~(DWORD)XPCommandFlag;
+    kbdModFlags &= ~(DWORD)XPCommandFlag;  // ⌘ is ours, released above
+    const NSEventModifierFlags toggles = NSEventModifierFlagCapsLock | NSEventModifierFlagNumericPad;
+    NSEvent *up = [NSEvent keyEventWithType:NSEventTypeFlagsChanged location:NSZeroPoint modifierFlags:kbdModFlags & toggles
+                                  timestamp:0 windowNumber:0 context:nil characters:@"" charactersIgnoringModifiers:@""
+                                  isARepeat:NO keyCode:0];
+    if (up)
+        [super flagsChanged:up];  // MRDPView sends the key-ups for what it had down
+    kbdModFlags &= (DWORD)toggles;
+}
+
+- (void)windowDidResignKey:(NSNotification *)note {
+    [self releaseModifiers];  // ⌘-Tab away: the releases go elsewhere
+}
+
+- (void)viewWillMoveToWindow:(NSWindow *)window {
+    [self releaseModifiers];  // another tab: the releases go to it
+    [super viewWillMoveToWindow:window];
+}
+
+- (BOOL)resignFirstResponder {
+    [self releaseModifiers];
+    return [super resignFirstResponder];
 }
 
 #pragma mark Clipboard
