@@ -32,8 +32,10 @@ let package = Package(
                 .linkedFramework("CoreAudio"), .linkedFramework("AudioToolbox"),
                 // FreeRDP decodes H.264 with VideoToolbox (WITH_APPLE_VIDEOTOOLBOX, on by default).
                 .linkedFramework("VideoToolbox"),
+                // Pulled in with the Mac client: rdpsnd's AVAudioEngine output and zlib.
+                .linkedFramework("AVFoundation"), .linkedLibrary("z"),
             ]
         ),
-        .testTarget(name: "xpndTests", dependencies: ["xpnd"]),
+        .testTarget(name: "xpndTests", dependencies: ["xpnd", "xpndRDP"]),
     ]
 )
