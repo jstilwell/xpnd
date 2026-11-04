@@ -8,6 +8,12 @@ final class MainWindowModel {
     var focus: EditorFocus?
     /// The Details editor, as a card over the terminal while sessions are open.
     var editorShown = false
+
+    /// Clears the selection too, so a click on the same sidebar row opens the card again.
+    func hideEditor() {
+        editorShown = false
+        selection = nil
+    }
 }
 
 /// The main window: connections and snippets in the sidebar, the selection's Details on the right.
@@ -29,7 +35,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             store: connections, snippets: store, provider: provider, preferredAccount: preferredAccount,
             keysDirectory: keysDirectory, connect: { id, sudo in
                 connect(id, sudo)
-                model.editorShown = false
+                model.hideEditor()
             })
         let host = NSHostingController(rootView: MainView(
             model: model, connections: editing, editing: SnippetEditing(store: store), sessions: sessions,
@@ -108,9 +114,9 @@ private struct MainView: View {
             .navigationSplitViewColumnWidth(min: 480, ideal: 700)
         }
         .frame(minWidth: 900, minHeight: 560)
-        .onChange(of: model.selection) { if !sessions.sessions.isEmpty { model.editorShown = true } }
+        .onChange(of: model.selection) { if !sessions.sessions.isEmpty && model.selection != nil { model.editorShown = true } }
         // The next first tab shows its terminal, not a card left over from the last ones.
-        .onChange(of: sessions.sessions.isEmpty) { model.editorShown = false }
+        .onChange(of: sessions.sessions.isEmpty) { model.hideEditor() }
         .onChange(of: editing.store.library) { reselect() }
         .onChange(of: connections.library) { reselectConnection() }
         .onChange(of: model.selection, initial: true) { remember() }
@@ -126,7 +132,7 @@ private struct MainView: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             .overlay(alignment: .topTrailing) {
                 Button("Close") {
-                    model.editorShown = false
+                    model.hideEditor()
                     sessions.focusSelected()
                 }
                 .keyboardShortcut(.cancelAction)
