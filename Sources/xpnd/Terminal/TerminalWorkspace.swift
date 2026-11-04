@@ -116,6 +116,13 @@ extension TerminalSessions {
         guard let view = selectedSession?.host.view else { return }
         view.window?.makeFirstResponder(view)
     }
+
+    /// Takes the keyboard from the selected tab's terminal, if it has it.
+    func resignFocus() {
+        guard let view = selectedSession?.host.view, let window = view.window,
+              (window.firstResponder as? NSView)?.isDescendant(of: view) == true else { return }
+        window.makeFirstResponder(nil)
+    }
 }
 
 /// "Terminate N sessions?" with Terminate / Cancel, as a sheet on `window` when there is one.

@@ -33,10 +33,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         self.cancelPasswordPhase = cancelPasswordPhase
         let editing = ConnectionEditing(
             store: connections, snippets: store, provider: provider, preferredAccount: preferredAccount,
-            keysDirectory: keysDirectory, connect: { id, sudo in
-                connect(id, sudo)
-                model.hideEditor()
-            })
+            keysDirectory: keysDirectory, connect: connect)
         let host = NSHostingController(rootView: MainView(
             model: model, connections: editing, editing: SnippetEditing(store: store), sessions: sessions,
             duplicate: duplicate, openSettings: openSettings))
@@ -123,8 +120,10 @@ private struct MainView: View {
         }
         .frame(minWidth: 900, minHeight: 560)
         .onChange(of: model.selection) { if !sessions.sessions.isEmpty && model.selection != nil { model.editorShown = true } }
-        // The next first tab shows its terminal, not a card left over from the last ones.
-        .onChange(of: sessions.sessions.isEmpty) { model.hideEditor() }
+        // Back to the selected item's Details with the last tab gone; the next first tab shows its terminal.
+        .onChange(of: sessions.sessions.isEmpty) { model.editorShown = false }
+        // A code-driven selection (the quick menu) opens the card while the terminal still has the keyboard.
+        .onChange(of: model.editorShown) { if model.editorShown { sessions.resignFocus() } }
         .onChange(of: editing.store.library) { reselect() }
         .onChange(of: connections.library) { reselectConnection() }
         .onChange(of: model.selection, initial: true) { remember() }

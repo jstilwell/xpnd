@@ -74,7 +74,7 @@ struct TerminalSettingsView: View {
                     ForEach(Self.monospacedFamilies, id: \.self) { Text($0).tag(String?.some($0)) }
                 }
                 Stepper("Size: \(Int(settings.builtInTerminal.fontSize))", value: $settings.builtInTerminal.fontSize, in: 9...24)
-                Picker("Colours", selection: $settings.builtInTerminal.scheme) {
+                Picker("Colors", selection: $settings.builtInTerminal.scheme) {
                     Text("System").tag(BuiltInTerminalSettings.Scheme.system)
                     Text("Light").tag(BuiltInTerminalSettings.Scheme.light)
                     Text("Dark").tag(BuiltInTerminalSettings.Scheme.dark)
@@ -85,12 +85,13 @@ struct TerminalSettingsView: View {
                     Text("Underline").tag(BuiltInTerminalSettings.Cursor.underline)
                 }
                 Toggle("Blink", isOn: $settings.builtInTerminal.cursorBlinks)
-                Stepper("Scrollback lines: \(settings.builtInTerminal.scrollback.formatted())",
-                        value: $settings.builtInTerminal.scrollback, in: 1_000...100_000, step: 1_000)
+                VStack(alignment: .leading) {
+                    Stepper("Scrollback lines: \(settings.builtInTerminal.scrollback.formatted())",
+                            value: $settings.builtInTerminal.scrollback, in: 1_000...100_000, step: 1_000)
+                    Text("Applies to new sessions.").font(.callout).foregroundStyle(.secondary)
+                }
             } header: {
                 Text("Built-in terminal")
-            } footer: {
-                Text("Applies to new sessions.").font(.callout).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
