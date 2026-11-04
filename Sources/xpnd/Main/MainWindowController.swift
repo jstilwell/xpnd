@@ -16,13 +16,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     init(store: SnippetStore, connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider,
          preferredAccount: @escaping @MainActor () -> String?, keysDirectory: URL,
-         connect: @escaping (Connection.ID) -> Void) {
+         connect: @escaping (Connection.ID) -> Void, openSettings: @escaping () -> Void) {
         let model = MainWindowModel()
         self.model = model
         let editing = ConnectionEditing(
             store: connections, snippets: store, provider: provider, preferredAccount: preferredAccount,
             keysDirectory: keysDirectory, connect: connect)
-        let host = NSHostingController(rootView: MainView(model: model, connections: editing, editing: SnippetEditing(store: store)))
+        let host = NSHostingController(rootView: MainView(
+            model: model, connections: editing, editing: SnippetEditing(store: store), openSettings: openSettings))
         // The SwiftUI minimum becomes the window's; the user sizes it from there.
         host.sizingOptions = [.minSize]
         let window = NSWindow(contentViewController: host)
@@ -54,6 +55,7 @@ private struct MainView: View {
     @Bindable var model: MainWindowModel
     let connections: ConnectionEditing
     let editing: SnippetEditing
+    let openSettings: () -> Void
     /// A reload from disk gives snippets new ids, so the selected group or snippet is found again by
     /// its name or keyword.
     @State private var selectedName: String?
@@ -63,7 +65,8 @@ private struct MainView: View {
 
     var body: some View {
         NavigationSplitView {
-            Sidebar(connections: connections, editing: editing, selection: $model.selection, focus: $model.focus)
+            Sidebar(connections: connections, editing: editing, selection: $model.selection, focus: $model.focus,
+                    openSettings: openSettings)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
             DetailsPane(connections: connections, editing: editing, selection: $model.selection, focus: $model.focus)

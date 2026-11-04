@@ -12,6 +12,7 @@ struct Sidebar: View {
     let editing: SnippetEditing
     @Binding var selection: SidebarItem?
     @Binding var focus: EditorFocus?
+    let openSettings: () -> Void
     /// A folder with something in it, waiting for Delete to be confirmed.
     @State private var confirmingDelete: ConnectionFolder?
     @State private var search = ""
@@ -23,7 +24,7 @@ struct Sidebar: View {
         let namespace = KeywordNamespace(snippets: library, connections: connections.library)
         let searching = !search.trimmingCharacters(in: .whitespaces).isEmpty
         List(selection: $selection) {
-            Section("Connections") {
+            Section {
                 if searching {
                     ForEach(ConnectionFilter.filter(ConnectionFilter.entries(connections.library), query: search), id: \.connection.id) { entry in
                         row(entry.connection.name, detail: entry.pathText, symbol: ConnectionNode(connection: entry.connection).symbol)
@@ -34,8 +35,10 @@ struct Sidebar: View {
                         row(node.title, detail: node.detail, symbol: node.symbol).tag(node.id)
                     }
                 }
+            } header: {
+                heading("Connections") { addConnectionsMenu }
             }
-            Section("Snippets") {
+            Section {
                 ForEach(library.groups) { group in
                     let shown = searching ? PickerFilter.filter(group.snippets, query: search) : group.snippets
                     if !searching || !shown.isEmpty {
@@ -43,6 +46,13 @@ struct Sidebar: View {
                             get: { searching || expandedGroups.contains(group.id) },
                             set: { if $0 { expandedGroups.insert(group.id) } else { expandedGroups.remove(group.id) } }))
                     }
+                }
+            } header: {
+                heading("Snippets") {
+                    Button("Add Snippet Group", systemImage: "plus") {
+                        if let id = editing.addGroup() { selection = .snippetGroup(id) }
+                    }
+                    .disabled(editing.readOnly)
                 }
             }
         }
@@ -63,14 +73,40 @@ struct Sidebar: View {
         }
         .safeAreaInset(edge: .bottom) {
             HStack {
-                Button("Add Snippet Group", systemImage: "plus") {
-                    if let id = editing.addGroup() { selection = .snippetGroup(id) }
-                }
-                .disabled(editing.readOnly)
+                Text("Version \(Self.version)").font(.caption).foregroundStyle(.secondary)
                 Spacer()
+                Button("Settings", systemImage: "gearshape", action: openSettings)
+                    .labelStyle(.iconOnly).buttonStyle(.borderless)
             }
-            .labelStyle(.iconOnly).buttonStyle(.borderless).padding(6)
+            .padding(6)
         }
+    }
+
+    private static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+
+    /// A section heading with its "+" at the right.
+    private func heading<Control: View>(_ title: String, @ViewBuilder control: () -> Control) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            control().labelStyle(.iconOnly).buttonStyle(.borderless)
+        }
+    }
+
+    /// Adds into the selected folder (or a selected connection's); a top-level folder is always offered.
+    private var addConnectionsMenu: some View {
+        let library = connections.library
+        let target = EditorRules.addTarget(for: selection, in: library)
+        return Menu("Add", systemImage: "plus") {
+            if let target, let name = library.folder(target)?.name {
+                Button("New Connection in “\(name)”") { select(connections.addConnection(in: target).map(SidebarItem.connection), focus: .name, else: .folder(target)) }
+                Button("New Folder in “\(name)”") { select(connections.addFolder(in: target).map(SidebarItem.folder), focus: .name, else: .folder(target)) }
+                Divider()
+            }
+            Button("New Top-Level Folder") { select(connections.addFolder(in: nil).map(SidebarItem.folder), focus: .name) }
+        }
+        .menuIndicator(.hidden).fixedSize()
+        .disabled(connections.readOnly)
     }
 
     private func snippetGroup(_ group: SnippetGroup, _ snippets: [Snippet], expanded: Binding<Bool>) -> some View {

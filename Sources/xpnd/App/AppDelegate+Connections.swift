@@ -50,11 +50,12 @@ extension AppDelegate {
             mainWindow = MainWindowController(
                 store: store, connections: connections,
                 provider: { [unowned self] in self.provider }, preferredAccount: { AppSettings.shared.onePasswordAccount },
-                keysDirectory: keysDirectory
-            ) { [weak self] id in
-                // Clicked in xpnd itself, so there's no other app to guard.
-                Task { await self?.connectExclusively(id, from: nil) }
-            }
+                keysDirectory: keysDirectory,
+                connect: { [weak self] id in
+                    // Clicked in xpnd itself, so there's no other app to guard.
+                    Task { await self?.connectExclusively(id, from: nil) }
+                },
+                openSettings: { [weak self] in self?.showSettings() })
         }
         mainWindow?.show(selecting: item)
     }

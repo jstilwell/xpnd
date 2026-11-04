@@ -94,6 +94,19 @@ private struct TwoAccountProvider: CredentialProvider {
         #expect(editing.snippet(id)?.keyword == ";new2")
     }
 
+    @Test func addTargetFollowsTheSelection() {
+        let web = Connection(name: "web", host: "h")
+        let inner = ConnectionFolder(name: "inner", connections: [web])
+        let dev = ConnectionFolder(name: "dev", folders: [inner])
+        let library = ConnectionLibrary(folders: [dev])
+        #expect(EditorRules.addTarget(for: nil, in: library) == nil)
+        #expect(EditorRules.addTarget(for: .folder(inner.id), in: library) == inner.id)
+        // A selected connection adds beside it, in its own folder.
+        #expect(EditorRules.addTarget(for: .connection(web.id), in: library) == inner.id)
+        #expect(EditorRules.addTarget(for: .snippet(UUID()), in: library) == nil)
+        #expect(EditorRules.addTarget(for: .folder(UUID()), in: library) == nil)
+    }
+
     @Test func plurals() {
         #expect(EditorRules.count(1, "connection") == "1 connection")
         #expect(EditorRules.count(0, "folder") == "0 folders")
