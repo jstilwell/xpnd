@@ -29,8 +29,10 @@ NS_SWIFT_UI_ACTOR
 @protocol XPRDPSessionDelegate <NSObject>
 - (void)session:(XPRDPSession *)s decideCertificate:(XPRDPCertificate *)c completion:(void (^)(BOOL trust))completion
     NS_SWIFT_NAME(session(_:decideCertificate:completion:));
-- (void)session:(XPRDPSession *)s requestPasswordForUser:(NSString *)user host:(NSString *)host
-     completion:(void (^)(NSString *_Nullable password))completion;
+/// FreeRDP has no username or password for `host` (the server's or the gateway's). `user` and `domain`
+/// are what it has ("" for none), to prefill; a nil password cancels the connect.
+- (void)session:(XPRDPSession *)s requestPasswordForUser:(NSString *)user domain:(NSString *)domain host:(NSString *)host
+     completion:(void (^)(NSString *user, NSString *domain, NSString *_Nullable password))completion;
 /// Once per `start`, never after `stop`. nil is a clean end (no error, or the user logged off or
 /// disconnected from Windows); otherwise FreeRDP's own error name, e.g. "ERRCONNECT_LOGON_FAILURE",
 /// "ERRCONNECT_CONNECT_CANCELLED", "ERRINFO_IDLE_TIMEOUT".
@@ -65,8 +67,8 @@ NS_SWIFT_UI_ACTOR
 - (void)stop;
 /// Tears down the connection and starts again with the same settings and the latest password.
 - (void)reconnect;
-/// Zeroes and drops the login password (not the gateway's), so the next `start` / `reconnect` asks the
-/// delegate for one. Call it while disconnected.
+/// Zeroes and drops the login password, and the gateway's when it uses the same credentials, so the
+/// next `start` / `reconnect` asks the delegate for one. Call it while disconnected.
 - (void)forgetPassword;
 
 /// Test hooks: a setting by its `FreeRDP_<Name>`; nil / NO for an unknown name, another type, or no context.

@@ -40,21 +40,41 @@ struct RDPCertificatePrompt: View {
     }
 }
 
-/// FreeRDP has no password (none in the credential, or the server asked again). Nothing is kept: the
-/// field is cleared as the answer goes to the session.
+/// FreeRDP has no username or password (none in the credential, or the server rejected them). The
+/// username and domain are prefilled and editable. Nothing is kept: the password field is cleared as the
+/// answer goes to the session.
 struct RDPPasswordPrompt: View {
-    let user: String
+    struct Login {
+        var username: String
+        var domain: String
+        var password: String
+    }
+
     let host: String
-    let answer: (String?) -> Void
+    let answer: (Login?) -> Void
+    private let title: String
+    @State private var username: String
+    @State private var domain: String
     @State private var password = ""
-    @FocusState private var focused: Bool
+    @FocusState private var focus: Field?
+
+    private enum Field { case username, password }
+
+    init(user: String, domain: String, host: String, answer: @escaping (Login?) -> Void) {
+        self.host = host
+        self.answer = answer
+        title = user.isEmpty ? "Password for \(host)" : "Password for \(user)@\(host)"
+        _username = State(initialValue: user)
+        _domain = State(initialValue: domain)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(user.isEmpty ? "Password for \(host)" : "Password for \(user)@\(host)").font(.headline)
+            Text(title).font(.headline)
             Form {
-                if !user.isEmpty { LabeledContent("Username", value: user) }
-                SecureField("Password", text: $password).focused($focused).onSubmit(connect)
+                TextField("Username", text: $username).focused($focus, equals: .username)
+                TextField("Domain", text: $domain, prompt: Text("Optional"))
+                SecureField("Password", text: $password).focused($focus, equals: .password).onSubmit(connect)
             }
             HStack {
                 Spacer()
@@ -63,16 +83,17 @@ struct RDPPasswordPrompt: View {
                     answer(nil)
                 }
                 .keyboardShortcut(.cancelAction)
-                Button("Connect", action: connect).keyboardShortcut(.defaultAction)
+                Button("Connect", action: connect).keyboardShortcut(.defaultAction).disabled(username.isEmpty)
             }
         }
         .padding(20)
         .frame(width: 380)
-        .onAppear { focused = true }
+        .onAppear { focus = username.isEmpty ? .username : .password }
     }
 
     private func connect() {
-        let typed = password
+        guard !username.isEmpty else { return }
+        let typed = Login(username: username, domain: domain, password: password)
         password = ""
         answer(typed)
     }

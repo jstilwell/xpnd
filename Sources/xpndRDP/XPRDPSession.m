@@ -32,13 +32,13 @@ static void XPZeroSetting(rdpSettings *settings, FreeRDP_Settings_Keys_String ke
         XPZeroBytes(value, strlen(value));
 }
 
-/// Zeroes and frees a string FreeRDP handed to AuthenticateEx, then puts a copy of `secret` there.
-static BOOL XPReplaceSecret(char **slot, NSMutableData *secret) {
+/// Zeroes and frees a string FreeRDP handed to AuthenticateEx, then puts a copy of `value` there.
+static BOOL XPReplaceString(char **slot, const char *value) {
     if (*slot) {
         XPZeroBytes(*slot, strlen(*slot));
         free(*slot);
     }
-    *slot = strdup(secret.bytes);
+    *slot = strdup(value);
     return *slot != NULL;
 }
 
@@ -87,7 +87,7 @@ static void XPPostDisconnect(freerdp *);
 @interface XPRDPSession ()
 - (void)deliver:(void (^)(id<XPRDPSessionDelegate> delegate))call;
 - (nullable id)waitForAnswer:(void (^)(id<XPRDPSessionDelegate> delegate, void (^answer)(id _Nullable value)))ask;
-- (void)rememberSecret:(NSMutableData *)secret gateway:(BOOL)gateway;
+- (void)rememberLogin:(NSArray<NSString *> *)login secret:(NSMutableData *)secret gateway:(BOOL)gateway;
 - (void)setDisp:(nullable DispClientContext *)disp;
 - (void)didConnect;
 - (void)didDisconnectWithCode:(UINT32)code;
@@ -97,6 +97,8 @@ static void XPPostDisconnect(freerdp *);
     NSArray<NSArray<NSString *> *> *_settings;
     NSMutableData *_password;
     NSMutableData *_Nullable _gatewayPassword;
+    NSArray<NSString *> *_Nullable _login, *_Nullable _gatewayLogin;  // [user, domain] typed in the sheet
+    BOOL _sameCredentials;  // the gateway uses the login's
     __weak id<XPRDPSessionDelegate> _delegate;
     XPRDPView *_view;
     rdpContext *_context;  // main thread; FreeRDP's threads reach it through `instance`
@@ -125,6 +127,7 @@ static XPRDPSession *_Nullable XPSessionFor(rdpContext *context) {
         _settings = [settings copy];
         _password = XPSecret(password);
         _gatewayPassword = gatewayPassword ? XPSecret(gatewayPassword) : nil;
+        _sameCredentials = [settings containsObject:@[ @"FreeRDP_GatewayUseSameCredentials", @"TRUE" ]];
         _delegate = delegate;
         _lock = [NSLock new];
         _view = [[XPRDPView alloc] initWithFrame:NSMakeRect(0, 0, 640, 480)];
@@ -170,6 +173,14 @@ static BOOL XPSetSecret(rdpSettings *settings, FreeRDP_Settings_Keys_String key,
     return freerdp_settings_set_string(settings, key, secret.bytes);
 }
 
+/// What was typed in the sheet, over the settings' username and domain.
+static BOOL XPSetLogin(rdpSettings *settings, BOOL gateway, NSArray<NSString *> *_Nullable login) {
+    if (!login)
+        return YES;
+    return freerdp_settings_set_string(settings, gateway ? FreeRDP_GatewayUsername : FreeRDP_Username, login[0].UTF8String) &&
+           freerdp_settings_set_string(settings, gateway ? FreeRDP_GatewayDomain : FreeRDP_Domain, login[1].UTF8String);
+}
+
 - (BOOL)prepare {
     if (_context)
         return YES;
@@ -190,7 +201,8 @@ static BOOL XPSetSecret(rdpSettings *settings, FreeRDP_Settings_Keys_String key,
         if (!ok)
             break;
     }
-    ok = ok && XPSetSecret(settings, FreeRDP_Password, _password) && XPSetSecret(settings, FreeRDP_GatewayPassword, _gatewayPassword);
+    ok = ok && XPSetLogin(settings, NO, _login) && XPSetLogin(settings, YES, _gatewayLogin) &&
+         XPSetSecret(settings, FreeRDP_Password, _password) && XPSetSecret(settings, FreeRDP_GatewayPassword, _gatewayPassword);
     if (!ok) {
         XPZeroSetting(settings, FreeRDP_Password);
         XPZeroSetting(settings, FreeRDP_GatewayPassword);
@@ -285,6 +297,15 @@ static BOOL XPSetSecret(rdpSettings *settings, FreeRDP_Settings_Keys_String key,
     if (_context) {
         XPZeroSetting(_context->settings, FreeRDP_Password);
         (void)freerdp_settings_set_string(_context->settings, FreeRDP_Password, NULL);
+    }
+    // FreeRDP copies an accepted gateway password to the login (utils_sync_credentials): it would be sent again.
+    if (_sameCredentials) {
+        XPZeroSecret(_gatewayPassword);
+        _gatewayPassword = nil;
+        if (_context) {
+            XPZeroSetting(_context->settings, FreeRDP_GatewayPassword);
+            (void)freerdp_settings_set_string(_context->settings, FreeRDP_GatewayPassword, NULL);
+        }
     }
     [_lock unlock];
 }
@@ -415,10 +436,10 @@ static DWORD XPVerifyChangedCertificate(freerdp *instance, const char *host, UIN
     return XPAskAboutCertificate(instance, host, port, subject, issuer, fingerprint, flags, XPRDPCertificateKindChanged);
 }
 
-/// `username` / `password` point at the settings' own strings.
+/// `username` / `password` / `domain` point at the settings' own strings.
 static BOOL XPAuthenticate(freerdp *instance, char **username, char **password, char **domain, rdp_auth_reason reason) {
     XPRDPSession *s = XPSessionFor(instance->context);
-    if (!s || !username || !password)
+    if (!s || !username || !password || !domain)
         return NO;
     BOOL gateway;
     switch (reason) {
@@ -438,18 +459,21 @@ static BOOL XPAuthenticate(freerdp *instance, char **username, char **password, 
     if (!XPIsEmpty(*username) && !XPIsEmpty(*password))
         return YES;
     rdpSettings *settings = instance->context->settings;
-    NSString *user = XPString(*username);
+    NSString *user = XPString(*username), *domainName = XPString(*domain);
     NSString *host = XPString(freerdp_settings_get_string(settings, gateway ? FreeRDP_GatewayHostname : FreeRDP_ServerHostname));
-    NSString *typed = [s waitForAnswer:^(id<XPRDPSessionDelegate> delegate, void (^answer)(id)) {
-        [delegate session:s requestPasswordForUser:user host:host completion:^(NSString *value) {
-            answer(value);
-        }];
+    NSArray<NSString *> *typed = [s waitForAnswer:^(id<XPRDPSessionDelegate> delegate, void (^answer)(id)) {
+        [delegate session:s requestPasswordForUser:user domain:domainName host:host
+               completion:^(NSString *typedUser, NSString *typedDomain, NSString *typedPassword) {
+                   answer(typedPassword ? @[ typedUser, typedDomain, typedPassword ] : nil);
+               }];
     }];
     if (!typed)
         return NO;  // FreeRDP ends the connect as cancelled
-    NSMutableData *secret = XPSecret(typed);
-    const BOOL ok = XPReplaceSecret(password, secret);
-    [s rememberSecret:secret gateway:gateway];  // reconnect uses what was typed
+    NSArray<NSString *> *login = @[ typed[0], typed[1] ];
+    NSMutableData *secret = XPSecret(typed[2]);
+    const BOOL ok = XPReplaceString(username, login[0].UTF8String) && XPReplaceString(domain, login[1].UTF8String) &&
+                    XPReplaceString(password, secret.bytes);
+    [s rememberLogin:login secret:secret gateway:gateway];  // reconnect uses what was typed
     return ok;
 }
 
@@ -531,13 +555,16 @@ static void XPPostDisconnect(freerdp *instance) {
 
 #pragma mark State from FreeRDP's threads
 
-/// Main reads the buffers only before start and after stop's join, never while this thread runs.
-- (void)rememberSecret:(NSMutableData *)secret gateway:(BOOL)gateway {
+/// Main reads these only before start and after stop's join, never while this thread runs.
+- (void)rememberLogin:(NSArray<NSString *> *)login secret:(NSMutableData *)secret gateway:(BOOL)gateway {
     XPZeroSecret(gateway ? _gatewayPassword : _password);
-    if (gateway)
+    if (gateway) {
+        _gatewayLogin = login;
         _gatewayPassword = secret;
-    else
+    } else {
+        _login = login;
         _password = secret;
+    }
 }
 
 /// FreeRDP's `data` is the ErrorNotificationData (LOGON_FAILED_*) and `type` the ErrorNotificationType

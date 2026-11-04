@@ -85,14 +85,22 @@ extension XPRDPSession: RDPSessionControlling {}
         }, orElse: { completion(false) })
     }
 
-    func session(_ s: XPRDPSession, requestPasswordForUser user: String, host: String, completion: @escaping (String?) -> Void) {
-        present(RDPPasswordPrompt(user: user, host: host) { [weak self] password in
+    func session(_ s: XPRDPSession, requestPasswordForUser user: String, domain: String, host: String,
+                 completion: @escaping (String, String, String?) -> Void) {
+        present(RDPPasswordPrompt(user: user, domain: domain, host: host) { [weak self] typed in
             self?.dismissSheet()
-            completion(password)
-        }, orElse: { completion(nil) })
+            guard let typed else { return completion("", "", nil) }
+            let login = RDPLogin.split(username: typed.username, domain: typed.domain)
+            completion(login.username, login.domain ?? "", typed.password)
+        }, orElse: { completion("", "", nil) })
     }
 
     func session(_ s: XPRDPSession, didDisconnectWithErrorName errorName: String?) {
+        // A rejected login asks again at once (the sheet); the password that failed is never resent.
+        if RDPErrorText.needsNewPassword(errorName) {
+            lastError = errorName
+            return reconnect()
+        }
         guard RDPReconnectPolicy.shouldRetry(errorName: errorName, hadConnected: hadConnected, attempt: retries, config: config) else {
             return ended(errorName)
         }

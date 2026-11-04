@@ -9,8 +9,9 @@ import xpndRDP
     func session(_ s: XPRDPSession, decideCertificate c: XPRDPCertificate, completion: @escaping (Bool) -> Void) {
         calls.append("certificate"); completion(false)
     }
-    func session(_ s: XPRDPSession, requestPasswordForUser user: String, host: String, completion: @escaping (String?) -> Void) {
-        calls.append("password"); completion(nil)
+    func session(_ s: XPRDPSession, requestPasswordForUser user: String, domain: String, host: String,
+                 completion: @escaping (String, String, String?) -> Void) {
+        calls.append("password"); completion("", "", nil)
     }
     func session(_ s: XPRDPSession, didDisconnectWithErrorName errorName: String?) { calls.append("disconnect") }
     func sessionDidConnect(_ s: XPRDPSession) { calls.append("connect") }
@@ -56,6 +57,17 @@ struct XPRDPSessionTests {
         #expect(fresh.prepare())
         #expect(fresh.stringSettingNamed("FreeRDP_Password") == nil)
         fresh.stop()
+    }
+
+    @MainActor @Test func forgetPasswordForgetsASameCredentialsGatewayToo() {
+        // FreeRDP would copy the gateway's password back to the login and send it again.
+        let same = XPRDPSession(settings: [["FreeRDP_GatewayEnabled", "TRUE"], ["FreeRDP_GatewayUseSameCredentials", "TRUE"]],
+                                password: "p", gatewayPassword: "p", delegate: FakeDelegate())
+        #expect(same.prepare())
+        same.forgetPassword()
+        #expect(same.stringSettingNamed("FreeRDP_Password") == nil)
+        #expect(same.stringSettingNamed("FreeRDP_GatewayPassword") == nil)
+        same.stop()
     }
 
     @MainActor @Test func unknownSettingNameFailsPrepare() {

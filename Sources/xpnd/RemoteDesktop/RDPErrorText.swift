@@ -13,6 +13,13 @@ enum RDPErrorText {
     private static let reasons = [
         "ERRCONNECT_LOGON_FAILURE": "logon failed",
         "ERRCONNECT_ACCESS_DENIED": "access denied",
+        "ERRCONNECT_WRONG_PASSWORD": "the password was rejected",
+        "ERRCONNECT_PASSWORD_EXPIRED": "the password has expired",
+        "ERRCONNECT_PASSWORD_CERTAINLY_EXPIRED": "the password has expired",
+        "ERRCONNECT_PASSWORD_MUST_CHANGE": "the password must be changed",
+        "ERRCONNECT_ACCOUNT_LOCKED_OUT": "the account is locked out",
+        "ERRCONNECT_ACCOUNT_DISABLED": "the account is disabled",
+        "ERRCONNECT_AUTHENTICATION_FAILED": "authentication failed",
         "ERRCONNECT_CONNECT_TRANSPORT_FAILED": "the connection timed out",
         "ERRCONNECT_CONNECT_FAILED": "the connection timed out",
         "ERRCONNECT_TLS_CONNECT_FAILED": "the certificate was rejected",
@@ -25,9 +32,14 @@ enum RDPErrorText {
         name.map(cleanEnds.contains) ?? true
     }
 
-    /// The server rejected the password, so Reconnect asks for another instead of sending it again.
+    /// The server rejected the login, so the sheet asks again instead of the password being resent.
+    /// An expired, locked or disabled account isn't one: another try can't fix it.
+    private static let rejectedLogins: Set = [
+        "ERRCONNECT_LOGON_FAILURE", "ERRCONNECT_ACCESS_DENIED", "ERRCONNECT_WRONG_PASSWORD", "ERRCONNECT_AUTHENTICATION_FAILED",
+    ]
+
     static func needsNewPassword(_ name: String?) -> Bool {
-        name == "ERRCONNECT_LOGON_FAILURE" || name == "ERRCONNECT_ACCESS_DENIED"
+        name.map(rejectedLogins.contains) ?? false
     }
 
     /// `afterConnect`: the session had been up, so a transport failure means the network went away.

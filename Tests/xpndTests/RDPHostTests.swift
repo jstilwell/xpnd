@@ -43,6 +43,25 @@ import xpndRDP
         #expect(ended == ["the network connection was lost"])
     }
 
+    @Test func aRejectedLoginForgetsThePasswordAndAsksAgainAtOnce() {
+        let (host, s) = host()
+        var ended: [String?] = []
+        host.onDisconnect = { ended.append($0) }
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_LOGON_FAILURE")
+        #expect(fake.calls == ["start", "forgetPassword", "reconnect"])
+        #expect(ended.isEmpty)
+        // Cancelling the sheet that reconnect brings ends the tab.
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_CONNECT_CANCELLED")
+        #expect(ended == ["cancelled"])
+    }
+
+    @Test func noWindowForThePasswordSheetCancels() {
+        let (host, s) = host()
+        var answer: (String, String, String?)?
+        host.session(s, requestPasswordForUser: "me", domain: "", host: "win") { answer = ($0, $1, $2) }
+        #expect(answer?.2 == nil)
+    }
+
     @Test func terminateCancelsAPendingRetry() async {
         let (host, s) = host(delay: .seconds(60))
         host.sessionDidConnect(s)

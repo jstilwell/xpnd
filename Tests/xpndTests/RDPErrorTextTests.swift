@@ -33,10 +33,27 @@ struct RDPErrorTextTests {
     }
 
     @Test func aRejectedLoginAsksForANewPassword() {
-        #expect(RDPErrorText.needsNewPassword("ERRCONNECT_LOGON_FAILURE"))
-        #expect(RDPErrorText.needsNewPassword("ERRCONNECT_ACCESS_DENIED"))
-        #expect(!RDPErrorText.needsNewPassword("ERRCONNECT_CONNECT_TRANSPORT_FAILED"))
-        #expect(!RDPErrorText.needsNewPassword(nil))
+        for name in ["ERRCONNECT_LOGON_FAILURE", "ERRCONNECT_ACCESS_DENIED", "ERRCONNECT_WRONG_PASSWORD", "ERRCONNECT_AUTHENTICATION_FAILED"] {
+            #expect(RDPErrorText.needsNewPassword(name), "\(name)")
+        }
+        for name in [nil, "ERRCONNECT_CONNECT_TRANSPORT_FAILED", "ERRCONNECT_ACCOUNT_LOCKED_OUT", "ERRCONNECT_PASSWORD_EXPIRED",
+                     "ERRCONNECT_PASSWORD_MUST_CHANGE", "ERRCONNECT_ACCOUNT_DISABLED"] {
+            #expect(!RDPErrorText.needsNewPassword(name), "\(name ?? "nil")")
+        }
+    }
+
+    @Test func accountAndPasswordProblemsAreWorded() {
+        let cases = [
+            ("ERRCONNECT_WRONG_PASSWORD", "the password was rejected"),
+            ("ERRCONNECT_PASSWORD_EXPIRED", "the password has expired"),
+            ("ERRCONNECT_PASSWORD_MUST_CHANGE", "the password must be changed"),
+            ("ERRCONNECT_ACCOUNT_LOCKED_OUT", "the account is locked out"),
+            ("ERRCONNECT_ACCOUNT_DISABLED", "the account is disabled"),
+            ("ERRCONNECT_AUTHENTICATION_FAILED", "authentication failed"),
+        ]
+        for (name, reason) in cases {
+            #expect(RDPErrorText.reason(forErrorName: name) == reason, "\(name)")
+        }
     }
 
     @Test func logoffsAreClean() {
