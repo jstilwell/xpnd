@@ -32,15 +32,17 @@ extension AppDelegate {
             quickMenu.show(
                 folder: id, library: library,
                 onOpenApp: { [weak self] in self?.showMainWindow(selecting: .folder(id)) },
-                connect: { [weak self] connection, pid in await self?.connectExclusively(connection, from: pid, deleting: typed) }
+                connect: { [weak self] connection, pid, sudo in
+                    await self?.connectExclusively(connection, from: pid, deleting: typed, sudo: sudo)
+                }
             )
         }
     }
 
     /// For the quick menu, the launcher and the main window. `pid`: the app to guard, nil for none.
-    func connectExclusively(_ id: Connection.ID, from pid: pid_t?, deleting: Int = 0) async {
+    func connectExclusively(_ id: Connection.ID, from pid: pid_t?, deleting: Int = 0, sudo: Bool = false) async {
         let service = service
-        guard await engine.exclusive({ await service?.connect(id, typedInto: pid, deletingCharacters: deleting) }) else {
+        guard await engine.exclusive({ await service?.connect(id, typedInto: pid, deletingCharacters: deleting, sudo: sudo) }) else {
             return hud.flash("Another action is still running.")
         }
     }
@@ -51,9 +53,9 @@ extension AppDelegate {
                 store: store, connections: connections,
                 provider: { [unowned self] in self.provider }, preferredAccount: { AppSettings.shared.onePasswordAccount },
                 keysDirectory: keysDirectory,
-                connect: { [weak self] id in
+                connect: { [weak self] id, sudo in
                     // Clicked in xpnd itself, so there's no other app to guard.
-                    Task { await self?.connectExclusively(id, from: nil) }
+                    Task { await self?.connectExclusively(id, from: nil, sudo: sudo) }
                 },
                 openSettings: { [weak self] in self?.showSettings() })
         }

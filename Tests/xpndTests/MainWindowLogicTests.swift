@@ -38,7 +38,7 @@ private struct TwoAccountProvider: CredentialProvider {
         store: ConnectionStore(fileURL: directory.appending(path: "connections.yaml")),
         snippets: SnippetStore(fileURL: directory.appending(path: "snippets.yaml")),
         provider: { provider }, preferredAccount: { account }, keysDirectory: directory.appending(path: "keys"),
-        connect: { _ in })
+        connect: { _, _ in })
     return (editing, directory)
 }
 

@@ -70,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             launcher.toggle(
                 library: connections.library, onOpenApp: { [weak self] in self?.showMainWindow(selecting: nil) },
-                connect: { [weak self] id, pid in await self?.connectExclusively(id, from: pid) }
+                connect: { [weak self] id, pid, sudo in await self?.connectExclusively(id, from: pid, sudo: sudo) }
             )
         }
         registerLauncherShortcut()
@@ -294,7 +294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 connections: ConnectionEditing(
                     store: connections, snippets: store, provider: { [unowned self] in self.provider },
                     preferredAccount: { AppSettings.shared.onePasswordAccount }, keysDirectory: keysDirectory,
-                    connect: { _ in }))
+                    connect: { _, _ in }))
         }
         settingsWindow?.show()
     }

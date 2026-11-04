@@ -16,7 +16,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     init(store: SnippetStore, connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider,
          preferredAccount: @escaping @MainActor () -> String?, keysDirectory: URL,
-         connect: @escaping (Connection.ID) -> Void, openSettings: @escaping () -> Void) {
+         connect: @escaping (Connection.ID, _ sudo: Bool) -> Void, openSettings: @escaping () -> Void) {
         let model = MainWindowModel()
         self.model = model
         let editing = ConnectionEditing(
