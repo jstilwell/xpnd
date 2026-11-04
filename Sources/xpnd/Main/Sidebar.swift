@@ -28,7 +28,7 @@ enum SidebarItem: Hashable {
 }
 
 /// The main window's sidebar: the connection tree, then snippet groups as one-level folders.
-/// Double-clicking a connection (or Connect in its menu) connects; double-clicking a group opens or closes it. Searching filters both: the
+/// Double-clicking a connection (or Connect in its menu) connects; double-clicking a folder or group opens or closes it. Searching filters both: the
 /// connections as a flat list, as the launcher shows them, and each group's snippets as the picker does.
 /// Rows drag (`draggable`, carrying `SidebarItem.dragText`): between rows to reorder or move into
 /// that list (`dropDestination` on the `ForEach`, which reports the index before the item is taken
@@ -45,6 +45,7 @@ struct Sidebar: View {
     @State private var search = ""
     /// Groups opened by hand; every group shows open while searching.
     @State private var expandedGroups: Set<SnippetGroup.ID> = []
+    @State private var expandedFolders: Set<ConnectionFolder.ID> = []
     /// The group a drag is over (its "into" target), so it highlights.
     @State private var targetedGroup: SnippetGroup.ID?
 
@@ -62,6 +63,7 @@ struct Sidebar: View {
             switch items.count == 1 ? items.first : nil {
             case .connection(let id)?: connections.connect(id, NSEvent.modifierFlags.contains(.command))
             case .snippetGroup(let id)?: expandedGroups.formSymmetricDifference([id])
+            case .folder(let id)?: expandedFolders.formSymmetricDifference([id])
             default: break
             }
         }
@@ -96,7 +98,7 @@ struct Sidebar: View {
                     }
                 } else {
                     ForEach(connections.library.folders) { folder in
-                        FolderRows(folder: folder, namespace: namespace, drops: drops, inherited: nil)
+                        FolderRows(folder: folder, namespace: namespace, drops: drops, inherited: nil, expanded: $expandedFolders)
                     }
                     .dropDestination(for: String.self) { texts, index in
                         for item in sidebarItems(texts) { drops.insert(item, nil, index, .folders) }
@@ -357,6 +359,8 @@ private struct FolderRows: View {
     let drops: SidebarDrops
     /// The nearest ancestor's colour, for anything in here without its own.
     let inherited: ItemColor?
+    /// Every open folder in the tree, shared by all levels so the sidebar can toggle one on double-click.
+    @Binding var expanded: Set<ConnectionFolder.ID>
     @State private var targeted = false
     private var color: ItemColor? { folder.color ?? inherited }
 
@@ -365,7 +369,10 @@ private struct FolderRows: View {
         if folder.connections.isEmpty && folder.folders.isEmpty {
             label
         } else {
-            DisclosureGroup {
+            DisclosureGroup(isExpanded: Binding(
+                get: { expanded.contains(folder.id) },
+                set: { if $0 { expanded.insert(folder.id) } else { expanded.remove(folder.id) } })
+            ) {
                 ForEach(folder.connections) { connection in
                     let node = ConnectionNode(connection: connection, inherited: color)
                     sidebarRow(node.title, detail: node.detail, symbol: node.symbol, color: node.color)
@@ -376,7 +383,7 @@ private struct FolderRows: View {
                     for item in sidebarItems(texts) { drops.insert(item, folder.id, index, .connections) }
                 }
                 ForEach(folder.folders) { child in
-                    FolderRows(folder: child, namespace: namespace, drops: drops, inherited: color)
+                    FolderRows(folder: child, namespace: namespace, drops: drops, inherited: color, expanded: $expanded)
                 }
                 .dropDestination(for: String.self) { texts, index in
                     for item in sidebarItems(texts) { drops.insert(item, folder.id, index, .folders) }
