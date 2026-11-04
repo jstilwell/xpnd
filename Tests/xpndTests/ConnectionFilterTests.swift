@@ -43,6 +43,16 @@ struct ConnectionFilterTests {
         #expect(names(lib, "CAFE") == ["Café"])
     }
 
+    @Test func entriesAndTreeRowsCarryColors() {
+        var lib = library()
+        lib.folders[0].color = .yellow
+        lib.folders[0].folders[0].connections[0].color = .red
+        let entries = ConnectionFilter.entries(lib)
+        #expect(entries.map(\.color) == [.yellow, .yellow, .red, nil])
+        let rows = ConnectionTreeRow.rows(lib, expanded: Set(lib.allFolders.map(\.id)))
+        #expect(rows.map(\.color) == [.yellow, .yellow, .yellow, .yellow, .red, nil, nil])
+    }
+
     @Test func treeRows() {
         let lib = library()
         let prod = lib.folders[0], web = prod.folders[0]

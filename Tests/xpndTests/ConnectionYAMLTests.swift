@@ -71,8 +71,8 @@ import Testing
                                sshOptions: "-o A=\"b c\"", autoSudo: true)
         let viaText = Connection(name: "v", type: .vnc, host: "h2", activation: ";v",
                                  credential: Self.cred("c1", username: "root"), sudoCredential: Self.cred("c2"),
-                                 jumpHost: .text("ec2-user@bastion:22"))
-        let inner = ConnectionFolder(name: "inner", activation: "", connections: [viaText])
+                                 jumpHost: .text("ec2-user@bastion:22"), color: .green)
+        let inner = ConnectionFolder(name: "inner", activation: "", connections: [viaText], color: .blue)
         let outer = ConnectionFolder(name: "outer", credential: Self.cred("c3"),
                                      connections: [jumpTarget, viaID], folders: [inner])
         let lib = ConnectionLibrary(credential: Self.cred("g", username: "me"), sudoCredential: Self.cred("gs"),
@@ -86,6 +86,15 @@ import Testing
         #expect(!yaml.contains("port"))
         #expect(!yaml.contains("advanced"))
         #expect(!yaml.contains("activation"))
+        #expect(!yaml.contains("color"))
+    }
+
+    @Test func colorsAreNamesInYAML() throws {
+        let lib = ConnectionLibrary(folders: [ConnectionFolder(name: "lan", connections: [Connection(name: "c", host: "h")], color: .orange)])
+        let yaml = ConnectionYAML.encode(lib)
+        #expect(yaml.contains("color: orange"))
+        #expect(try ConnectionYAML.decode(yaml) == lib)
+        #expect(throws: ConnectionYAMLError.self) { try ConnectionYAML.decode(yaml.replacingOccurrences(of: "orange", with: "teal")) }
     }
 
     @Test func emptyActivationIsNone() throws {

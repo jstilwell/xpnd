@@ -4,6 +4,13 @@ import Testing
 struct QuickMenuModelTests {
     private func conn(_ name: String) -> Connection { Connection(name: name, host: name + ".example.com") }
 
+    @Test func rowsCarryTheResolvedColor() {
+        let sub = ConnectionFolder(name: "sub")
+        let root = ConnectionFolder(name: "lan", connections: [conn("a")], folders: [sub], color: .purple)
+        let model = QuickMenuModel(library: ConnectionLibrary(folders: [root]), folder: root.id)
+        #expect(model.rows.map(\.color) == [.purple, .purple])
+    }
+
     @Test func numbersFirstNine() {
         let sub = ConnectionFolder(name: "sub")
         let root = ConnectionFolder(name: "prod", connections: (1...10).map { conn("c\($0)") }, folders: [sub])

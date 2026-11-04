@@ -5,6 +5,12 @@ enum CredentialSource: Equatable {
     case connection, folder(name: String), global, login
 }
 
+struct ResolvedColor: Equatable {
+    let color: ItemColor
+    /// The folder it came from, or nil for the item's own.
+    let inheritedFrom: String?
+}
+
 struct ResolvedCredential: Equatable {
     let ref: CredentialRef
     let source: CredentialSource
@@ -53,6 +59,28 @@ extension ConnectionLibrary {
     /// The connection's own username, else the resolved credential's.
     func loginUser(for connection: Connection) -> String? {
         [connection.username, loginCredential(for: connection.id)?.ref.username].compactMap { $0 }.first { !$0.isEmpty }
+    }
+
+    /// The item's own color, else the nearest colored folder's.
+    func color(for target: ActivationTarget) -> ResolvedColor? {
+        let own: ItemColor?
+        let ancestors: [ConnectionFolder]
+        switch target {
+        case .connection(let id):
+            guard let connection = connection(id) else { return nil }
+            own = connection.color
+            ancestors = path(of: id)
+        case .folder(let id):
+            let path = folderPath(of: id)
+            guard let folder = path.last else { return nil }
+            own = folder.color
+            ancestors = path.dropLast()
+        }
+        if let own { return ResolvedColor(color: own, inheritedFrom: nil) }
+        for folder in ancestors.reversed() {
+            if let color = folder.color { return ResolvedColor(color: color, inheritedFrom: folder.name) }
+        }
+        return nil
     }
 
     /// Connection, then the nearest folder, then global.

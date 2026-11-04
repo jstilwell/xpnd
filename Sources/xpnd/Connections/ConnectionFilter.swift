@@ -4,6 +4,8 @@ struct ConnectionEntry: Hashable {
     let connection: Connection
     /// Ancestor folder names, from the root.
     let path: [String]
+    /// Its own color, or the nearest folder's.
+    let color: ItemColor?
 
     var pathText: String { path.joined(separator: " › ") }
 }
@@ -13,7 +15,7 @@ enum ConnectionFilter {
     static func entries(_ library: ConnectionLibrary) -> [ConnectionEntry] {
         func walk(_ folder: ConnectionFolder, _ parents: [String]) -> [ConnectionEntry] {
             let path = parents + [folder.name]
-            return folder.connections.map { ConnectionEntry(connection: $0, path: path) }
+            return folder.connections.map { ConnectionEntry(connection: $0, path: path, color: library.color(for: .connection($0.id))?.color) }
                 + folder.folders.flatMap { walk($0, path) }
         }
         return library.folders.flatMap { walk($0, []) }
@@ -47,15 +49,19 @@ struct ConnectionTreeRow: Identifiable, Hashable {
     let title: String
     let depth: Int
     let kind: Kind
+    let color: ItemColor?
 
     /// Folders and connections in tree order; a folder's contents show only while it is in `expanded`.
     static func rows(_ library: ConnectionLibrary, expanded: Set<ConnectionFolder.ID>) -> [ConnectionTreeRow] {
         func walk(_ folder: ConnectionFolder, _ depth: Int) -> [ConnectionTreeRow] {
             let open = expanded.contains(folder.id)
-            let head = ConnectionTreeRow(id: folder.id, title: folder.name, depth: depth, kind: .folder(expanded: open))
+            let head = ConnectionTreeRow(id: folder.id, title: folder.name, depth: depth, kind: .folder(expanded: open),
+                                         color: library.color(for: .folder(folder.id))?.color)
             guard open else { return [head] }
             return [head]
-                + folder.connections.map { ConnectionTreeRow(id: $0.id, title: $0.name, depth: depth + 1, kind: .connection($0)) }
+                + folder.connections.map {
+                    ConnectionTreeRow(id: $0.id, title: $0.name, depth: depth + 1, kind: .connection($0), color: library.color(for: .connection($0.id))?.color)
+                }
                 + folder.folders.flatMap { walk($0, depth + 1) }
         }
         return library.folders.flatMap { walk($0, 0) }

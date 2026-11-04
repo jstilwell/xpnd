@@ -22,6 +22,10 @@ struct FolderEditorView: View {
         Form {
             TextField("Name", text: Binding(get: { folder.name }, set: { name in editing.edit(folder: folder.id) { $0.name = name } }))
                 .focused($focused, equals: .name)
+            ColorChoice(own: folder.color,
+                        inherited: library.folderPath(of: folder.id).dropLast().last.flatMap { library.color(for: .folder($0.id)) }) { color in
+                editing.edit(folder: folder.id) { $0.color = color }
+            }
             Section("Activation") {
                 Picker("Activation string", selection: Binding(get: { mode }, set: choose)) {
                     Text("Derived from the name").tag(Mode.derived)

@@ -78,7 +78,7 @@ private struct ConnectionLauncherView: View {
                         if searching {
                             ForEach(found, id: \.connection.id) { entry in
                                 HStack {
-                                    Text(entry.connection.name).lineLimit(1)
+                                    Text(entry.connection.name).lineLimit(1).foregroundStyle(entry.color?.ui ?? Color.primary)
                                     Spacer()
                                     Text(entry.pathText).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                                 }
@@ -117,7 +117,7 @@ private struct ConnectionLauncherView: View {
             case .connection(let c):
                 Image(systemName: c.type == .ssh ? "terminal" : "display").frame(width: 14).accessibilityHidden(true)
             }
-            Text(row.title).lineLimit(1)
+            Text(row.title).lineLimit(1).foregroundStyle(row.color?.ui ?? Color.primary)
             Spacer()
         }
         .padding(.leading, CGFloat(row.depth) * 16)

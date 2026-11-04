@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import xpnd
 
@@ -10,6 +11,24 @@ private func server(_ name: String, credential: CredentialRef? = nil, sudo: Cred
 }
 
 @Suite struct ConnectionLibraryTests {
+    @Test func colorCascade() {
+        let own = Connection(name: "own", host: "h", color: .red)
+        let fromLan = Connection(name: "lan-box", host: "h")
+        let plain = Connection(name: "plain", host: "h")
+        let inner = ConnectionFolder(name: "inner", connections: [fromLan])
+        let lan = ConnectionFolder(name: "lan", connections: [own], folders: [inner], color: .blue)
+        let dev = ConnectionFolder(name: "dev", connections: [plain])
+        let library = ConnectionLibrary(folders: [lan, dev])
+
+        #expect(library.color(for: .connection(own.id)) == ResolvedColor(color: .red, inheritedFrom: nil))
+        // The nearest colored folder, by name, so the editor can say where it came from.
+        #expect(library.color(for: .connection(fromLan.id)) == ResolvedColor(color: .blue, inheritedFrom: "lan"))
+        #expect(library.color(for: .folder(inner.id)) == ResolvedColor(color: .blue, inheritedFrom: "lan"))
+        #expect(library.color(for: .folder(lan.id)) == ResolvedColor(color: .blue, inheritedFrom: nil))
+        #expect(library.color(for: .connection(plain.id)) == nil)
+        #expect(library.color(for: .connection(UUID())) == nil)
+    }
+
     @Test func loginCascade() {
         let override = server("override", credential: ref("O"))
         let nearest = server("nearest")

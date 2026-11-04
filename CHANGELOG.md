@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - With more than one 1Password account, Settings → Password Manager asks which is yours instead of guessing the first, and the status check now asks 1Password for access rather than reporting "not signed in" on a working setup.
 
 ### Added
+- Folders and connections can have a color from a small palette; a connection without one takes the nearest folder's, and the name shows in that color in the sidebar, the folder menu and the launcher.
 
 - Connections to SSH and VNC servers, kept in folders and in a YAML file you can edit by hand.
 - Typing a connection's activation string connects, and typing a folder's opens a numbered menu of its connections.

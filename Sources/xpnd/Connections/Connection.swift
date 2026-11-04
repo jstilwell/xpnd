@@ -30,6 +30,11 @@ struct CredentialRef: Hashable, Codable, Sendable {
     }
 }
 
+/// A fixed palette, like Finder tags: it reads in light and dark mode and is hand-editable in YAML.
+enum ItemColor: String, Codable, CaseIterable, Sendable {
+    case red, orange, yellow, green, blue, purple, gray
+}
+
 enum JumpHost: Hashable, Sendable {
     case connection(UUID), text(String)
 }
@@ -48,6 +53,8 @@ struct Connection: Identifiable, Hashable, Sendable {
     var jumpHost: JumpHost?
     var sshOptions = ""
     var autoSudo = false
+    /// nil inherits the nearest folder's.
+    var color: ItemColor?
 
     var effectivePort: Int { port ?? type.defaultPort }
 }
@@ -61,6 +68,8 @@ struct ConnectionFolder: Identifiable, Hashable, Sendable {
     var sudoCredential: CredentialRef?
     var connections: [Connection] = []
     var folders: [ConnectionFolder] = []
+    /// nil inherits the nearest ancestor folder's.
+    var color: ItemColor?
 }
 
 struct ConnectionLibrary: Hashable, Sendable {
