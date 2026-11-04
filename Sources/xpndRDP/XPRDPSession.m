@@ -271,6 +271,8 @@ static BOOL XPSetLogin(rdpSettings *settings, BOOL gateway, NSArray<NSString *> 
         return;
     if (_started) {
         (void)freerdp_abort_connect_context(_context);
+        // shortcut: blocks main until a DNS lookup in progress returns (getaddrinfo can't be aborted),
+        // upgrade by joining the client thread off main if a slow resolver makes closing a tab hang.
         (void)freerdp_client_stop(_context);  // waits for the client thread
         _started = NO;
     }
@@ -635,30 +637,32 @@ static void XPPostDisconnect(freerdp *instance) {
 @implementation XPRDPSession (XPRDPView)
 
 - (void)viewSizeSettled:(CGSize)size {
-    if (!_context || !freerdp_settings_get_bool(_context->settings, FreeRDP_DynamicResolutionUpdate))
+    // Checked first, and held throughout: FreeRDP swaps context->settings during a redirection, and
+    // PostDisconnect clears _disp under the lock before the channel is freed.
+    [_lock lock];
+    DispClientContext *disp = _connected && !_stopped && _context ? _disp : NULL;
+    rdpSettings *settings = disp ? _context->settings : NULL;
+    if (!disp || !disp->SendMonitorLayout || !freerdp_settings_get_bool(settings, FreeRDP_DynamicResolutionUpdate)) {
+        [_lock unlock];
         return;
-    rdpSettings *settings = _context->settings;
+    }
     // Task 3's mapping: Retina on ⇔ DesktopScaleFactor 200, and then the desktop is in backing pixels.
     const UINT32 desktopScale = freerdp_settings_get_uint32(settings, FreeRDP_DesktopScaleFactor);
     const NSSize pixels = desktopScale > 100 ? [_view convertSizeToBacking:size] : size;
     // MS-RDPEDISP 2.2.2.2.1: width even, both within 200–8192.
     const UINT32 width = MIN(MAX((UINT32)pixels.width & ~1u, 200u), 8192u);
     const UINT32 height = MIN(MAX((UINT32)pixels.height, 200u), 8192u);
-    if (width == freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth) &&
-        height == freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight))
-        return;
-    DISPLAY_CONTROL_MONITOR_LAYOUT layout = {0};
-    layout.Flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
-    layout.Width = width;
-    layout.Height = height;
-    layout.Orientation = ORIENTATION_LANDSCAPE;
-    layout.DesktopScaleFactor = desktopScale;
-    layout.DeviceScaleFactor = freerdp_settings_get_uint32(settings, FreeRDP_DeviceScaleFactor);
-    // Held across the send: PostDisconnect clears _disp under it before the channel is freed.
-    [_lock lock];
-    DispClientContext *disp = _connected && !_stopped ? _disp : NULL;
-    if (disp && disp->SendMonitorLayout)
+    if (width != freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth) ||
+        height != freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight)) {
+        DISPLAY_CONTROL_MONITOR_LAYOUT layout = {0};
+        layout.Flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
+        layout.Width = width;
+        layout.Height = height;
+        layout.Orientation = ORIENTATION_LANDSCAPE;
+        layout.DesktopScaleFactor = desktopScale;
+        layout.DeviceScaleFactor = freerdp_settings_get_uint32(settings, FreeRDP_DeviceScaleFactor);
         (void)disp->SendMonitorLayout(disp, 1, &layout);
+    }
     [_lock unlock];
 }
 
