@@ -107,6 +107,17 @@ private struct TwoAccountProvider: CredentialProvider {
         #expect(EditorRules.addTarget(for: .folder(UUID()), in: library) == nil)
     }
 
+    @Test func aboveTheLineIsTheRowAbove() {
+        let a = UUID(), b = UUID(), c = UUID(), container = UUID()
+        // A drop between rows reports the index of the row below the line.
+        #expect(EditorRules.aboveTheLine(index: 1, siblings: [a, b, c], container: nil) == a)
+        #expect(EditorRules.aboveTheLine(index: 3, siblings: [a, b, c], container: nil) == c)
+        // Above the first row: the enclosing folder, or at the top level the first folder.
+        #expect(EditorRules.aboveTheLine(index: 0, siblings: [a, b, c], container: container) == container)
+        #expect(EditorRules.aboveTheLine(index: 0, siblings: [a, b, c], container: nil) == a)
+        #expect(EditorRules.aboveTheLine(index: 0, siblings: [], container: nil) == nil)
+    }
+
     @Test func plurals() {
         #expect(EditorRules.count(1, "connection") == "1 connection")
         #expect(EditorRules.count(0, "folder") == "0 folders")
@@ -167,6 +178,89 @@ private struct TwoAccountProvider: CredentialProvider {
         let removedFolder = library.remove(.folder(inner.id))
         #expect(removedFolder != nil)
         #expect(library.folder(inner.id) == nil)
+    }
+
+    @Test func movesToAPosition() {
+        let a = Connection(name: "a", host: "a"), b = Connection(name: "b", host: "b"), c = Connection(name: "c", host: "c")
+        let x = ConnectionFolder(name: "x"), y = ConnectionFolder(name: "y"), z = ConnectionFolder(name: "z")
+        let dev = ConnectionFolder(name: "dev", connections: [a, b, c], folders: [x, y, z])
+        let prod = ConnectionFolder(name: "prod")
+        var library = ConnectionLibrary(folders: [dev, prod])
+        var moved = false
+        func names(_ id: ConnectionFolder.ID) -> [String] { library.folder(id)!.connections.map(\.name) }
+
+        // `at` is the index among the current siblings, as a drop between rows reports it: moving
+        // `a` to before `c` (index 2) lands it after `b`.
+        moved = library.move(.connection(a.id), to: dev.id, at: 2)
+        #expect(moved)
+        #expect(names(dev.id) == ["b", "a", "c"])
+        moved = library.move(.connection(c.id), to: dev.id, at: 0)
+        #expect(moved)
+        #expect(names(dev.id) == ["c", "b", "a"])
+        // Same place: nothing changes, and it isn't an error.
+        moved = library.move(.connection(c.id), to: dev.id, at: 0)
+        #expect(moved)
+        #expect(names(dev.id) == ["c", "b", "a"])
+        // Into another folder at a position; past the end appends.
+        moved = library.move(.connection(b.id), to: prod.id, at: 0)
+        #expect(moved)
+        moved = library.move(.connection(a.id), to: prod.id, at: 99)
+        #expect(moved)
+        #expect(names(prod.id) == ["b", "a"] && names(dev.id) == ["c"])
+
+        // Folders reorder among their siblings and at the top level the same way.
+        moved = library.move(.folder(z.id), to: dev.id, at: 0)
+        #expect(moved)
+        #expect(library.folder(dev.id)!.folders.map(\.name) == ["z", "x", "y"])
+        moved = library.move(.folder(prod.id), to: nil, at: 0)
+        #expect(moved)
+        #expect(library.folders.map(\.name) == ["prod", "dev"])
+        moved = library.move(.folder(x.id), to: nil, at: 1)
+        #expect(moved)
+        #expect(library.folders.map(\.name) == ["prod", "x", "dev"])
+        // Still never into its own subtree.
+        moved = library.move(.folder(dev.id), to: y.id, at: 0)
+        #expect(!moved)
+    }
+
+    @Test func snippetsMoveBetweenAndWithinGroups() {
+        let s1 = Snippet(name: "1", keyword: ";1", text: ""), s2 = Snippet(name: "2", keyword: ";2", text: "")
+        let s3 = Snippet(name: "3", keyword: ";3", text: "")
+        let work = SnippetGroup(name: "work", snippets: [s1, s2, s3]), home = SnippetGroup(name: "home", snippets: [])
+        var library = SnippetLibrary(groups: [work, home])
+        var moved = false
+        func names(_ id: SnippetGroup.ID) -> [String] { library.groups.first { $0.id == id }!.snippets.map(\.name) }
+
+        moved = library.moveSnippet(s1.id, to: work.id, at: 3)
+        #expect(moved)
+        #expect(names(work.id) == ["2", "3", "1"])
+        moved = library.moveSnippet(s3.id, to: home.id, at: nil)
+        #expect(moved)
+        moved = library.moveSnippet(s2.id, to: home.id, at: 0)
+        #expect(moved)
+        #expect(names(home.id) == ["2", "3"] && names(work.id) == ["1"])
+        moved = library.moveSnippet(UUID(), to: home.id, at: 0)
+        #expect(!moved)
+        moved = library.moveSnippet(s1.id, to: UUID(), at: 0)
+        #expect(!moved)
+
+        moved = library.moveGroup(home.id, to: 0)
+        #expect(moved)
+        #expect(library.groups.map(\.name) == ["home", "work"])
+        moved = library.moveGroup(home.id, to: 2)
+        #expect(moved)
+        #expect(library.groups.map(\.name) == ["work", "home"])
+        moved = library.moveGroup(UUID(), to: 0)
+        #expect(!moved)
+    }
+
+    @Test func sidebarItemsRoundTripAsDragText() {
+        let id = UUID()
+        for item in [SidebarItem.folder(id), .connection(id), .snippetGroup(id), .snippet(id)] {
+            #expect(SidebarItem(dragText: item.dragText) == item)
+        }
+        #expect(SidebarItem(dragText: "hello") == nil)
+        #expect(SidebarItem(dragText: "xpnd-sidebar:folder:not-a-uuid") == nil)
     }
 
     @Test func namePathsFindItemsAgain() {

@@ -2,11 +2,38 @@ import SwiftUI
 
 enum SidebarItem: Hashable {
     case folder(ConnectionFolder.ID), connection(Connection.ID), snippetGroup(SnippetGroup.ID), snippet(Snippet.ID)
+
+    /// Plain text carried by a sidebar drag, so no custom type needs declaring; anything else dropped
+    /// on the sidebar isn't one of these and is ignored.
+    var dragText: String {
+        switch self {
+        case .folder(let id): "xpnd-sidebar:folder:\(id.uuidString)"
+        case .connection(let id): "xpnd-sidebar:connection:\(id.uuidString)"
+        case .snippetGroup(let id): "xpnd-sidebar:group:\(id.uuidString)"
+        case .snippet(let id): "xpnd-sidebar:snippet:\(id.uuidString)"
+        }
+    }
+
+    init?(dragText: String) {
+        let parts = dragText.split(separator: ":", maxSplits: 2).map(String.init)
+        guard parts.count == 3, parts[0] == "xpnd-sidebar", let id = UUID(uuidString: parts[2]) else { return nil }
+        switch parts[1] {
+        case "folder": self = .folder(id)
+        case "connection": self = .connection(id)
+        case "group": self = .snippetGroup(id)
+        case "snippet": self = .snippet(id)
+        default: return nil
+        }
+    }
 }
 
 /// The main window's sidebar: the connection tree, then snippet groups as one-level folders.
 /// Double-clicking a connection (or Connect in its menu) connects. Searching filters both: the
 /// connections as a flat list, as the launcher shows them, and each group's snippets as the picker does.
+/// Rows drag (`draggable`, carrying `SidebarItem.dragText`): between rows to reorder or move into
+/// that list (`dropDestination` on the `ForEach`, which reports the index before the item is taken
+/// out), onto a folder or group to move into it. Drops do nothing while searching, because the rows
+/// shown aren't the stored order.
 struct Sidebar: View {
     let connections: ConnectionEditing
     let editing: SnippetEditing
@@ -18,43 +45,15 @@ struct Sidebar: View {
     @State private var search = ""
     /// Groups opened by hand; every group shows open while searching.
     @State private var expandedGroups: Set<SnippetGroup.ID> = []
+    /// The group a drag is over (its "into" target), so it highlights.
+    @State private var targetedGroup: SnippetGroup.ID?
+
+    private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
-        let library = editing.store.library
-        let namespace = KeywordNamespace(snippets: library, connections: connections.library)
-        let searching = !search.trimmingCharacters(in: .whitespaces).isEmpty
         List(selection: $selection) {
-            Section {
-                if searching {
-                    ForEach(ConnectionFilter.filter(ConnectionFilter.entries(connections.library), query: search), id: \.connection.id) { entry in
-                        row(entry.connection.name, detail: entry.pathText, symbol: ConnectionNode(connection: entry.connection).symbol)
-                            .tag(SidebarItem.connection(entry.connection.id))
-                    }
-                } else {
-                    OutlineGroup(connections.library.folders.map { ConnectionNode(folder: $0, namespace) }, children: \.children) { node in
-                        row(node.title, detail: node.detail, symbol: node.symbol).tag(node.id)
-                    }
-                }
-            } header: {
-                heading("Connections") { addConnectionsMenu }
-            }
-            Section {
-                ForEach(library.groups) { group in
-                    let shown = searching ? PickerFilter.filter(group.snippets, query: search) : group.snippets
-                    if !searching || !shown.isEmpty {
-                        snippetGroup(group, shown, expanded: Binding(
-                            get: { searching || expandedGroups.contains(group.id) },
-                            set: { if $0 { expandedGroups.insert(group.id) } else { expandedGroups.remove(group.id) } }))
-                    }
-                }
-            } header: {
-                heading("Snippets") {
-                    Button("Add Snippet Group", systemImage: "plus") {
-                        if let id = editing.addGroup() { selection = .snippetGroup(id) }
-                    }
-                    .disabled(editing.readOnly)
-                }
-            }
+            connectionsSection
+            snippetsSection
         }
         .searchable(text: $search, placement: .sidebar)
         .contextMenu(forSelectionType: SidebarItem.self) { items in
@@ -80,6 +79,64 @@ struct Sidebar: View {
             }
             .padding(6)
         }
+    }
+
+    private var connectionsSection: some View {
+        let namespace = KeywordNamespace(snippets: editing.store.library, connections: connections.library)
+        return Section {
+                if searching {
+                    ForEach(ConnectionFilter.filter(ConnectionFilter.entries(connections.library), query: search), id: \.connection.id) { entry in
+                        row(entry.connection.name, detail: entry.pathText, symbol: ConnectionNode(connection: entry.connection).symbol)
+                            .tag(SidebarItem.connection(entry.connection.id))
+                    }
+                } else {
+                    ForEach(connections.library.folders) { folder in
+                        FolderRows(folder: folder, namespace: namespace, drops: drops)
+                    }
+                    .dropDestination(for: String.self) { texts, index in
+                        for item in sidebarItems(texts) { drops.insert(item, nil, index, .folders) }
+                    }
+                }
+            } header: {
+                heading("Connections") { addConnectionsMenu }
+            }
+    }
+
+    private var snippetsSection: some View {
+        let library = editing.store.library
+        return Section {
+                ForEach(library.groups) { group in
+                    let shown = searching ? PickerFilter.filter(group.snippets, query: search) : group.snippets
+                    if !searching || !shown.isEmpty {
+                        snippetGroup(group, shown, expanded: Binding(
+                            get: { searching || expandedGroups.contains(group.id) },
+                            set: { if $0 { expandedGroups.insert(group.id) } else { expandedGroups.remove(group.id) } }))
+                    }
+                }
+                .dropDestination(for: String.self) { texts, index in
+                    for item in sidebarItems(texts) {
+                        switch item {
+                        case .snippetGroup(let id):
+                            var probe = editing.store.library
+                            guard !searching, probe.moveGroup(id, to: index), probe != editing.store.library else { continue }
+                            _ = editing.moveGroup(id, to: index)
+                        // A snippet dropped under a group's row goes into that group.
+                        case .snippet(let id):
+                            if let group = EditorRules.aboveTheLine(index: index, siblings: library.groups.map(\.id), container: nil) {
+                                dropSnippet(id, into: group, at: nil)
+                            }
+                        default: break
+                        }
+                    }
+                }
+            } header: {
+                heading("Snippets") {
+                    Button("Add Snippet Group", systemImage: "plus") {
+                        if let id = editing.addGroup() { selection = .snippetGroup(id) }
+                    }
+                    .disabled(editing.readOnly)
+                }
+            }
     }
 
     private static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
@@ -109,16 +166,53 @@ struct Sidebar: View {
         .disabled(connections.readOnly)
     }
 
+    /// What drops do; `FolderRows` gets the same so nested levels behave like the top one.
+    private var drops: SidebarDrops {
+        SidebarDrops(
+            insert: { item, container, index, among in
+                switch (item, among) {
+                case (.connection, .connections), (.folder, .folders): drop(item, to: container, at: index)
+                // A connection dropped under a folder's row goes into that folder.
+                case (.connection, .folders):
+                    let siblings = (container.flatMap(connections.library.folder) ?? nil)?.folders.map(\.id) ?? connections.library.folders.map(\.id)
+                    if let target = EditorRules.aboveTheLine(index: index, siblings: siblings, container: container) { drop(item, to: target, at: nil) }
+                // A folder dropped among a folder's connections goes into that folder.
+                case (.folder, .connections): if let container { drop(item, to: container, at: nil) }
+                default: break
+                }
+            },
+            into: { item, folder in drop(item, to: folder, at: nil) })
+    }
+
+    /// Saves a move only if the model accepts it and it changes something: a refused drop (a folder
+    /// into its own subtree, an item back onto its own folder) and a drop back where it started do
+    /// nothing, instead of a red "changed" message or a rewrite that loses the file's comments.
+    private func drop(_ item: SidebarItem, to container: ConnectionFolder.ID?, at index: Int?) {
+        var probe = connections.library
+        guard !searching, probe.move(item, to: container, at: index), probe != connections.library else { return }
+        _ = connections.move(item, to: container, at: index)
+    }
+
+    private func dropSnippet(_ id: Snippet.ID, into group: SnippetGroup.ID, at index: Int?) {
+        var probe = editing.store.library
+        guard !searching, probe.moveSnippet(id, to: group, at: index), probe != editing.store.library else { return }
+        _ = editing.moveSnippet(id, to: group, at: index)
+    }
+
     private func snippetGroup(_ group: SnippetGroup, _ snippets: [Snippet], expanded: Binding<Bool>) -> some View {
         DisclosureGroup(isExpanded: expanded) {
             ForEach(snippets) { snippet in
-                row(snippet.name.isEmpty ? "Untitled" : snippet.name, detail: snippet.keyword, symbol: "text.cursor")
+                sidebarRow(snippet.name.isEmpty ? "Untitled" : snippet.name, detail: snippet.keyword, symbol: "text.cursor")
                     .opacity(snippet.enabled ? 1 : 0.5)
                     .tag(SidebarItem.snippet(snippet.id))
+                    .draggable(SidebarItem.snippet(snippet.id).dragText)
+            }
+            .dropDestination(for: String.self) { texts, index in
+                for case .snippet(let id) in sidebarItems(texts) { dropSnippet(id, into: group.id, at: index) }
             }
         } label: {
             HStack {
-                row(group.name.isEmpty ? "Untitled" : group.name, detail: nil, symbol: "folder")
+                sidebarRow(group.name.isEmpty ? "Untitled" : group.name, detail: nil, symbol: "folder")
                     .foregroundStyle(group.enabled ? .primary : .secondary)
                 Spacer()
                 Toggle("Enabled", isOn: editing.groupBinding(group, \.enabled))
@@ -127,6 +221,12 @@ struct Sidebar: View {
             }
             .help(group.description)
             .tag(SidebarItem.snippetGroup(group.id))
+            .draggable(SidebarItem.snippetGroup(group.id).dragText)
+            .dropDestination(for: String.self) { texts, _ in
+                for case .snippet(let id) in sidebarItems(texts) { dropSnippet(id, into: group.id, at: nil) }
+                return true
+            } isTargeted: { targetedGroup = $0 ? group.id : nil }
+            .background(targetedGroup == group.id ? Color.accentColor.opacity(0.2) : .clear)
         }
     }
 
@@ -208,31 +308,93 @@ struct Sidebar: View {
     }
 
     private func row(_ title: String, detail: String?, symbol: String) -> some View {
-        HStack {
-            Label(title, systemImage: symbol).lineLimit(1)
-            if let detail {
-                Text(detail).font(.callout.monospaced()).foregroundStyle(.secondary).lineLimit(1)
-            }
+        sidebarRow(title, detail: detail, symbol: symbol)
+    }
+}
+
+/// The sidebar items a drag carries; any other text is ignored.
+private func sidebarItems(_ texts: [String]) -> [SidebarItem] {
+    texts.compactMap(SidebarItem.init(dragText:))
+}
+
+private func sidebarRow(_ title: String, detail: String?, symbol: String) -> some View {
+    HStack {
+        Label(title, systemImage: symbol).lineLimit(1)
+        if let detail {
+            Text(detail).font(.callout.monospaced()).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 }
 
-/// A folder or connection in the sidebar's tree. A folder shows its effective activation string.
-private struct ConnectionNode: Identifiable {
+/// What the sidebar does with a drop, shared by every level of the tree.
+private struct SidebarDrops {
+    enum List { case connections, folders }
+    /// Between rows of `container`'s list `among` (nil container: the top-level folders).
+    let insert: (SidebarItem, ConnectionFolder.ID?, Int, List) -> Void
+    /// Onto a folder's row.
+    let into: (SidebarItem, ConnectionFolder.ID) -> Void
+}
+
+/// One folder and everything in it: its connections, then its subfolders, each a `FolderRows`.
+/// Each list takes drops between its rows; the folder's own row takes drops into it.
+private struct FolderRows: View {
+    let folder: ConnectionFolder
+    let namespace: KeywordNamespace
+    let drops: SidebarDrops
+    @State private var targeted = false
+
+    var body: some View {
+        // An empty folder is a plain row: a DisclosureGroup would give it a pointless arrow.
+        if folder.connections.isEmpty && folder.folders.isEmpty {
+            label
+        } else {
+            DisclosureGroup {
+                ForEach(folder.connections) { connection in
+                    let node = ConnectionNode(connection: connection)
+                    sidebarRow(node.title, detail: node.detail, symbol: node.symbol)
+                        .tag(node.id)
+                        .draggable(node.id.dragText)
+                }
+                .dropDestination(for: String.self) { texts, index in
+                    for item in sidebarItems(texts) { drops.insert(item, folder.id, index, .connections) }
+                }
+                ForEach(folder.folders) { child in
+                    FolderRows(folder: child, namespace: namespace, drops: drops)
+                }
+                .dropDestination(for: String.self) { texts, index in
+                    for item in sidebarItems(texts) { drops.insert(item, folder.id, index, .folders) }
+                }
+            } label: {
+                label
+            }
+        }
+    }
+
+    private var label: some View {
+        let node = ConnectionNode(folder: folder, namespace)
+        return sidebarRow(node.title, detail: node.detail, symbol: node.symbol)
+            .tag(node.id)
+            .draggable(node.id.dragText)
+            .dropDestination(for: String.self) { texts, _ in
+                for item in sidebarItems(texts) { drops.into(item, folder.id) }
+                return true
+            } isTargeted: { targeted = $0 }
+            .background(targeted ? Color.accentColor.opacity(0.2) : .clear)
+    }
+}
+
+/// How a folder or connection shows in the sidebar. A folder shows its effective activation string.
+private struct ConnectionNode {
     let id: SidebarItem
     let title: String
     let detail: String?
     let symbol: String
-    /// nil for a connection or an empty folder, so neither gets a disclosure arrow.
-    let children: [ConnectionNode]?
 
     init(folder: ConnectionFolder, _ namespace: KeywordNamespace) {
         id = .folder(folder.id)
         title = folder.name
         detail = namespace.effectiveActivation(ofFolder: folder.id).string
         symbol = "folder"
-        let kids = folder.connections.map(ConnectionNode.init(connection:)) + folder.folders.map { ConnectionNode(folder: $0, namespace) }
-        children = kids.isEmpty ? nil : kids
     }
 
     init(connection: Connection) {
@@ -240,6 +402,5 @@ private struct ConnectionNode: Identifiable {
         title = connection.name
         detail = connection.activation.flatMap { $0.isEmpty ? nil : $0 }
         symbol = connection.type == .ssh ? "terminal" : "display"
-        children = nil
     }
 }

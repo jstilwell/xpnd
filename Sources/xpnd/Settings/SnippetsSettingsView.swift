@@ -100,6 +100,14 @@ final class SnippetEditing {
         return save(at: group) { $0.groups[$1].snippets.append(new) } ? new.id : nil
     }
 
+    func moveSnippet(_ id: Snippet.ID, to group: SnippetGroup.ID, at index: Int?) -> Bool {
+        save { $0.moveSnippet(id, to: group, at: index) }
+    }
+
+    func moveGroup(_ id: SnippetGroup.ID, to index: Int) -> Bool {
+        save { $0.moveGroup(id, to: index) }
+    }
+
     func deleteSnippet(_ snippet: Snippet) -> Bool {
         save(at: snippet) { $0.groups[$1].snippets.remove(at: $2) }
     }

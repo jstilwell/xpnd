@@ -17,6 +17,14 @@ extension StoreError {
 
 /// The editors' rules that don't need a view.
 enum EditorRules {
+    /// Where a drop between rows of a folder (or group) list lands when the dragged item can't sit
+    /// among them: the folder above the insertion line. Above the first row that is the enclosing
+    /// folder, or at the top level the first folder.
+    static func aboveTheLine<ID>(index: Int, siblings: [ID], container: ID?) -> ID? {
+        if index > 0 { return siblings[min(index, siblings.count) - 1] }
+        return container ?? siblings.first
+    }
+
     /// The folder the sidebar's "+" adds into: the selected folder, or a selected connection's. nil
     /// means the top level (or that nothing relevant is selected).
     static func addTarget(for selection: SidebarItem?, in library: ConnectionLibrary) -> ConnectionFolder.ID? {
@@ -203,29 +211,50 @@ extension ConnectionLibrary {
         return allFolders.filter { !excluded.contains($0.id) }
     }
 
-    /// Moves `item` to the end of `destination` (nil: the top level, for folders). False, and no
-    /// change, if either is gone or the move isn't one `moveTargets` offers.
+    /// Moves `item` into `destination` (nil: the top level, for folders). `at`: its position among
+    /// the siblings of its kind, counted before it is taken out, as a drop between rows reports it;
+    /// nil appends. False, and no change, if either is gone or the folder would go into its own subtree.
     @discardableResult
-    mutating func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?) -> Bool {
-        var next = self
-        switch (item, destination) {
-        case (.folder(let id), nil):
-            guard folderPath(of: id).count > 1, case .folder(let moved)? = next.remove(item) else { return false }
-            next.folders.append(moved)
-        case (.folder, let target?), (.connection, let target?):
-            guard moveTargets(for: item).contains(where: { $0.id == target }), let moved = next.remove(item) else { return false }
-            next.editFolder(target) { folder in
-                switch moved {
-                case .folder(let f): folder.folders.append(f)
-                case .connection(let c): folder.connections.append(c)
-                }
-            }
+    mutating func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?, at: Int? = nil) -> Bool {
+        let from: ConnectionFolder.ID?
+        let fromIndex: Int
+        switch item {
+        case .folder(let id):
+            let path = folderPath(of: id)
+            guard let own = path.last else { return false }
+            from = path.dropLast().last?.id
+            fromIndex = (from.flatMap(folder) ?? self.asRoot).folders.firstIndex { $0.id == id } ?? 0
+            if let destination, own.allFolders.contains(where: { $0.id == destination }) { return false }
+        case .connection(let id):
+            guard let parent = path(of: id).last else { return false }
+            from = parent.id
+            fromIndex = parent.connections.firstIndex { $0.id == id } ?? 0
+            guard destination != nil else { return false }
         default:
             return false
+        }
+        if let destination, folder(destination) == nil { return false }
+        guard from != destination || at != nil else { return false }
+        // A drop index counts the item itself when it moves later in the same list.
+        let index = at.map { from == destination && fromIndex < $0 ? $0 - 1 : $0 }
+
+        var next = self
+        guard let moved = next.remove(item) else { return false }
+        func place<T>(_ element: T, in array: inout [T]) {
+            array.insert(element, at: min(index ?? array.count, array.count))
+        }
+        switch (moved, destination) {
+        case (.folder(let f), nil): place(f, in: &next.folders)
+        case (.folder(let f), let target?): guard next.editFolder(target, { place(f, in: &$0.folders) }) else { return false }
+        case (.connection(let c), let target?): guard next.editFolder(target, { place(c, in: &$0.connections) }) else { return false }
+        case (.connection, nil): return false
         }
         self = next
         return true
     }
+
+    /// The top level, shaped like a folder, so top-level and nested moves share one path.
+    private var asRoot: ConnectionFolder { ConnectionFolder(name: "", connections: [], folders: folders) }
 
     enum Removed {
         case folder(ConnectionFolder), connection(Connection)
@@ -337,8 +366,8 @@ final class ConnectionEditing {
         } ? copy.id : nil
     }
 
-    func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?) -> Bool {
-        save { $0.move(item, to: destination) }
+    func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?, at index: Int? = nil) -> Bool {
+        save { $0.move(item, to: destination, at: index) }
     }
 
     func delete(_ item: SidebarItem) -> Bool {
