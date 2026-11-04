@@ -7,7 +7,10 @@ struct ProviderAccount: Hashable, Sendable {
 }
 
 enum ProviderStatus: Equatable, Sendable {
-    case notInstalled, notSignedIn(String), ready([ProviderAccount])
+    case notInstalled, notSignedIn(String)
+    /// More than one account and none chosen (or the chosen one is gone): the caller must ask, never guess.
+    case chooseAccount([ProviderAccount])
+    case ready([ProviderAccount])
 }
 
 struct CredentialItem: Hashable, Sendable {
@@ -41,7 +44,8 @@ enum CredentialError: Error, Equatable, Sendable {
 }
 
 protocol CredentialProvider: Sendable {
-    func status() async -> ProviderStatus
+    /// `account`: the user's chosen account id, if any.
+    func status(account: String?) async -> ProviderStatus
     func search(_ query: String, account: String) async throws(CredentialError) -> [CredentialItem]
     func password(for ref: CredentialRef) async throws(CredentialError) -> String
     func publicKey(for ref: CredentialRef) async throws(CredentialError) -> String

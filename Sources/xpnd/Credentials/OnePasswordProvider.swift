@@ -25,7 +25,9 @@ struct OnePasswordProvider: CredentialProvider {
     // MARK: argv builders
 
     static func accountListArguments() -> [String] { ["account", "list", "--format", "json"] }
-    static func whoamiArguments(account: String) -> [String] { ["whoami", "--account", account, "--format", "json"] }
+    /// Probes access. `whoami` only reports an account that's already authenticated, which under the
+    /// desktop-app integration is none until a command needs the vault; `vault list` asks.
+    static func vaultListArguments(account: String) -> [String] { ["vault", "list", "--account", account, "--format", "json"] }
     static func listArguments(account: String) -> [String] {
         ["item", "list", "--account", account, "--categories", "Login,Password,SSH Key,Server", "--format", "json"]
     }
@@ -35,12 +37,19 @@ struct OnePasswordProvider: CredentialProvider {
 
     // MARK: provider
 
-    func status() async -> ProviderStatus {
+    func status(account: String?) async -> ProviderStatus {
         guard let list = await exec(Self.accountListArguments()) else { return .notInstalled }
         let off = "Turn on 1Password's CLI integration (Settings > Developer) and sign in."
-        guard list.status == 0, let accounts = Self.parseAccounts(list.stdout), let first = accounts.first else { return .notSignedIn(off) }
-        guard let who = await exec(Self.whoamiArguments(account: first.id)) else { return .notInstalled }
-        if who.status != 0 { return .notSignedIn(Self.firstLine(who.stderr) ?? "1Password is locked.") }
+        guard list.status == 0, let accounts = Self.parseAccounts(list.stdout), !accounts.isEmpty else { return .notSignedIn(off) }
+        guard let chosen = accounts.first(where: { $0.id == account }) ?? (accounts.count == 1 ? accounts.first : nil)
+        else { return .chooseAccount(accounts) }
+        guard let probe = await exec(Self.vaultListArguments(account: chosen.id)) else { return .notInstalled }
+        if probe.status != 0 {
+            if probe.stderr.contains("authorization prompt dismissed") {
+                return .notSignedIn("1Password asked for approval and it was dismissed. Press Refresh to try again.")
+            }
+            return .notSignedIn(Self.firstLine(probe.stderr) ?? "1Password is locked.")
+        }
         return .ready(accounts)
     }
 

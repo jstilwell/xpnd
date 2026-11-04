@@ -41,7 +41,7 @@ private let sudo = ref("sudo", .password)
 
     init(log: Log) { self.log = log }
 
-    func status() async -> ProviderStatus { .notInstalled }
+    func status(account: String?) async -> ProviderStatus { .notInstalled }
     func search(_ query: String, account: String) async throws(CredentialError) -> [CredentialItem] { [] }
 
     func password(for ref: CredentialRef) async throws(CredentialError) -> String {

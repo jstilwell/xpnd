@@ -12,7 +12,7 @@ private func ref(_ item: String, _ category: CredentialCategory = .login) -> Cre
     var isHolding: Bool { gate != nil }
     func release() { gate?.resume(); gate = nil }
 
-    func status() async -> ProviderStatus { .notInstalled }
+    func status(account: String?) async -> ProviderStatus { .notInstalled }
     func search(_ query: String, account: String) async throws(CredentialError) -> [CredentialItem] { [] }
     func password(for ref: CredentialRef) async throws(CredentialError) -> String { throw .locked }
     func publicKey(for ref: CredentialRef) async throws(CredentialError) -> String {
@@ -23,8 +23,9 @@ private func ref(_ item: String, _ category: CredentialCategory = .login) -> Cre
 
 /// Two signed-in accounts.
 private struct TwoAccountProvider: CredentialProvider {
-    func status() async -> ProviderStatus {
-        .ready([ProviderAccount(id: "A1", email: "a@x", url: "x"), ProviderAccount(id: "A2", email: "b@x", url: "x")])
+    func status(account: String?) async -> ProviderStatus {
+        let accounts = [ProviderAccount(id: "A1", email: "a@x", url: "x"), ProviderAccount(id: "A2", email: "b@x", url: "x")]
+        return accounts.contains { $0.id == account } ? .ready(accounts) : .chooseAccount(accounts)
     }
     func search(_ query: String, account: String) async throws(CredentialError) -> [CredentialItem] { [] }
     func password(for ref: CredentialRef) async throws(CredentialError) -> String { throw .locked }
@@ -42,11 +43,14 @@ private struct TwoAccountProvider: CredentialProvider {
 }
 
 @Suite struct MainWindowLogicTests {
-    @MainActor @Test func accountPrefersTheSettingWhileListed() async throws {
-        #expect(try await editing(TwoAccountProvider()).0.account() == "A1")
+    @MainActor @Test func accountIsTheSettingOrAsksForOne() async throws {
         #expect(try await editing(TwoAccountProvider(), account: "A2").0.account() == "A2")
-        // An account 1Password no longer lists falls back to the first.
-        #expect(try await editing(TwoAccountProvider(), account: "gone").0.account() == "A1")
+        // With two accounts, no choice (or a stale one) never silently picks the first.
+        for account in [nil, "gone"] {
+            await #expect(throws: CredentialError.failed("Choose your 1Password account in Settings → Password Manager.")) {
+                try await editing(TwoAccountProvider(), account: account).0.account()
+            }
+        }
     }
 
     @MainActor @Test func cancelledPickIsNeverStored() async throws {

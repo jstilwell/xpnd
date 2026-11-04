@@ -65,7 +65,7 @@ again after every build.
   URL), and `LiveLaunchExecutor` runs it. Only then does `OnePasswordProvider` fetch passwords, which go
   to `SecretClipboard` (concealed and transient markers, cleared after 30 s or on quit).
   `OnePasswordProvider` shells out to `op` through `ProcessRunner` (`item list`, `item get`, `account
-  list`, `whoami`) and keeps nothing. Public keys are written to `keys/` by `ConnectionEditing` (when an
+  list`, `vault list` as an access probe) and keeps nothing. Public keys are written to `keys/` by `ConnectionEditing` (when an
   SSH key item is picked or refreshed) and by `ConnectionService` (when one is missing at connect),
   both through `SSHCommandBuilder.writeKeyFile`. `SSHCommandBuilder` refuses jump-host chains longer
   than `maxJumpHops` (5), because the quoting grows about fourfold per hop.

@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## 0.2.0 - Unreleased
 
+### Fixed
+- With more than one 1Password account, Settings → Password Manager asks which is yours instead of guessing the first, and the status check now asks 1Password for access rather than reporting "not signed in" on a working setup.
+
 ### Added
 
 - Connections to SSH and VNC servers, kept in folders and in a YAML file you can edit by hand.
