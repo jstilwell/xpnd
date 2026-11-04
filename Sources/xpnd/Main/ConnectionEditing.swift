@@ -335,14 +335,16 @@ final class ConnectionEditing {
         save { $0.remove(item) != nil }
     }
 
-    /// The account to search: Settings' choice while 1Password still lists it, else the first.
+    /// The account to search: the one chosen in Settings, or the only one. Never a guess.
     func account() async throws(CredentialError) -> String {
-        switch await provider.status() {
+        let preferred = preferredAccount()
+        switch await provider.status(account: preferred) {
         case .notInstalled: throw .notInstalled
         case .notSignedIn(let message): throw .failed(message)
+        case .chooseAccount: throw .failed("Choose your 1Password account in Settings → Password Manager.")
         case .ready(let accounts):
-            let preferred = preferredAccount()
-            guard let account = accounts.first(where: { $0.id == preferred }) ?? accounts.first else { throw .locked }
+            guard let account = accounts.first(where: { $0.id == preferred }) ?? (accounts.count == 1 ? accounts.first : nil)
+            else { throw .locked }
             return account.id
         }
     }

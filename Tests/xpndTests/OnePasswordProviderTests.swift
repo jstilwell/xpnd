@@ -30,24 +30,47 @@ private final class Calls: @unchecked Sendable {
 
     private let ref = CredentialRef(account: "ACC1", vault: "v1", item: "i1", title: "Web Box", category: .login)
 
-    @Test func statusReadyParsesAccounts() async {
+    private static let twoAccounts = """
+    [{"account_uuid":"ACC1","email":"a@example.com","url":"my.1password.com"},
+     {"account_uuid":"ACC2","email":"b@example.com","url":"my.1password.com"}]
+    """
+    private static let acc1 = ProviderAccount(id: "ACC1", email: "a@example.com", url: "my.1password.com")
+    private static let acc2 = ProviderAccount(id: "ACC2", email: "b@example.com", url: "my.1password.com")
+
+    @Test func statusReadyProbesTheOnlyAccountWithVaultList() async {
         let calls = Calls()
         // findOP needs an executable path; /bin/sh stands in so no real op is needed.
-        let p = provider(calls, path: "/bin/sh") { args in args[0] == "account" ? self.out(Self.accounts) : self.out("{}") }
-        #expect(await p.status() == .ready([ProviderAccount(id: "ACC1", email: "a@example.com", url: "my.1password.com")]))
-        #expect(calls.all == [["account", "list", "--format", "json"], ["whoami", "--account", "ACC1", "--format", "json"]])
+        let p = provider(calls, path: "/bin/sh") { args in args[0] == "account" ? self.out(Self.accounts) : self.out("[]") }
+        #expect(await p.status(account: nil) == .ready([Self.acc1]))
+        #expect(calls.all == [["account", "list", "--format", "json"], ["vault", "list", "--account", "ACC1", "--format", "json"]])
+    }
+
+    @Test func statusAsksToChooseBetweenAccounts() async {
+        let calls = Calls()
+        let p = provider(calls, path: "/bin/sh") { args in args[0] == "account" ? self.out(Self.twoAccounts) : self.out("[]") }
+        // Two accounts and no choice yet: never guess, and never probe (that would prompt for the wrong account).
+        #expect(await p.status(account: nil) == .chooseAccount([Self.acc1, Self.acc2]))
+        #expect(await p.status(account: "gone") == .chooseAccount([Self.acc1, Self.acc2]))
+        #expect(calls.all.count == 2)
+        // A choice probes exactly that account.
+        #expect(await p.status(account: "ACC2") == .ready([Self.acc1, Self.acc2]))
+        #expect(calls.all.last == ["vault", "list", "--account", "ACC2", "--format", "json"])
     }
 
     @Test func statusNotSignedIn() async {
         let p = provider(path: "/bin/sh") { args in args[0] == "account" ? self.out(Self.accounts) : self.out("", "boom", status: 1) }
-        #expect(await p.status() == .notSignedIn("boom"))
+        #expect(await p.status(account: nil) == .notSignedIn("boom"))
+        let dismissed = provider(path: "/bin/sh") { args in
+            args[0] == "account" ? self.out(Self.accounts) : self.out("", "[ERROR] 2026/11/03 authorization prompt dismissed, please try again", status: 1)
+        }
+        #expect(await dismissed.status(account: nil) == .notSignedIn("1Password asked for approval and it was dismissed. Press Refresh to try again."))
         let empty = provider(path: "/bin/sh") { _ in self.out("[]") }
-        if case .notSignedIn = await empty.status() {} else { Issue.record("expected notSignedIn") }
+        if case .notSignedIn = await empty.status(account: nil) {} else { Issue.record("expected notSignedIn") }
     }
 
     @Test func statusNotInstalled() async {
         let p = provider(path: "/bin/sh") { _ in nil }
-        #expect(await p.status() == .notInstalled)
+        #expect(await p.status(account: nil) == .notInstalled)
     }
 
     @Test func searchFiltersLocally() async throws {

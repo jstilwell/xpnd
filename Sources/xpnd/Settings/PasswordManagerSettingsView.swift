@@ -29,12 +29,12 @@ struct PasswordManagerSettingsView: View {
                     Text(message).font(.callout).textSelection(.enabled)
                     Text("In 1Password → Settings → Developer, turn on “Integrate with 1Password CLI”. If it's already on, unlock 1Password and press Refresh.")
                         .font(.callout).foregroundStyle(.secondary)
+                case .chooseAccount(let accounts)?:
+                    Text("You have more than one 1Password account. Choose yours; xpnd never guesses.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    accountPicker(accounts, selected: "")
                 case .ready(let accounts)?:
-                    Picker("Account", selection: Binding(
-                        get: { accounts.first { $0.id == settings.onePasswordAccount }?.id ?? accounts.first?.id ?? "" },
-                        set: { settings.onePasswordAccount = $0 })) {
-                        ForEach(accounts, id: \.id) { Text($0.email).tag($0.id) }
-                    }
+                    accountPicker(accounts, selected: accounts.first { $0.id == settings.onePasswordAccount }?.id ?? accounts.first?.id ?? "")
                 case nil:
                     EmptyView()
                 }
@@ -85,7 +85,19 @@ struct PasswordManagerSettingsView: View {
         case .notInstalled?: Label("1Password CLI not found", systemImage: "xmark.circle").foregroundStyle(.red)
         case .notSignedIn?: Label("Not signed in, or integration off", systemImage: "exclamationmark.triangle")
             .foregroundStyle(.orange)
+        case .chooseAccount?: Label("Choose your account", systemImage: "person.crop.circle.badge.questionmark")
         case .ready?: Label("Ready", systemImage: "checkmark.circle").foregroundStyle(.green)
+        }
+    }
+
+    /// Choosing re-checks, so the probe (and 1Password's approval prompt) is for that account.
+    private func accountPicker(_ accounts: [ProviderAccount], selected: String) -> some View {
+        Picker("Account", selection: Binding(get: { selected }, set: { id in
+            settings.onePasswordAccount = id
+            Task { await check() }
+        })) {
+            if selected.isEmpty { Text("Choose…").tag("") }
+            ForEach(accounts, id: \.id) { Text($0.email).tag($0.id) }
         }
     }
 
@@ -97,7 +109,7 @@ struct PasswordManagerSettingsView: View {
 
     private func check() async {
         status = nil
-        status = await editing.provider.status()
+        status = await editing.provider.status(account: settings.onePasswordAccount)
     }
 
     private func savePath() {
