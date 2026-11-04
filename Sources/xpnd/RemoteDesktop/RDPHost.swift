@@ -59,6 +59,14 @@ extension XPRDPSession: RDPSessionControlling {}
         }
     }
 
+    /// The real session; FreeRDP's known-hosts directory is made first.
+    static func makeSession(_ settings: [RDPSetting], password: String, gatewayPassword: String?,
+                            delegate: any XPRDPSessionDelegate) -> any RDPSessionControlling {
+        try? FileManager.default.createDirectory(atPath: configPath, withIntermediateDirectories: true)
+        return XPRDPSession(settings: settings.map { [$0.name, $0.value] }, password: password,
+                            gatewayPassword: gatewayPassword, delegate: delegate)
+    }
+
     func terminate() {
         retry?.cancel()
         dismissSheet()
@@ -118,13 +126,6 @@ extension XPRDPSession: RDPSessionControlling {}
     }
 
     // MARK: Private
-
-    static func makeSession(_ settings: [RDPSetting], password: String, gatewayPassword: String?,
-                                    delegate: any XPRDPSessionDelegate) -> any RDPSessionControlling {
-        try? FileManager.default.createDirectory(atPath: configPath, withIntermediateDirectories: true)
-        return XPRDPSession(settings: settings.map { [$0.name, $0.value] }, password: password,
-                            gatewayPassword: gatewayPassword, delegate: delegate)
-    }
 
     private func ended(_ errorName: String?) {
         lastError = errorName
