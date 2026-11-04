@@ -1,7 +1,8 @@
 import Foundation
 
 /// Turns typed keys into expansions: matches the typing buffer against the library, evaluates the
-/// snippet, then plays it. Only one expansion runs at a time. Never log the buffer or any text.
+/// snippet, then plays it. An activation string instead deletes itself and hands off to `onActivate`.
+/// Only one expansion or connection action runs at a time. Never log the buffer or any text.
 @MainActor final class ExpansionEngine {
     /// Tuning value: lets the keyword's last keystroke, which the listen-only tap sees before the
     /// target app does, land there before the backspaces that delete it.
@@ -14,41 +15,90 @@ import Foundation
     private(set) var pendingExpansion: Task<Void, Never>?
 
     private let store: SnippetStore
+    private let connections: ConnectionStore
     private let player: Player
     private let makeContext: @MainActor () -> any EvaluationContext
     private let notify: @MainActor (String) -> Void
     private let frontmostPID: @MainActor () -> pid_t?
+    private let onActivate: @MainActor (ActivationTarget, pid_t?) async -> Void
+
+    /// `KeywordNamespace`'s answers are too slow to work out per key inside the event tap's callback,
+    /// so they're kept until either library changes.
+    private var namespace = KeywordNamespace(snippets: .empty, connections: .empty)
+    private var activations: [String: ActivationTarget] = [:]
+    private var duplicates: Set<String> = []
 
     init(
-        store: SnippetStore, player: Player,
+        store: SnippetStore, connections: ConnectionStore, player: Player,
         makeContext: @escaping @MainActor () -> any EvaluationContext,
         notify: @escaping @MainActor (String) -> Void,
-        frontmostPID: @escaping @MainActor () -> pid_t?
+        frontmostPID: @escaping @MainActor () -> pid_t?,
+        onActivate: @escaping @MainActor (ActivationTarget, pid_t?) async -> Void
     ) {
         self.store = store
+        self.connections = connections
         self.player = player
         self.makeContext = makeContext
         self.notify = notify
         self.frontmostPID = frontmostPID
+        self.onActivate = onActivate
     }
 
     /// `targetsXpnd`: the key goes to one of xpnd's own windows (Settings, the picker). Expanding
     /// there would edit xpnd's own fields, so it never does, and the buffer starts over.
     func handle(_ input: KeyInput, targetsXpnd: Bool = false) {
         guard !targetsXpnd else { return buffer.apply(.reset) }
+        let snippetsOK = store.loadError == nil, connectionsOK = connections.loadError == nil
         // A dropped key breaks the run of typing, so a keyword can't span it. The in-flight expansion
         // doesn't read the buffer, so resetting it then is safe.
-        guard isEnabled, !isExpanding, store.loadError == nil else { return buffer.apply(.reset) }
+        guard isEnabled, !isExpanding, snippetsOK || connectionsOK else { return buffer.apply(.reset) }
         buffer.apply(input)
-        guard let snippet = Matcher.match(buffer.text, in: store.library.activeSnippets) else { return }
+        refreshNamespace()
+        let text = buffer.text
+        let snippet = snippetsOK
+            ? Matcher.match(text, in: store.library.activeSnippets.filter { !duplicates.contains($0.keyword) })
+            : nil
+        if connectionsOK, let target = activations[text], text.count > snippet?.keyword.count ?? 0 {
+            start { await self.activate(target, deletingCharacters: text.count, in: $0) }
+        } else if let snippet {
+            start { await self.run(snippet, deletingCharacters: snippet.keyword.count, into: $0) }
+        }
+    }
+
+    private func refreshNamespace() {
+        guard namespace.snippets != store.library || namespace.connections != connections.library else { return }
+        namespace = KeywordNamespace(snippets: store.library, connections: connections.library)
+        activations = namespace.activations
+        duplicates = namespace.crossFileDuplicates
+    }
+
+    /// `work` gets the app the string was typed in.
+    private func start(_ work: @escaping @MainActor (pid_t?) async -> Void) {
         buffer.apply(.reset)
         // Claimed now, so nothing typed before the task starts can begin a second expansion.
         isExpanding = true
         let target = frontmostPID()
         pendingExpansion = Task {
             try? await Task.sleep(for: Self.typedKeywordSettle)
-            await run(snippet, deletingCharacters: snippet.keyword.count, into: target)
+            await work(target)
         }
+    }
+
+    /// Runs `body` once no action is in flight, with no suspension in between, so it can't land in
+    /// a paste's settle. Skips `body` if the task is cancelled while waiting.
+    func whenIdle(_ body: @MainActor () -> Void) async {
+        // Polled: only `isExpanding` knows when an action ends, and a few ms is nothing here.
+        while isExpanding, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(20)) }
+        if !Task.isCancelled { body() }
+    }
+
+    /// Runs `body` as the one action in flight, or returns false without running it if another is.
+    func exclusive(_ body: @MainActor () async -> Void) async -> Bool {
+        guard !isExpanding else { return false }
+        isExpanding = true
+        defer { isExpanding = false }
+        await body()
+        return true
     }
 
     func resetBuffer() {
@@ -72,6 +122,20 @@ import Foundation
             let steps = try await Evaluator.evaluate(snippet, context: makeContext())
             guard frontmostPID() == target else { throw .targetAppChanged }
             try await player.play(steps, deletingCharacters: deletingCharacters)
+        } catch {
+            notify(error.message)
+        }
+    }
+
+    /// `target`: the app the string was typed in. It must stay in front through the delete, so
+    /// nothing is removed from, or connected relative to, the wrong app.
+    private func activate(_ action: ActivationTarget, deletingCharacters: Int, in target: pid_t?) async {
+        defer { isExpanding = false }
+        do throws(ExpansionError) {
+            guard frontmostPID() == target else { throw .targetAppChanged }
+            try await player.play([], deletingCharacters: deletingCharacters)
+            guard frontmostPID() == target else { throw .targetAppChanged }
+            await onActivate(action, target)
         } catch {
             notify(error.message)
         }

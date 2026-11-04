@@ -1,0 +1,36 @@
+# Test connections that ./bin/run.sh --test-snippets installs as your connections.
+# No credentials are set here: pick them in the app (Settings > Password Manager, or a
+# connection's Details) if you want to try 1Password. The ids are fixed so web-01 can jump
+# through bastion by saved connection. That needs a 1Password SSH key picked for bastion in
+# the app: until then connecting to web-01 shows an error.
+version: 1
+folders:
+  - name: dev
+    connections:
+      - name: localhost
+        host: localhost
+        port: 22
+        activation: ";lo"
+      - name: vnc-mac
+        type: vnc
+        host: localhost
+        port: 5900
+      - name: jump-text
+        host: app.internal.example
+        username: deploy
+        advanced:
+          jumpHost:
+            text: jump.example.com
+          sshOptions: "-o ServerAliveInterval=30"
+          autoSudo: true
+  - name: prod
+    connections:
+      - id: 6F1B0C52-3A41-4E5B-9D0A-1C2D3E4F5A01
+        name: bastion
+        host: bastion.example.com
+      - id: 6F1B0C52-3A41-4E5B-9D0A-1C2D3E4F5A02
+        name: web-01
+        host: web-01.internal.example
+        advanced:
+          jumpHost:
+            connection: 6F1B0C52-3A41-4E5B-9D0A-1C2D3E4F5A01

@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.2.0 - Unreleased
+
+### Added
+
+- Connections to SSH and VNC servers, kept in folders and in a YAML file you can edit by hand.
+- Typing a connection's activation string connects, and typing a folder's opens a numbered menu of its connections.
+- A connection launcher, opened by Control-Option-Command-C, searches your connections.
+- Connecting types the command into a terminal that's in front, or opens Terminal, iTerm2, Ghostty, or your own command.
+- Connections can use 1Password items for the login, an SSH key, and the sudo password, set per connection, per folder, or for all of them.
+- Passwords are copied concealed and cleared after 30 seconds unless you've copied something else since, and are never typed.
+- Connections can jump through a typed host, or through another saved connection that uses a 1Password SSH key, add SSH options, and offer the sudo password after login.
+- Import and export connections as YAML, with a preview of what will run, and of existing connections a Replace removes or re-points, before anything changes.
+- The main window's sidebar search filters snippets and connections.
+- A broken `connections.yaml` is flagged in the HUD and the menu bar menu, and pauses only connection strings.
+
+### Changed
+
+- xpnd is now a Dock app with a main window for connections and snippets, and it keeps running in the menu bar when you close it.
+- Snippets are edited in the main window instead of Settings.
+- Settings has General, Terminal, Password Manager, and Import/Export sections.
+- A broken `snippets.yaml` pauses only snippets, and the HUD says connection strings still work.
+
 ## 0.1.0 - Unreleased
 
 ### Added

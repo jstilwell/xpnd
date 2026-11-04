@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import xpnd
 
@@ -92,4 +93,34 @@ groups:
           - {name: G2, snippets: [{name: b, keyword: ";a", text: t}]}
         """)
     }
+}
+
+/// `bin/run.sh --test-snippets` installs this file; it must stay valid as the schema evolves.
+@Test func manualTestSnippetsDecode() throws {
+    let url = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Manual/test-snippets.yaml")
+    let lib = try SnippetYAML.decode(String(contentsOf: url, encoding: .utf8))
+    #expect(lib.activeSnippets.count == 10)
+    #expect(lib.snippet(keyword: ";sig")?.text == "Best,\nJesse")
+}
+
+/// `bin/run.sh --test-snippets` also installs this file.
+@Test func manualTestConnectionsDecode() throws {
+    let url = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Manual/test-connections.yaml")
+    let lib = try ConnectionYAML.decode(String(contentsOf: url, encoding: .utf8))
+    #expect(lib.folders.map(\.name) == ["dev", "prod"])
+    #expect(lib.allConnections.count == 5)
+    let lo = try #require(lib.allConnections.first { $0.activation == ";lo" })
+    #expect(lo.name == "localhost" && lo.effectivePort == 22 && lo.credential == nil)
+    let vnc = try #require(lib.allConnections.first { $0.name == "vnc-mac" })
+    #expect(vnc.type == .vnc && vnc.effectivePort == 5900)
+    let bastion = try #require(lib.allConnections.first { $0.name == "bastion" })
+    let web = try #require(lib.allConnections.first { $0.name == "web-01" })
+    #expect(web.jumpHost == .connection(bastion.id))
+    let text = try #require(lib.allConnections.first { $0.name == "jump-text" })
+    #expect(text.jumpHost == .text("jump.example.com") && text.sshOptions == "-o ServerAliveInterval=30" && text.autoSudo)
+    #expect(lib.allConnections.allSatisfy { $0.credential == nil && $0.sudoCredential == nil })
 }

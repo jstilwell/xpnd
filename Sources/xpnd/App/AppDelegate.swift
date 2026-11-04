@@ -5,21 +5,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var statusItem: NSStatusItem!
     private(set) var menu = NSMenu()
 
-    private static let loadErrorMessage =
-        "xpnd couldn't read snippets.yaml, so expansion is paused. Fix the file and it reloads automatically."
+    private static let snippetsErrorMessage =
+        "xpnd couldn't read snippets.yaml, so snippets are paused (connection strings still work). Fix the file and it reloads automatically."
+    private static let connectionsErrorMessage =
+        "xpnd couldn't read connections.yaml, so connection strings are paused. Fix the file and it reloads automatically."
 
-    private let settings = AppSettings.shared
-    private let store = SnippetStore(fileURL: SnippetStore.defaultURL)
+    // Not private where AppDelegate+Connections uses them.
+    let settings = AppSettings.shared
+    let store = SnippetStore(fileURL: SnippetStore.defaultURL)
+    let connections = ConnectionStore(fileURL: ConnectionStore.defaultURL)
     private let permissions = PermissionWatcher()
-    private let hud = HUD()
-    private var engine: ExpansionEngine!
+    let hud = HUD()
+    var engine: ExpansionEngine!
+    var service: ConnectionService!
+    /// The 1Password provider for connecting, the main window and Settings. It keeps no state, so
+    /// building it from the current op path at each use means no holder keeps a stale path.
+    var provider: OnePasswordProvider { OnePasswordProvider(opPath: settings.onePasswordPath) }
+    let quickMenu = QuickMenuPanel()
+    var mainWindow: MainWindowController?
+    /// The cross-file duplicates the HUD last flagged, so it says so once per change.
+    var flaggedDuplicates: Set<String> = []
     private var tap: KeyEventTap!
     private var picker: PickerPanel!
     private let pickerHotKey = GlobalShortcut()
+    private var launcher: ConnectionLauncherPanel!
+    private let launcherHotKey = GlobalShortcut()
     private var welcome: WelcomeWindowController?
     private var settingsWindow: SettingsWindowController?
     /// The picker shortcut last registered, so a settings change re-registers only when it differs.
     private var registeredPickerShortcut: Shortcut?
+    private var registeredLauncherShortcut: Shortcut?
     /// Whether the tap has run since launch: losing access after that isn't a first launch.
     private var hasStarted = false
 
@@ -33,17 +48,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         store.load()
         store.startWatching()
+        connections.load()
+        connections.seedIfFirstLaunch(defaults: .standard)
+        connections.startWatching()
         let store = store, hud = hud
+        let sender = CGEventKeystrokeSender()
+        service = makeConnectionService(sender: sender)
         engine = ExpansionEngine(
-            store: store, player: Player(sender: CGEventKeystrokeSender(), actions: ActionRunner()),
+            store: store, connections: connections, player: Player(sender: sender, actions: ActionRunner()),
             makeContext: { LiveEvaluationContext(library: store.library) },
             notify: { hud.flash($0) },
-            frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+            frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+            onActivate: { [weak self] in await self?.activate($0, typedInto: $1) }
         )
         engine.isEnabled = settings.expansionEnabled
         picker = PickerPanel(store: store, engine: engine)
         pickerHotKey.action = { [weak self] in self?.picker.toggle() }
         registerPickerShortcut()
+        launcher = ConnectionLauncherPanel()
+        launcherHotKey.action = { [weak self] in
+            guard let self else { return }
+            launcher.toggle(
+                library: connections.library, onOpenApp: { [weak self] in self?.showMainWindow(selecting: nil) },
+                connect: { [weak self] id, pid in await self?.connectExclusively(id, from: pid) }
+            )
+        }
+        registerLauncherShortcut()
         followSettings()
         tap = KeyEventTap(
             onKey: { [weak self] in self?.engine.handle($0, targetsXpnd: $1) },
@@ -62,21 +92,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissions.start()
         permissionsChanged()
 
-        if store.loadError != nil { hud.flash(Self.loadErrorMessage) }
-        followLoadError()
+        flashLoadErrors(wereBroken: (false, false))
+        followLoadErrors()
+        followCrossFileDuplicates()
         rebuildMenu()
+        // A login-item launch stays in the menu bar; any other opens the window (and the Dock icon).
+        if !Self.launchedAsLoginItem() { showMainWindow(selecting: nil) }
         log.info("xpnd launched")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         tap.stop()
+        SecretClipboard.clearIfOwned()
     }
 
-    /// Opening the app again (from Finder, Spotlight, or `open`) shows the welcome window while it
-    /// waits for access.
+    /// Opening the app again (Dock, Finder, Spotlight, or `open`) shows the main window, and the
+    /// welcome window while it waits for access.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !permissions.isGranted { showWelcome() }
+        showMainWindow(selecting: nil)
         return false
+    }
+
+    /// Only readable while launching: the open-application event says whether login started xpnd.
+    private static func launchedAsLoginItem() -> Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent, event.eventID == kAEOpenApplication else { return false }
+        return event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
 
     /// The tap runs only while both permissions are on.
@@ -110,19 +151,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         welcome?.show()
     }
 
-    /// Flashes a message when the snippets file breaks, and keeps the menu's error item current.
-    private func followLoadError() {
-        withObservationTracking { _ = store.loadError } onChange: { [weak self] in
+    private var broken: (snippets: Bool, connections: Bool) { (store.loadError != nil, connections.loadError != nil) }
+
+    /// Flashes once for each file that has just broken, not again while it stays broken.
+    private func flashLoadErrors(wereBroken before: (snippets: Bool, connections: Bool)) {
+        if broken.snippets, !before.snippets { hud.flash(Self.snippetsErrorMessage) }
+        if broken.connections, !before.connections { hud.flash(Self.connectionsErrorMessage) }
+    }
+
+    /// Flashes a message when either file breaks, and keeps the menu's error items current.
+    private func followLoadErrors() {
+        let before = broken
+        withObservationTracking { _ = (store.loadError, connections.loadError) } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                if self.store.loadError != nil { self.hud.flash(Self.loadErrorMessage) }
+                self.flashLoadErrors(wereBroken: before)
                 self.rebuildMenu()
-                self.followLoadError()
+                self.followLoadErrors()
             }
         }
     }
 
-    /// Not shown (no Dock icon), but gives xpnd's windows their editing and closing shortcuts.
+    /// Shown while the main window is open; otherwise it still gives xpnd's windows their editing
+    /// and closing shortcuts.
     /// Adapted from HoverEnhance's.
     private func installMainMenu() {
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
@@ -158,14 +209,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !pickerHotKey.register(settings.pickerShortcut) { hud.flash("Picker shortcut is in use by another app") }
     }
 
+    private func registerLauncherShortcut() {
+        registeredLauncherShortcut = settings.connectionLauncherShortcut
+        if !launcherHotKey.register(settings.connectionLauncherShortcut) {
+            hud.flash("Connection launcher shortcut is in use by another app")
+        }
+    }
+
     /// Applies changes made in Settings (or the menu) at once.
     private func followSettings() {
-        withObservationTracking { _ = (settings.expansionEnabled, settings.pickerShortcut) } onChange: { [weak self] in
+        withObservationTracking { _ = (settings.expansionEnabled, settings.pickerShortcut, settings.connectionLauncherShortcut) } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 self.engine.isEnabled = self.settings.expansionEnabled
                 self.engine.resetBuffer()
                 if self.settings.pickerShortcut != self.registeredPickerShortcut { self.registerPickerShortcut() }
+                if self.settings.connectionLauncherShortcut != self.registeredLauncherShortcut { self.registerLauncherShortcut() }
                 self.rebuildMenu()
                 self.followSettings()
             }
@@ -184,10 +243,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Later tasks add their items here, above Quit.
     func rebuildMenu() {
         menu.removeAllItems()
-        let toggle = NSMenuItem(title: "Expansion On", action: #selector(toggleExpansion), keyEquivalent: "")
+        let main = NSMenuItem(title: "Open xpnd…", action: #selector(openMainWindow), keyEquivalent: "")
+        main.target = self
+        menu.addItem(main)
+        // A snippets file error pauses expansion (the error item says why), so the toggle greys out
+        // instead of offering a click that would really turn expansion off.
+        let toggle = NSMenuItem(
+            title: "Expansion On", action: store.loadError == nil ? #selector(toggleExpansion) : nil,
+            keyEquivalent: "")
         toggle.target = self
-        // Checked only while expanding actually works; a file error pauses it (the error item says why).
-        toggle.state = settings.expansionEnabled && store.loadError == nil ? .on : .off
+        toggle.state = settings.expansionEnabled ? .on : .off
         menu.addItem(toggle)
         let open = NSMenuItem(title: "Open Picker", action: #selector(openPicker), keyEquivalent: "")
         open.target = self
@@ -207,6 +272,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // No action, so the menu shows it disabled.
             menu.addItem(NSMenuItem(title: "Snippets file has an error", action: nil, keyEquivalent: ""))
         }
+        if connections.loadError != nil {
+            menu.addItem(NSMenuItem(title: "Connections file has an error", action: nil, keyEquivalent: ""))
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit xpnd", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
@@ -220,7 +288,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSettings() {
-        if settingsWindow == nil { settingsWindow = SettingsWindowController(settings: settings, store: store) }
+        if settingsWindow == nil {
+            settingsWindow = SettingsWindowController(
+                settings: settings, store: store,
+                connections: ConnectionEditing(
+                    store: connections, snippets: store, provider: { [unowned self] in self.provider },
+                    preferredAccount: { AppSettings.shared.onePasswordAccount }, keysDirectory: keysDirectory,
+                    connect: { _ in }))
+        }
         settingsWindow?.show()
     }
 
