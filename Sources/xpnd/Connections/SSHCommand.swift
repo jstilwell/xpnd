@@ -16,7 +16,7 @@ enum SSHCommandError: Error, Equatable {
     }
 }
 
-struct SSHCommand: Equatable {
+struct SSHCommand: Equatable, Sendable {
     let arguments: [String]
 
     var shellLine: String { arguments.map(ShellQuote.quote).joined(separator: " ") }

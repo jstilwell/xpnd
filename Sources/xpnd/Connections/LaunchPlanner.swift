@@ -5,16 +5,21 @@ enum LaunchPlan: Equatable, Sendable {
     case appleScript(String)
     case run(executable: String, arguments: [String])
     case openURL(URL)
+    case builtInTab(SSHCommand)
 }
 
 enum LaunchPlanner {
     static let openExecutable = "/usr/bin/open"
     private static let placeholder = "{command}"
 
-    static func plan(_ command: SSHCommand, frontBundleID: String?, settings: TerminalSettings) throws(LaunchError) -> LaunchPlan {
+    static func plan(_ command: SSHCommand, frontBundleID: String?, settings: TerminalSettings,
+                     preferBuiltIn: Bool = false) throws(LaunchError) -> LaunchPlan {
+        if preferBuiltIn { return .builtInTab(command) }
         let line = command.shellLine
         if let frontBundleID, settings.terminalBundleIDs.contains(frontBundleID) { return .typeIntoFrontTerminal(line) }
         switch settings.whenNoTerminal {
+        case .builtIn:
+            return .builtInTab(command)
         case .custom(let template):
             if let problem = templateProblem(template) { throw .badTemplate(problem) }
             let script = completed(template).replacingOccurrences(of: placeholder, with: ShellQuote.quote(line), options: .literal)

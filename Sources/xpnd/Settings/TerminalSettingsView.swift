@@ -15,10 +15,10 @@ struct TerminalSettingsView: View {
 
     /// A Picker tag: the custom template lives in `template`, not here.
     private enum Mode: Hashable {
-        case preset(TerminalPreset, newTab: Bool), custom
+        case preset(TerminalPreset, newTab: Bool), custom, builtIn
     }
 
-    private static let modes: [Mode] = TerminalPreset.allCases.flatMap { preset in
+    private static let modes: [Mode] = [.builtIn] + TerminalPreset.allCases.flatMap { preset in
         [Mode.preset(preset, newTab: false)] + (preset.supportsTabs ? [.preset(preset, newTab: true)] : [])
     } + [.custom]
 
@@ -76,6 +76,7 @@ struct TerminalSettingsView: View {
         .onAppear {
             switch settings.terminal.whenNoTerminal {
             case .preset(let preset, let newTab): mode = .preset(preset, newTab: newTab && preset.supportsTabs)
+            case .builtIn: mode = .builtIn
             case .custom(let saved):
                 mode = .custom
                 template = saved
@@ -94,6 +95,7 @@ struct TerminalSettingsView: View {
         let action: NoTerminalAction
         switch mode {
         case .preset(let preset, let newTab): action = .preset(preset, newTab: newTab)
+        case .builtIn: action = .builtIn
         case .custom:
             guard templateProblem == nil else { return }
             action = .custom(template: template)
@@ -104,6 +106,7 @@ struct TerminalSettingsView: View {
     private static func label(_ mode: Mode) -> String {
         switch mode {
         case .preset(let preset, let newTab): "\(preset.displayName), \(newTab ? "new tab" : "new window")"
+        case .builtIn: "xpnd (built-in)"
         case .custom: "Custom command"
         }
     }
