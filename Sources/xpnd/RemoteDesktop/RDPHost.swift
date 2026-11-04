@@ -5,6 +5,17 @@ import xpndRDP
 /// A Windows desktop in a tab: one `XPRDPSession`, whose certificate and password questions are
 /// answered with sheets on the main window, and whose dropped connections are retried here (FreeRDP's
 /// Mac client has no reconnect loop). The passwords live in the session and nowhere else.
+@MainActor protocol RDPSessionControlling: AnyObject {
+    var view: NSView { get }
+    var commandAsWindowsKey: Bool { get set }
+    func start() -> Bool
+    func stop()
+    func reconnect()
+    func forgetPassword()
+}
+
+extension XPRDPSession: RDPSessionControlling {}
+
 @MainActor final class RDPHost: NSObject, TerminalHost, XPRDPSessionDelegate {
     /// FreeRDP's known hosts (trusted certificates) live beside `keys/`, not in `~/.config/freerdp`.
     static var configPath: String { ConnectionStore.defaultURL.deletingLastPathComponent().appending(path: "freerdp").path }
@@ -16,18 +27,24 @@ import xpndRDP
 
     private let config: RDPSessionConfig
     private let presentIn: () -> NSWindow?
-    private var session: XPRDPSession!
+    private var session: (any RDPSessionControlling)!
+    private let retryDelay: Duration
     /// A connect succeeded since the last user start, so a transport failure is a drop worth retrying.
     private var hadConnected = false
     private var retries = 0
     /// The name the last `onDisconnect` came from.
     private var lastError: String?
-    private var retry: Task<Void, Never>?
+    /// Internal for tests, which await it.
+    private(set) var retry: Task<Void, Never>?
     private var sheet: NSWindow?
 
-    init(config: RDPSessionConfig, password: String, gatewayPassword: String?, presentIn: @escaping () -> NSWindow?) {
+    /// `makeSession` and `retryDelay` are for tests: a fake session, and no wait between retries.
+    init(config: RDPSessionConfig, password: String, gatewayPassword: String?, presentIn: @escaping () -> NSWindow?,
+         retryDelay: Duration = RDPReconnectPolicy.delay,
+         makeSession: @MainActor ([RDPSetting], String, String?, any XPRDPSessionDelegate) -> any RDPSessionControlling = RDPHost.makeSession) {
         self.config = config
         self.presentIn = presentIn
+        self.retryDelay = retryDelay
         super.init()
         // The tab's size isn't known yet: start from the window's, and Display Control corrects it once laid out.
         let window = presentIn()
@@ -36,9 +53,7 @@ import xpndRDP
         let settings = config.freerdpSettings(
             configPath: Self.configPath, viewPixelSize: (Int(size.width * scale), Int(size.height * scale)),
             gatewayUsername: config.gateway?.credential?.username)
-        try? FileManager.default.createDirectory(atPath: Self.configPath, withIntermediateDirectories: true)
-        session = XPRDPSession(settings: settings.map { [$0.name, $0.value] }, password: password,
-                               gatewayPassword: gatewayPassword, delegate: self)
+        session = makeSession(settings, password, gatewayPassword, self)
         session.commandAsWindowsKey = config.commandAsWindowsKey
         if !session.start() {
             Task { [weak self] in self?.onDisconnect?(RDPErrorText.startFailed) } // after `onDisconnect` is set
@@ -83,8 +98,8 @@ import xpndRDP
             return ended(errorName)
         }
         retries += 1
-        retry = Task { [weak self] in
-            try? await Task.sleep(for: RDPReconnectPolicy.delay)
+        retry = Task { [weak self, retryDelay] in
+            try? await Task.sleep(for: retryDelay)
             guard !Task.isCancelled else { return }
             self?.session.reconnect() // a failure to start reports before it returns
         }
@@ -96,6 +111,13 @@ import xpndRDP
     }
 
     // MARK: Private
+
+    static func makeSession(_ settings: [RDPSetting], password: String, gatewayPassword: String?,
+                                    delegate: any XPRDPSessionDelegate) -> any RDPSessionControlling {
+        try? FileManager.default.createDirectory(atPath: configPath, withIntermediateDirectories: true)
+        return XPRDPSession(settings: settings.map { [$0.name, $0.value] }, password: password,
+                            gatewayPassword: gatewayPassword, delegate: delegate)
+    }
 
     private func ended(_ errorName: String?) {
         lastError = errorName
