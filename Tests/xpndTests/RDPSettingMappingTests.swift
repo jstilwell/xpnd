@@ -9,8 +9,8 @@ import Testing
         return c
     }
 
-    private func value(_ c: RDPSessionConfig, _ name: String, size: (width: Int, height: Int) = (2880, 1800)) -> String? {
-        c.freerdpSettings(configPath: "/tmp/freerdp", viewPixelSize: size).first { $0.name == name }?.value
+    private func value(_ c: RDPSessionConfig, _ name: String, size: (width: Int, height: Int) = (2880, 1800), gatewayUsername: String? = nil) -> String? {
+        c.freerdpSettings(configPath: "/tmp/freerdp", viewPixelSize: size, gatewayUsername: gatewayUsername).first { $0.name == name }?.value
     }
 
     @Test func fitUsesViewSizeAndDynamicResolution() {
@@ -54,6 +54,15 @@ import Testing
         #expect(value(c, "FreeRDP_GatewayHostname") == "gw.example.com")
         #expect(value(c, "FreeRDP_GatewayPort") == "8443")
         #expect(value(c, "FreeRDP_GatewayUseSameCredentials") == "TRUE")
+    }
+
+    @Test func gatewayWithOwnCredential() {
+        let ref = CredentialRef(account: "a", vault: "v", item: "i", title: "t", category: .login)
+        let c = config { $0.gateway = .init(host: "gw", port: 443, credential: ref) }
+        #expect(value(c, "FreeRDP_GatewayUseSameCredentials", gatewayUsername: "gwuser") == "FALSE")
+        #expect(value(c, "FreeRDP_GatewayUsername", gatewayUsername: "gwuser") == "gwuser")
+        #expect(value(c, "FreeRDP_GatewayUseSameCredentials") == "FALSE")
+        #expect(value(c, "FreeRDP_GatewayUsername") == nil)
     }
 
     @Test func performancePresets() {

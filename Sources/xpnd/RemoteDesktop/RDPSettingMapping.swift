@@ -8,7 +8,7 @@ struct RDPSetting: Equatable, Sendable {
 
 extension RDPSessionConfig {
     /// Everything but the password, in a stable order; `configPath` is xpnd's Application Support/xpnd/freerdp.
-    func freerdpSettings(configPath: String, viewPixelSize: (width: Int, height: Int)) -> [RDPSetting] {
+    func freerdpSettings(configPath: String, viewPixelSize: (width: Int, height: Int), gatewayUsername: String? = nil) -> [RDPSetting] {
         func s(_ name: String, _ value: String) -> RDPSetting { RDPSetting(name: "FreeRDP_" + name, value: value) }
         func s(_ name: String, _ value: Int) -> RDPSetting { s(name, String(value)) }
         func s(_ name: String, _ value: Bool) -> RDPSetting { s(name, value ? "TRUE" : "FALSE") }
@@ -53,6 +53,7 @@ extension RDPSessionConfig {
         if !alternateShell.isEmpty { out.append(s("AlternateShell", alternateShell)) }
         if let gateway {
             out += [s("GatewayHostname", gateway.host), s("GatewayPort", gateway.port), s("GatewayUseSameCredentials", sameCredentials)]
+            if !sameCredentials, let gatewayUsername { out.append(s("GatewayUsername", gatewayUsername)) }
         }
         return out
     }
