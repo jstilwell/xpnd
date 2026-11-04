@@ -56,14 +56,28 @@ enum SyntheticEvent {
         snapshot.restore(to: pasteboard)
     }
 
+    private static let modifierKeys: [(CGEventFlags, CGKeyCode)] = [
+        (.maskCommand, CGKeyCode(kVK_Command)), (.maskAlternate, CGKeyCode(kVK_Option)),
+        (.maskControl, CGKeyCode(kVK_Control)), (.maskShift, CGKeyCode(kVK_Shift)),
+    ]
+
+    /// Presses the modifier keys around the key: Screen Sharing and VNC forward modifiers to the
+    /// remote machine as their own key presses, not as flags on the key, so ⌘V alone arrived as "v".
     private func post(_ keyCode: CGKeyCode, flags: CGEventFlags, times: Int) {
+        let modifiers = Self.modifierKeys.filter { flags.contains($0.0) }.map(\.1)
+        for key in modifiers { send(key, down: true, flags: flags) }
         for _ in 0..<max(times, 0) {
-            for keyDown in [true, false] {
-                guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: keyDown) else { continue }
-                event.flags = flags
-                event.setIntegerValueField(.eventSourceUserData, value: SyntheticEvent.marker)
-                event.post(tap: .cghidEventTap)
-            }
+            send(keyCode, down: true, flags: flags)
+            send(keyCode, down: false, flags: flags)
         }
+        for key in modifiers.reversed() { send(key, down: false, flags: []) }
+    }
+
+    /// A modifier key code makes a `flagsChanged` event; any other, a key down or up.
+    private func send(_ keyCode: CGKeyCode, down: Bool, flags: CGEventFlags) {
+        guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down) else { return }
+        event.flags = flags
+        event.setIntegerValueField(.eventSourceUserData, value: SyntheticEvent.marker)
+        event.post(tap: .cghidEventTap)
     }
 }
