@@ -54,14 +54,17 @@ enum SyntheticEvent {
         always || remoteDesktopApps.contains { bundleID?.hasPrefix($0) == true }
     }
 
-    /// Types `text` one character at a time as Unicode key events; a newline is Return and a tab is Tab,
-    /// so terminals and remote machines see real keys.
+    /// Types `text` one character at a time as the key that makes it on the current layout (remote
+    /// machines get the key code, not the character); a newline is Return. A character no key makes
+    /// goes as a Unicode key event, which local apps take and remote ones show as "a".
     private func type(_ text: String) {
+        let keys = KeyMap.current().keys
         for character in text {
-            switch character {
-            case "\n", "\r\n", "\r": post(KeyName.enter.keyCode, flags: [], times: 1)
-            case "\t": post(KeyName.tab.keyCode, flags: [], times: 1)
-            default:
+            if character == "\n" || character == "\r\n" {
+                post(KeyName.enter.keyCode, flags: [], times: 1)
+            } else if let key = keys[character] {
+                post(key.code, flags: key.flags, times: 1)
+            } else {
                 let units = Array(String(character).utf16)
                 for down in [true, false] {
                     guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down) else { continue }
