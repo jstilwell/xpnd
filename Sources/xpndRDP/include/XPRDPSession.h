@@ -40,6 +40,9 @@ NS_SWIFT_UI_ACTOR
 - (void)sessionDidConnect:(XPRDPSession *)s;
 @end
 
+/// The disconnect name when the user declined the certificate (FreeRDP reports a TLS failure).
+extern NSString *const XPRDPErrorCertificateRejected;
+
 /// One FreeRDP connection shown in `view`. Use it from the main thread only.
 NS_SWIFT_UI_ACTOR
 @interface XPRDPSession : NSObject
@@ -77,6 +80,8 @@ NS_SWIFT_UI_ACTOR
 /// Test hooks: what FreeRDP's LogonErrorInfo callback records (`data`, then `type`, in its order), and
 /// the name a disconnect with FreeRDP's last error `code` would report now.
 - (void)noteLogonErrorData:(uint32_t)data type:(uint32_t)type;
+/// Test hook: what the certificate sheet answered, as the certificate callback records it.
+- (void)noteCertificateTrusted:(BOOL)trusted;
 - (nullable NSString *)disconnectErrorNameForCode:(uint32_t)code;
 @end
 

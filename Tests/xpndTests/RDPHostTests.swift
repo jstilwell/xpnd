@@ -62,6 +62,17 @@ import xpndRDP
         #expect(answer?.2 == nil)
     }
 
+    @Test func aServerSideEndAfterConnectingEndsTheTabAtOnce() {
+        let (host, s) = host()
+        var ended: [String?] = []
+        host.onDisconnect = { ended.append($0) }
+        host.sessionDidConnect(s)
+        host.session(s, didDisconnectWithErrorName: "ERRINFO_IDLE_TIMEOUT")
+        #expect(host.retry == nil)
+        #expect(fake.calls == ["start"])
+        #expect(ended == ["the server closed the session (ERRINFO_IDLE_TIMEOUT)"])
+    }
+
     @Test func terminateCancelsAPendingRetry() async {
         let (host, s) = host(delay: .seconds(60))
         host.sessionDidConnect(s)

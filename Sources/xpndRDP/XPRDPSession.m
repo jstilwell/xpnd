@@ -72,6 +72,8 @@ static BOOL XPIsEmpty(const char *_Nullable value) {
 
 #pragma mark - XPRDPSession
 
+NSString *const XPRDPErrorCertificateRejected = @"XPRDP_CERTIFICATE_REJECTED";
+
 /// MRDPView's desktop resize (a static function there), captured in PreConnect; the same for every session.
 static _Atomic(pDesktopResize) XPMacDesktopResize;
 
@@ -111,6 +113,7 @@ static void XPPostDisconnect(freerdp *);
     BOOL _reported;           // didDisconnect sent for this start
     BOOL _connected;
     BOOL _logonFailed;
+    BOOL _certificateRejected;
     DispClientContext *_disp;
     dispatch_semaphore_t _wait;
     id _answer;
@@ -240,6 +243,7 @@ static BOOL XPSetLogin(rdpSettings *settings, BOOL gateway, NSArray<NSString *> 
     _reported = NO;
     _connected = NO;
     _logonFailed = NO;
+    _certificateRejected = NO;
     [_lock unlock];
     [_view prepareForConnection];
     if (freerdp_client_start(_context) != 0) {  // MRDPView's rdpStart: returns -1 when no thread started
@@ -329,8 +333,10 @@ static BOOL XPSetLogin(rdpSettings *settings, BOOL gateway, NSArray<NSString *> 
 
 - (nullable NSString *)disconnectErrorNameForCode:(uint32_t)code {
     [_lock lock];
-    const BOOL logonFailed = _logonFailed;
+    const BOOL logonFailed = _logonFailed, certificateRejected = _certificateRejected;
     [_lock unlock];
+    if (certificateRejected && code == FREERDP_ERROR_TLS_CONNECT_FAILED)
+        return XPRDPErrorCertificateRejected;
     // A server that rejects the password at its own logon screen ends with a generic error.
     if (logonFailed && (code == FREERDP_ERROR_SUCCESS || code == FREERDP_ERROR_CONNECT_FAILED))
         code = FREERDP_ERROR_CONNECT_LOGON_FAILURE;
@@ -419,6 +425,7 @@ static DWORD XPAskAboutCertificate(freerdp *instance, const char *host, UINT16 p
             answer(@(value));
         }];
     }];
+    [s noteCertificateTrusted:trust.boolValue];
     // 1 accepts and stores in ConfigPath's known hosts (tls.c), so a later change shows as Changed;
     // 2 would accept for this session only.
     return trust.boolValue ? 1 : 0;
@@ -576,6 +583,12 @@ static void XPPostDisconnect(freerdp *instance) {
     else if (type < LOGON_MSG_SESSION_BUSY_OPTIONS &&
              (data == LOGON_FAILED_BAD_PASSWORD || data == LOGON_FAILED_UPDATE_PASSWORD || data == LOGON_FAILED_OTHER))
         _logonFailed = YES;
+    [_lock unlock];
+}
+
+- (void)noteCertificateTrusted:(BOOL)trusted {
+    [_lock lock];
+    _certificateRejected = !trusted;
     [_lock unlock];
 }
 

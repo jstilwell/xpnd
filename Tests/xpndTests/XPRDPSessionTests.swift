@@ -109,6 +109,15 @@ struct XPRDPSessionTests {
         #expect(s.disconnectErrorName(forCode: Self.tlsConnectFailed) == "ERRCONNECT_TLS_CONNECT_FAILED")
     }
 
+    @MainActor @Test func aDeclinedCertificateNamesItsTLSFailure() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        s.noteCertificateTrusted(false)
+        #expect(s.disconnectErrorName(forCode: Self.tlsConnectFailed) == XPRDPErrorCertificateRejected)
+        #expect(s.disconnectErrorName(forCode: Self.connectFailed) == "ERRCONNECT_CONNECT_FAILED")
+        s.noteCertificateTrusted(true)
+        #expect(s.disconnectErrorName(forCode: Self.tlsConnectFailed) == "ERRCONNECT_TLS_CONNECT_FAILED")
+    }
+
     @MainActor @Test func serverSideNamesAreTheOnesRDPErrorTextKnows() {
         let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
         let otherConnection = s.disconnectErrorName(forCode: 1 << 16 | 0x05)

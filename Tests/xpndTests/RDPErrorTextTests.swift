@@ -1,5 +1,6 @@
 import Testing
 @testable import xpnd
+import xpndRDP
 
 struct RDPErrorTextTests {
     @Test func errorNamesMapToPlainReasons() {
@@ -7,10 +8,11 @@ struct RDPErrorTextTests {
             ("ERRCONNECT_LOGON_FAILURE", "logon failed"),
             ("ERRCONNECT_ACCESS_DENIED", "access denied"),
             ("ERRCONNECT_CONNECT_TRANSPORT_FAILED", "the connection timed out"),
-            ("ERRCONNECT_CONNECT_FAILED", "the connection timed out"),
-            ("ERRCONNECT_TLS_CONNECT_FAILED", "the certificate was rejected"),
+            ("ERRCONNECT_CONNECT_FAILED", "the server refused the connection"),
+            ("ERRCONNECT_TLS_CONNECT_FAILED", "the secure connection failed"),
+            (XPRDPErrorCertificateRejected, "the certificate was rejected"),
             ("ERRCONNECT_CONNECT_CANCELLED", "cancelled"),
-            ("ERRCONNECT_DNS_NAME_NOT_FOUND", "the server refused the connection"),
+            ("ERRCONNECT_DNS_NAME_NOT_FOUND", "the host name could not be resolved"),
             ("FREERDP_ERROR_FOO", "FREERDP_ERROR_FOO"),
             ("ERRINFO_IDLE_TIMEOUT", "the server closed the session (ERRINFO_IDLE_TIMEOUT)"),
             ("ERRINFO_DISCONNECTED_BY_OTHER_CONNECTION", "another client took over the session"),
@@ -81,9 +83,14 @@ struct RDPReconnectPolicyTests {
         #expect(!retry("ERRCONNECT_CONNECT_TRANSPORT_FAILED", attempt: 5))
     }
 
-    @Test func retriesTransportAndServerSideDrops() {
-        for name in ["ERRCONNECT_CONNECT_FAILED", "ERRCONNECT_DNS_NAME_NOT_FOUND", "ERRINFO_IDLE_TIMEOUT"] {
+    @Test func retriesOnlyTransportDrops() {
+        for name in ["ERRCONNECT_CONNECT_FAILED", "ERRCONNECT_DNS_NAME_NOT_FOUND"] {
             #expect(retry(name), "\(name)")
+        }
+        // The server ended the session on purpose: idle and logon timeouts, an administrator.
+        for name in ["ERRINFO_IDLE_TIMEOUT", "ERRINFO_LOGON_TIMEOUT", "ERRINFO_DISCONNECTED_BY_OTHER_CONNECTION",
+                     "ERRINFO_RPC_INITIATED_DISCONNECT"] {
+            #expect(!retry(name), "\(name)")
         }
     }
 
@@ -93,8 +100,8 @@ struct RDPReconnectPolicyTests {
 
     @Test func neverRetriesLogonCertificateCancelOrACleanEnd() {
         for name in [nil, "ERRCONNECT_LOGON_FAILURE", "ERRCONNECT_ACCESS_DENIED", "ERRCONNECT_TLS_CONNECT_FAILED",
-                     "ERRCONNECT_CONNECT_CANCELLED", "ERRINFO_LOGOFF_BY_USER", "FREERDP_ERROR_FOO",
-                     "ERRINFO_DISCONNECTED_BY_OTHER_CONNECTION"] {
+                     XPRDPErrorCertificateRejected, "ERRCONNECT_CONNECT_CANCELLED", "ERRINFO_LOGOFF_BY_USER",
+                     "FREERDP_ERROR_FOO"] {
             #expect(!retry(name), "\(name ?? "nil")")
         }
     }
