@@ -19,8 +19,9 @@ extension AppDelegate {
 
     var keysDirectory: URL { ConnectionStore.defaultURL.deletingLastPathComponent().appending(path: "keys") }
 
-    /// A typed activation string, already inside the engine's claim.
-    func activate(_ target: ActivationTarget, typedInto pid: pid_t?) async {
+    /// A typed activation string, already inside the engine's claim. `typed`: characters of a folder
+    /// string still in the app, deleted when a row is picked (Esc leaves them, like a cancelled form).
+    func activate(_ target: ActivationTarget, typedInto pid: pid_t?, typed: Int) async {
         let library = connections.library
         switch target {
         case .connection(let id):
@@ -31,15 +32,15 @@ extension AppDelegate {
             quickMenu.show(
                 folder: id, library: library,
                 onOpenApp: { [weak self] in self?.showMainWindow(selecting: .folder(id)) },
-                connect: { [weak self] connection, pid in await self?.connectExclusively(connection, from: pid) }
+                connect: { [weak self] connection, pid in await self?.connectExclusively(connection, from: pid, deleting: typed) }
             )
         }
     }
 
     /// For the quick menu, the launcher and the main window. `pid`: the app to guard, nil for none.
-    func connectExclusively(_ id: Connection.ID, from pid: pid_t?) async {
+    func connectExclusively(_ id: Connection.ID, from pid: pid_t?, deleting: Int = 0) async {
         let service = service
-        guard await engine.exclusive({ await service?.connect(id, typedInto: pid) }) else {
+        guard await engine.exclusive({ await service?.connect(id, typedInto: pid, deletingCharacters: deleting) }) else {
             return hud.flash("Another action is still running.")
         }
     }

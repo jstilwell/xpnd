@@ -41,6 +41,7 @@ private struct FakeContext: EvaluationContext {
 private struct Activation: Equatable {
     let target: ActivationTarget
     let pid: pid_t?
+    var typed = 0
 }
 
 @MainActor private final class Harness {
@@ -72,8 +73,8 @@ private struct Activation: Equatable {
             makeContext: { FakeContext(library: store.library, gate: gate) },
             notify: { [unowned self] in notes.append($0) },
             frontmostPID: { [unowned self] in front },
-            onActivate: { [unowned self] target, pid in
-                activated.append(Activation(target: target, pid: pid))
+            onActivate: { [unowned self] target, pid, typed in
+                activated.append(Activation(target: target, pid: pid, typed: typed))
                 _ = await activationGate?.wait()
             }
         )
@@ -241,7 +242,7 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         #expect(h.engine.buffer.text.isEmpty)
         await h.settle()
         #expect(h.sender.log == ["bs 4"])
-        #expect(h.activated == [Activation(target: .connection(aws.id), pid: 100)])
+        #expect(h.activated == [Activation(target: .connection(aws.id), pid: 100, typed: 4)])
         #expect(h.notes.isEmpty)
         #expect(!h.engine.isExpanding)
     }
@@ -251,8 +252,10 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         let h = try Harness([], folders: [dev])
         h.type(";", "d", "e", "v")
         await h.settle()
-        #expect(h.sender.log == ["bs 4"])
-        #expect(h.activated == [Activation(target: .folder(dev.id), pid: 100)])
+        // Nothing is deleted yet: keystrokes posted just before a panel becomes key land in the panel.
+        // The string is deleted when a row is picked, with the panel closed (`typed` says how much).
+        #expect(h.sender.log == [])
+        #expect(h.activated == [Activation(target: .folder(dev.id), pid: 100, typed: 4)])
     }
 
     @Test func activationNeedsTheWholeBuffer() async throws {
@@ -268,13 +271,13 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         let h = try Harness([Snippet(name: "v", keyword: "v", matching: .loose, text: "V")], folders: [dev])
         h.type(";", "d", "e", "v")
         await h.settle()
-        #expect(h.sender.log == ["bs 4"])
-        #expect(h.activated == [Activation(target: .folder(dev.id), pid: 100)])
+        #expect(h.sender.log == [])
+        #expect(h.activated == [Activation(target: .folder(dev.id), pid: 100, typed: 4)])
 
         // The loose snippet still fires when no activation matches the whole buffer.
         h.type("x", "v")
         await h.settle()
-        #expect(h.sender.log == ["bs 4", "bs 1", "paste V"])
+        #expect(h.sender.log == ["bs 1", "paste V"]) // the folder string left nothing to delete
         #expect(h.activated.count == 1)
     }
 
@@ -312,8 +315,8 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         h.engine.resetBuffer()
         h.type(";", "d", "e", "v")
         await h.settle()
-        #expect(h.sender.log == ["bs 4"])
-        #expect(h.activated == [Activation(target: .folder(dev.id), pid: 100)])
+        #expect(h.sender.log == [])
+        #expect(h.activated == [Activation(target: .folder(dev.id), pid: 100, typed: 4)])
     }
 
     /// The other file's last good value still counts, so a broken file can't unmask a duplicate.
@@ -350,7 +353,7 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         h.engine.resetBuffer()
         h.type(";", "p", "r", "o", "d")
         await h.settle()
-        #expect(h.activated == [Activation(target: .folder(prod.id), pid: 100)])
+        #expect(h.activated == [Activation(target: .folder(prod.id), pid: 100, typed: 5)])
 
         // A new snippet takes the derived string away from the folder.
         try h.store.update { $0.groups = [SnippetGroup(name: "G", snippets: [snip(";prod", "P")])] }

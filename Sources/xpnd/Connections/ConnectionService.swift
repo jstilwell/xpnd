@@ -44,14 +44,15 @@ import Foundation
 
     /// `target`: the app the action was started from, which must still be in front to act.
     /// nil means the user clicked in xpnd itself, so there is nothing to guard.
-    func connect(_ id: Connection.ID, typedInto target: pid_t?) async {
+    /// `deletingCharacters`: a typed string still sitting in that app (a folder's), deleted right before acting.
+    func connect(_ id: Connection.ID, typedInto target: pid_t?, deletingCharacters: Int = 0) async {
         passwordPhase?.cancel()
         passwordPhase = nil
         let library = connections.library // one snapshot, since the file can change across the awaits
         guard let connection = library.connection(id) else { return notify("That connection no longer exists.") }
         guard let plan = plan(for: connection, in: library),
               await fetchMissingKeys(for: connection, in: library),
-              await launch(plan, into: target) else { return }
+              await launch(plan, into: target, deletingCharacters: deletingCharacters) else { return }
         passwordPhase = Task { await copyPasswords(for: connection, in: library) }
     }
 
@@ -108,8 +109,9 @@ import Foundation
     }
 
     /// Checks the front app here, after any Touch ID prompt for a key has had its chance to move focus.
-    private func launch(_ plan: LaunchPlan, into target: pid_t?) async -> Bool {
+    private func launch(_ plan: LaunchPlan, into target: pid_t?, deletingCharacters: Int) async -> Bool {
         guard stillInFront(target) else { return false }
+        if deletingCharacters > 0 { await sender.backspace(times: deletingCharacters) }
         if case .typeIntoFrontTerminal(let line) = plan {
             await sender.paste(line)
             guard stillInFront(target) else { return false } // paste takes ~150 ms, and Return would go to whatever is in front

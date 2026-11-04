@@ -1,7 +1,9 @@
 import Foundation
 
 /// Turns typed keys into expansions: matches the typing buffer against the library, evaluates the
-/// snippet, then plays it. An activation string instead deletes itself and hands off to `onActivate`.
+/// snippet, then plays it. A connection string deletes itself and hands off to `onActivate`; a folder
+/// string hands off undeleted, because its quick menu becomes the key window and keystrokes posted
+/// just before that land in the panel. The count tells the caller what to delete on pick.
 /// Only one expansion or connection action runs at a time. Never log the buffer or any text.
 @MainActor final class ExpansionEngine {
     /// Tuning value: lets the keyword's last keystroke, which the listen-only tap sees before the
@@ -20,7 +22,7 @@ import Foundation
     private let makeContext: @MainActor () -> any EvaluationContext
     private let notify: @MainActor (String) -> Void
     private let frontmostPID: @MainActor () -> pid_t?
-    private let onActivate: @MainActor (ActivationTarget, pid_t?) async -> Void
+    private let onActivate: @MainActor (ActivationTarget, pid_t?, _ typedCharacters: Int) async -> Void
 
     /// `KeywordNamespace`'s answers are too slow to work out per key inside the event tap's callback,
     /// so they're kept until either library changes.
@@ -33,7 +35,7 @@ import Foundation
         makeContext: @escaping @MainActor () -> any EvaluationContext,
         notify: @escaping @MainActor (String) -> Void,
         frontmostPID: @escaping @MainActor () -> pid_t?,
-        onActivate: @escaping @MainActor (ActivationTarget, pid_t?) async -> Void
+        onActivate: @escaping @MainActor (ActivationTarget, pid_t?, _ typedCharacters: Int) async -> Void
     ) {
         self.store = store
         self.connections = connections
@@ -133,9 +135,11 @@ import Foundation
         defer { isExpanding = false }
         do throws(ExpansionError) {
             guard frontmostPID() == target else { throw .targetAppChanged }
-            try await player.play([], deletingCharacters: deletingCharacters)
-            guard frontmostPID() == target else { throw .targetAppChanged }
-            await onActivate(action, target)
+            if case .connection = action {
+                try await player.play([], deletingCharacters: deletingCharacters)
+                guard frontmostPID() == target else { throw .targetAppChanged }
+            }
+            await onActivate(action, target, deletingCharacters)
         } catch {
             notify(error.message)
         }

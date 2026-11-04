@@ -59,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             makeContext: { LiveEvaluationContext(library: store.library) },
             notify: { hud.flash($0) },
             frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
-            onActivate: { [weak self] in await self?.activate($0, typedInto: $1) }
+            onActivate: { [weak self] in await self?.activate($0, typedInto: $1, typed: $2) }
         )
         engine.isEnabled = settings.expansionEnabled
         picker = PickerPanel(store: store, engine: engine)
