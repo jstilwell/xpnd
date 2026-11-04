@@ -34,6 +34,9 @@ extension XPRDPSession: RDPSessionControlling {}
     private var retries = 0
     /// The name the last `onDisconnect` came from.
     private var lastError: String?
+    /// A rejected login reconnected to ask, and no sheet has been asked for since. Another rejection then
+    /// means FreeRDP sent stored credentials without asking, so the tab ends instead of looping.
+    private var awaitingPrompt = false
     /// Internal for tests, which await it.
     private(set) var retry: Task<Void, Never>?
     private var sheet: NSWindow?
@@ -77,6 +80,7 @@ extension XPRDPSession: RDPSessionControlling {}
 
     func reconnect() {
         retry?.cancel()
+        awaitingPrompt = false
         hadConnected = false
         retries = 0
         // FreeRDP asks (the password sheet) only when it has no password.
@@ -95,6 +99,7 @@ extension XPRDPSession: RDPSessionControlling {}
 
     func session(_ s: XPRDPSession, requestPasswordForUser user: String, domain: String, host: String,
                  completion: @escaping (String, String, String?) -> Void) {
+        awaitingPrompt = false
         present(RDPPasswordPrompt(user: user, domain: domain, host: host) { [weak self] typed in
             self?.dismissSheet()
             guard let typed else { return completion("", "", nil) }
@@ -105,9 +110,11 @@ extension XPRDPSession: RDPSessionControlling {}
 
     func session(_ s: XPRDPSession, didDisconnectWithErrorName errorName: String?) {
         // A rejected login asks again at once (the sheet); the password that failed is never resent.
-        if RDPErrorText.needsNewPassword(errorName) {
+        if RDPErrorText.needsNewPassword(errorName), !awaitingPrompt {
             lastError = errorName
-            return reconnect()
+            reconnect()
+            awaitingPrompt = true
+            return
         }
         guard RDPReconnectPolicy.shouldRetry(errorName: errorName, hadConnected: hadConnected, attempt: retries, config: config) else {
             return ended(errorName)

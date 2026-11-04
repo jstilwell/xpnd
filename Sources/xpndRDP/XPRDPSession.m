@@ -100,7 +100,6 @@ static void XPPostDisconnect(freerdp *);
     NSMutableData *_password;
     NSMutableData *_Nullable _gatewayPassword;
     NSArray<NSString *> *_Nullable _login, *_Nullable _gatewayLogin;  // [user, domain] typed in the sheet
-    BOOL _sameCredentials;  // the gateway uses the login's
     __weak id<XPRDPSessionDelegate> _delegate;
     XPRDPView *_view;
     rdpContext *_context;  // main thread; FreeRDP's threads reach it through `instance`
@@ -130,7 +129,6 @@ static XPRDPSession *_Nullable XPSessionFor(rdpContext *context) {
         _settings = [settings copy];
         _password = XPSecret(password);
         _gatewayPassword = gatewayPassword ? XPSecret(gatewayPassword) : nil;
-        _sameCredentials = [settings containsObject:@[ @"FreeRDP_GatewayUseSameCredentials", @"TRUE" ]];
         _delegate = delegate;
         _lock = [NSLock new];
         _view = [[XPRDPView alloc] initWithFrame:NSMakeRect(0, 0, 640, 480)];
@@ -305,14 +303,14 @@ static BOOL XPSetLogin(rdpSettings *settings, BOOL gateway, NSArray<NSString *> 
         XPZeroSetting(_context->settings, FreeRDP_Password);
         (void)freerdp_settings_set_string(_context->settings, FreeRDP_Password, NULL);
     }
-    // FreeRDP copies an accepted gateway password to the login (utils_sync_credentials): it would be sent again.
-    if (_sameCredentials) {
-        XPZeroSecret(_gatewayPassword);
-        _gatewayPassword = nil;
-        if (_context) {
-            XPZeroSetting(_context->settings, FreeRDP_GatewayPassword);
-            (void)freerdp_settings_set_string(_context->settings, FreeRDP_GatewayPassword, NULL);
-        }
+    // The gateway's too: a gateway refusal is also ACCESS_DENIED, and with the same credentials FreeRDP
+    // copies an accepted gateway password back to the login (utils_sync_credentials). Kept, either would be
+    // sent again without a prompt.
+    XPZeroSecret(_gatewayPassword);
+    _gatewayPassword = nil;
+    if (_context) {
+        XPZeroSetting(_context->settings, FreeRDP_GatewayPassword);
+        (void)freerdp_settings_set_string(_context->settings, FreeRDP_GatewayPassword, NULL);
     }
     [_lock unlock];
 }

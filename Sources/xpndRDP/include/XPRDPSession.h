@@ -70,8 +70,8 @@ NS_SWIFT_UI_ACTOR
 - (void)stop;
 /// Tears down the connection and starts again with the same settings and the latest password.
 - (void)reconnect;
-/// Zeroes and drops the login password, and the gateway's when it uses the same credentials, so the
-/// next `start` / `reconnect` asks the delegate for one. Call it while disconnected.
+/// Zeroes and drops the login and gateway passwords, so the next `start` / `reconnect` asks the delegate
+/// for them. Call it while disconnected.
 - (void)forgetPassword;
 
 /// Test hooks: a setting by its `FreeRDP_<Name>`; nil / NO for an unknown name, another type, or no context.

@@ -55,6 +55,34 @@ import xpndRDP
         #expect(ended == ["cancelled"])
     }
 
+    @Test func aSecondRejectionWithNoPromptBetweenEndsTheTab() {
+        // A gateway's own stored credential refused: FreeRDP resends it without asking, so no loop.
+        let (host, s) = host()
+        var ended: [String?] = []
+        host.onDisconnect = { ended.append($0) }
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_ACCESS_DENIED")
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_ACCESS_DENIED")
+        #expect(fake.calls == ["start", "forgetPassword", "reconnect"])
+        #expect(ended == ["access denied"])
+        // Reconnect, clicked, asks again.
+        host.reconnect()
+        #expect(fake.calls.suffix(2) == ["forgetPassword", "reconnect"])
+    }
+
+    @Test func aRejectionAfterAShownPromptAsksAgainOnce() {
+        let (host, s) = host()
+        var ended: [String?] = []
+        host.onDisconnect = { ended.append($0) }
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_LOGON_FAILURE")
+        host.session(s, requestPasswordForUser: "me", domain: "", host: "win") { _, _, _ in }
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_LOGON_FAILURE")
+        #expect(fake.calls == ["start", "forgetPassword", "reconnect", "forgetPassword", "reconnect"])
+        #expect(ended.isEmpty)
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_LOGON_FAILURE")
+        #expect(fake.calls.count == 5)
+        #expect(ended == ["logon failed"])
+    }
+
     @Test func noWindowForThePasswordSheetCancels() {
         let (host, s) = host()
         var answer: (String, String, String?)?

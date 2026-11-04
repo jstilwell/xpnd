@@ -49,7 +49,8 @@ struct XPRDPSessionTests {
         #expect(s.prepare())
         s.forgetPassword()
         #expect(s.stringSettingNamed("FreeRDP_Password") == nil)
-        #expect(s.stringSettingNamed("FreeRDP_GatewayPassword") == "g")
+        // A gateway with its own credential too: its refusal is also ACCESS_DENIED.
+        #expect(s.stringSettingNamed("FreeRDP_GatewayPassword") == nil)
         s.stop()
         // A fresh context, as reconnect makes, gets no password either.
         let fresh = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())

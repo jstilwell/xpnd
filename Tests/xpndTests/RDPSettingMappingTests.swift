@@ -115,7 +115,10 @@ import Testing
     }
 
     @Test func neverContainsAPassword() {
-        let names = config().freerdpSettings(configPath: "/x", viewPixelSize: (100, 100)).map(\.name)
-        #expect(!names.contains { $0.contains("Password") })
+        let ref = CredentialRef(account: "a", vault: "v", item: "i", title: "t", category: .login, username: "svc")
+        for gateway in [nil, RDPOptions.Gateway(host: "gw"), RDPOptions.Gateway(host: "gw", credential: ref)] {
+            let names = config { $0.gateway = gateway }.freerdpSettings(configPath: "/x", viewPixelSize: (100, 100)).map(\.name)
+            #expect(!names.contains { $0.contains("Password") })
+        }
     }
 }
