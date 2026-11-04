@@ -3,7 +3,7 @@ set -e
 
 usage() {
     cat <<'USAGE'
-Builds this copy of xpnd for Apple silicon and Intel, as releases are, and runs it,
+Builds this copy of xpnd for Apple silicon and runs it,
 quitting any copy that's already running.
 
   ./bin/run.sh                      build and run
@@ -76,8 +76,9 @@ if [ "$TEST_SNIPPETS" = true ]; then
     echo "Installed the test snippets and connections."
 fi
 
-# Both architectures, as releases are built, so a local build matches what users get.
-make run BUILD_FLAGS="--arch arm64 --arch x86_64"
+# Apple silicon only: Xcode now warns on every Intel build, and a local run doesn't need one.
+# Releases (make release-app) stay universal.
+make run
 echo "xpnd is running from build/xpnd.app. Look for its icon in the menu bar."
 echo "If it just asked for Input Monitoring, quit it from the menu and run this again: macOS"
 echo "only lets it listen after a relaunch."
