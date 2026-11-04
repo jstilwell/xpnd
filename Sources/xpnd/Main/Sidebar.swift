@@ -28,7 +28,7 @@ enum SidebarItem: Hashable {
 }
 
 /// The main window's sidebar: the connection tree, then snippet groups as one-level folders.
-/// Double-clicking a connection (or Connect in its menu) connects. Searching filters both: the
+/// Double-clicking a connection (or Connect in its menu) connects; double-clicking a group opens or closes it. Searching filters both: the
 /// connections as a flat list, as the launcher shows them, and each group's snippets as the picker does.
 /// Rows drag (`draggable`, carrying `SidebarItem.dragText`): between rows to reorder or move into
 /// that list (`dropDestination` on the `ForEach`, which reports the index before the item is taken
@@ -59,7 +59,11 @@ struct Sidebar: View {
         .contextMenu(forSelectionType: SidebarItem.self) { items in
             menu(for: items)
         } primaryAction: { items in
-            if let id = Self.connection(in: items) { connections.connect(id, NSEvent.modifierFlags.contains(.command)) }
+            switch items.count == 1 ? items.first : nil {
+            case .connection(let id)?: connections.connect(id, NSEvent.modifierFlags.contains(.command))
+            case .snippetGroup(let id)?: expandedGroups.formSymmetricDifference([id])
+            default: break
+            }
         }
         .confirmationDialog(
             "Delete “\(confirmingDelete?.name ?? "")” and everything in it?",
@@ -101,6 +105,7 @@ struct Sidebar: View {
             } header: {
                 heading("Connections") { addConnectionsMenu }
             }
+            .collapsible(false)
     }
 
     private var snippetsSection: some View {
@@ -138,11 +143,12 @@ struct Sidebar: View {
                     .disabled(editing.readOnly)
                 }
             }
+            .collapsible(false)
     }
 
     private static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
 
-    /// A section heading with its "+" at the right.
+    /// A section heading with its "+" at the right; the sections never collapse, so no hover chevron shifts it.
     private func heading<Control: View>(_ title: String, @ViewBuilder control: () -> Control) -> some View {
         HStack {
             Text(title)
@@ -216,6 +222,9 @@ struct Sidebar: View {
                 sidebarRow(group.name.isEmpty ? "Untitled" : group.name, detail: nil, symbol: "folder")
                     .foregroundStyle(group.enabled ? .primary : .secondary)
                 Spacer()
+                Button("New Snippet", systemImage: "plus") { addSnippet(to: group) }
+                    .labelStyle(.iconOnly).buttonStyle(.borderless)
+                    .disabled(editing.readOnly)
                 Toggle("Enabled", isOn: editing.groupBinding(group, \.enabled))
                     .labelsHidden().toggleStyle(.switch).controlSize(.mini)
                     .disabled(editing.readOnly)
@@ -257,6 +266,11 @@ struct Sidebar: View {
                 Button("Delete", role: .destructive) { delete(.connection(id)) }
             }
             .disabled(readOnly)
+        case .snippetGroup(let id)?:
+            Button("New Snippet") {
+                if let group = editing.store.library.groups.first(where: { $0.id == id }) { addSnippet(to: group) }
+            }
+            .disabled(editing.readOnly)
         default:
             if items.isEmpty {
                 Button("New Folder") { select(connections.addFolder(in: nil).map(SidebarItem.folder), focus: .name) }
@@ -290,6 +304,13 @@ struct Sidebar: View {
         focus = field
     }
 
+    /// Opens the group so the new snippet shows, then selects it; on failure the group's Details shows why.
+    private func addSnippet(to group: SnippetGroup) {
+        guard let id = editing.addSnippet(to: group, connections: connections.library) else { selection = .snippetGroup(group.id); return }
+        expandedGroups.insert(group.id)
+        selection = .snippet(id)
+    }
+
     /// On failure the item is selected, so its Details shows why.
     private func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?) {
         if !connections.move(item, to: destination) { selection = item }
@@ -301,11 +322,6 @@ struct Sidebar: View {
         } else {
             selection = item
         }
-    }
-
-    private static func connection(in items: Set<SidebarItem>) -> Connection.ID? {
-        guard items.count == 1, case .connection(let id)? = items.first else { return nil }
-        return id
     }
 
 }
