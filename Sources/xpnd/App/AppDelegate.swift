@@ -287,7 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Updates.shared.checkForUpdates()
     }
 
-    @objc private func showSettings() {
+    @objc func showSettings() {
         if settingsWindow == nil {
             settingsWindow = SettingsWindowController(
                 settings: settings, store: store,

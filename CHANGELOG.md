@@ -22,7 +22,7 @@ All notable changes to this project will be documented in this file.
 - A broken `connections.yaml` is flagged in the HUD and the menu bar menu, and pauses only connection strings.
 
 ### Changed
-
+- The sidebar adds folders, connections and snippet groups from a “+” beside each heading, and shows the version and a Settings button at the bottom.
 - xpnd is now a Dock app with a main window for connections and snippets, and it keeps running in the menu bar when you close it.
 - Snippets are edited in the main window instead of Settings.
 - Settings has General, Terminal, Password Manager, and Import/Export sections.

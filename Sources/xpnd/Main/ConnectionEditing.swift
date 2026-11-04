@@ -17,6 +17,16 @@ extension StoreError {
 
 /// The editors' rules that don't need a view.
 enum EditorRules {
+    /// The folder the sidebar's "+" adds into: the selected folder, or a selected connection's. nil
+    /// means the top level (or that nothing relevant is selected).
+    static func addTarget(for selection: SidebarItem?, in library: ConnectionLibrary) -> ConnectionFolder.ID? {
+        switch selection {
+        case .folder(let id)?: library.folder(id)?.id
+        case .connection(let id)?: library.path(of: id).last?.id
+        default: nil
+        }
+    }
+
     /// `base`, else `base 2`, `base 3`… whichever is free first.
     static func uniqueName(_ base: String, taken: Set<String>) -> String {
         (1...).lazy.map { $0 == 1 ? base : "\(base) \($0)" }.first { !taken.contains($0) } ?? base
