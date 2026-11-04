@@ -68,9 +68,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         sessions.open(command, for: connection, color: color)
     }
 
-    /// Whether the keyboard is in a session's terminal.
+    /// Whether the keyboard is in a session's terminal. Requires the main window to be key: a window
+    /// keeps its first responder after the app deactivates or another window (Settings, a panel) takes key.
     var terminalHasFocus: Bool {
-        guard let responder = window?.firstResponder as? NSView else { return false }
+        guard let window, window.isKeyWindow, let responder = window.firstResponder as? NSView else { return false }
         return sessions.sessions.contains { responder.isDescendant(of: $0.host.view) }
     }
 
