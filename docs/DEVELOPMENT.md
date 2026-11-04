@@ -37,7 +37,10 @@ again after every build.
   snapshot, `ScriptRunner` and `ProcessRunner` for scripts, and the input form), so a failure throws an
   `ExpansionError` before anything on screen changes. It yields `PlayStep`s.
 - `Player` plays the steps: it deletes the keyword, pastes text with `PasteboardSnapshot` saving and
-  restoring every pasteboard type, and sends keys through `KeystrokeSender` (`SyntheticEvent`).
+  restoring every pasteboard type, and sends keys through `KeystrokeSender` (`SyntheticEvent`). In
+  remote-desktop and VM apps (`CGEventKeystrokeSender.remoteDesktopApps`), or everywhere with the
+  General setting, text is typed instead: `KeyMap` finds each character's key on the current layout
+  and the modifier keys are pressed around it (CLAUDE.md explains why).
   `ActionRunner` opens apps and runs Shortcuts (`ShortcutsList` lists them). `HUD` flashes failures.
 - `SnippetStore` owns the library, loads and atomically saves `snippets.yaml` through `SnippetYAML`,
   watches the file for edits, and keeps an unreadable file untouched (`loadError`). `KeywordValidation`

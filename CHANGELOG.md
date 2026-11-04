@@ -5,10 +5,13 @@ All notable changes to this project will be documented in this file.
 ## 0.2.0 - Unreleased
 
 ### Fixed
+- The color picker's swatches show their colors in the open menu instead of white circles.
 - A folder string like `;dev` is now deleted when you pick a row from its menu, not before the menu opens, so none of it is left behind in the terminal; Esc keeps what you typed.
 - With more than one 1Password account, Settings → Password Manager asks which is yours instead of guessing the first, and the status check now asks 1Password for access rather than reporting "not signed in" on a working setup.
 
 ### Added
+- Snippets typed in Screen Sharing, VNC and RDP clients, and VMs are typed as keystrokes on the remote machine instead of pasted; Settings → General can type them everywhere.
+- A “+” on each snippet group row and “New Snippet” in its right-click menu add a snippet to it; double-clicking a folder or group opens or closes it.
 - Hold ⌘ while picking a connection in a folder menu, the launcher, or when double-clicking it in the window, to connect with sudo just that once, using its sudo credential, its folder's or the global one.
 - Folders and connections can have a color from a small palette; a connection without one takes the nearest folder's, and the name shows in that color in the sidebar, the folder menu and the launcher.
 
