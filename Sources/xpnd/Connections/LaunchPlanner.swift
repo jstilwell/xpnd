@@ -6,6 +6,8 @@ enum LaunchPlan: Equatable, Sendable {
     case run(executable: String, arguments: [String])
     case openURL(URL)
     case builtInTab(SSHCommand)
+    /// Never reaches the executor: `ConnectionService` fetches the passwords and opens the tab.
+    case rdpTab(RDPSessionConfig)
 }
 
 enum LaunchPlanner {

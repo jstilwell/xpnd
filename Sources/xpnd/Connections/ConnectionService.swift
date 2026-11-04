@@ -13,9 +13,10 @@ import Foundation
     /// Asked at each use, so a changed op path in Settings applies at once.
     private let provider: @MainActor () -> any CredentialProvider
     private let executor: any LaunchExecuting
-    private let openTab: @MainActor (SSHCommand, Connection) -> Void
+    private let openTab: @MainActor (TabRequest, Connection) -> Void
     private let sender: any KeystrokeSending
     private let terminal: @MainActor () -> TerminalSettings
+    private let remoteDesktop: @MainActor () -> RDPSettings
     private let frontmost: @MainActor () -> (pid: pid_t, bundleID: String?)?
     private let notify: @MainActor (String) -> Void
     private let copySecret: @MainActor (String) async -> Void
@@ -26,8 +27,8 @@ import Foundation
 
     init(
         connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider, executor: any LaunchExecuting,
-        openTab: @escaping @MainActor (SSHCommand, Connection) -> Void, sender: any KeystrokeSending, terminal: @escaping @MainActor () -> TerminalSettings,
-        frontmost: @escaping @MainActor () -> (pid: pid_t, bundleID: String?)?,
+        openTab: @escaping @MainActor (TabRequest, Connection) -> Void, sender: any KeystrokeSending, terminal: @escaping @MainActor () -> TerminalSettings,
+        remoteDesktop: @escaping @MainActor () -> RDPSettings, frontmost: @escaping @MainActor () -> (pid: pid_t, bundleID: String?)?,
         notify: @escaping @MainActor (String) -> Void, copySecret: @escaping @MainActor (String) async -> Void,
         prompt: any PasswordPrompting, keysDirectory: URL
     ) {
@@ -37,6 +38,7 @@ import Foundation
         self.openTab = openTab
         self.sender = sender
         self.terminal = terminal
+        self.remoteDesktop = remoteDesktop
         self.frontmost = frontmost
         self.notify = notify
         self.copySecret = copySecret
@@ -52,7 +54,8 @@ import Foundation
     /// `target`: the app the action was started from, which must still be in front to act.
     /// nil means the user clicked in xpnd itself, so there is nothing to guard.
     /// `deletingCharacters`: a typed string still sitting in that app (a folder's), deleted right before acting.
-    /// `sudo`: ⌘ was held on the pick, so this connect runs with auto-sudo on whatever the saved setting is.
+    /// `sudo`: ⌘ was held on the pick, so this connect runs with auto-sudo on whatever the saved setting is
+    /// (nothing for RDP).
     func connect(_ id: Connection.ID, typedInto target: pid_t?, deletingCharacters: Int = 0, sudo: Bool = false,
                  preferBuiltIn: Bool = false) async {
         cancelPasswordPhase()
@@ -60,9 +63,31 @@ import Foundation
         if sudo { library.editConnection(id) { $0.autoSudo = true } }
         guard let connection = library.connection(id) else { return notify("That connection no longer exists.") }
         guard let plan = plan(for: connection, in: library, preferBuiltIn: preferBuiltIn),
-              await fetchMissingKeys(for: connection, in: library),
-              await launch(plan, for: connection, into: target, deletingCharacters: deletingCharacters) else { return }
+              await fetchMissingKeys(for: connection, in: library) else { return }
+        if case .rdpTab(let config) = plan {
+            return await openRemoteDesktop(config, for: connection, in: library, into: target, deletingCharacters: deletingCharacters)
+        }
+        guard await launch(plan, for: connection, into: target, deletingCharacters: deletingCharacters) else { return }
         passwordPhase = Task { await copyPasswords(for: connection, in: library) }
+    }
+
+    /// The passwords are fetched before the tab exists, so Touch ID comes first, and go into the
+    /// tab's session only: nothing is copied. No credential opens the tab with "" and FreeRDP asks.
+    private func openRemoteDesktop(_ config: RDPSessionConfig, for connection: Connection, in library: ConnectionLibrary,
+                                   into target: pid_t?, deletingCharacters: Int) async {
+        var password = "", gatewayPassword: String?
+        do throws(CredentialError) {
+            if let login = library.loginCredential(for: connection.id)?.ref, login.hasPassword {
+                password = try await provider().password(for: login)
+            }
+            if let gateway = config.gateway?.credential {
+                gatewayPassword = try await provider().password(for: gateway)
+            }
+        } catch {
+            return notify(error.message)
+        }
+        guard await prepareToAct(into: target, deletingCharacters: deletingCharacters) else { return }
+        openTab(.remoteDesktop(config, password: password, gatewayPassword: gatewayPassword), connection)
     }
 
     /// Runs first, before any provider call: a connection that can't be built shouldn't ask for Touch ID.
@@ -71,6 +96,11 @@ import Foundation
             if connection.type == .vnc {
                 return .openURL(try LaunchPlanner.vncURL(
                     host: connection.host, port: connection.effectivePort, user: library.loginUser(for: connection)))
+            }
+            if connection.type == .rdp {
+                return .rdpTab((connection.rdp ?? RDPOptions()).resolved(
+                    over: remoteDesktop(), host: connection.host, port: connection.effectivePort,
+                    username: library.loginUser(for: connection), domain: connection.domain))
             }
             let command: SSHCommand
             do throws(SSHCommandError) {
@@ -119,10 +149,9 @@ import Foundation
 
     /// Checks the front app here, after any Touch ID prompt for a key has had its chance to move focus.
     private func launch(_ plan: LaunchPlan, for connection: Connection, into target: pid_t?, deletingCharacters: Int) async -> Bool {
-        guard stillInFront(target) else { return false }
-        if deletingCharacters > 0 { await sender.backspace(times: deletingCharacters) }
+        guard await prepareToAct(into: target, deletingCharacters: deletingCharacters) else { return false }
         if case .builtInTab(let command) = plan {
-            openTab(command, connection)
+            openTab(.terminal(command), connection)
             return true
         }
         if case .typeIntoFrontTerminal(let line) = plan {
@@ -138,6 +167,12 @@ import Foundation
             notify(error.message)
             return false
         }
+    }
+
+    private func prepareToAct(into target: pid_t?, deletingCharacters: Int) async -> Bool {
+        guard stillInFront(target) else { return false }
+        if deletingCharacters > 0 { await sender.backspace(times: deletingCharacters) }
+        return true
     }
 
     private func stillInFront(_ target: pid_t?) -> Bool {

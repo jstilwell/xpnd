@@ -7,8 +7,8 @@ extension AppDelegate {
         return ConnectionService(
             connections: connections,
             provider: { [unowned self] in self.provider },
-            executor: LiveLaunchExecutor(), openTab: { [weak self] command, connection in self?.openTab(command, for: connection) }, sender: sender,
-            terminal: { AppSettings.shared.terminal },
+            executor: LiveLaunchExecutor(), openTab: { [weak self] request, connection in self?.openTab(request, for: connection) }, sender: sender,
+            terminal: { AppSettings.shared.terminal }, remoteDesktop: { AppSettings.shared.remoteDesktop },
             frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.bundleIdentifier) } },
             notify: { hud.flash($0) },
             copySecret: { [weak self] secret in await self?.engine.whenIdle { SecretClipboard.copy(secret) } },
@@ -68,10 +68,11 @@ extension AppDelegate {
         mainWindow?.show(selecting: item)
     }
 
-    /// The window is shown first, so the new tab's terminal has a window to take focus in.
-    private func openTab(_ command: SSHCommand, for connection: Connection) {
+    /// The window is shown first, so the new tab's terminal has a window to take focus in (and a
+    /// desktop its first size and sheets).
+    private func openTab(_ request: TabRequest, for connection: Connection) {
         showMainWindow(selecting: nil)
-        mainWindow?.openTab(command, for: connection, color: connections.library.color(for: .connection(connection.id))?.color)
+        mainWindow?.openTab(request, for: connection, color: connections.library.color(for: .connection(connection.id))?.color)
     }
 
     @objc func openMainWindow() {

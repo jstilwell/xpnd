@@ -30,7 +30,7 @@ enum LaunchError: Error, Equatable {
             try await runOpen(arguments)
         case .run(let executable, let arguments):
             try launchDetached(executable, arguments)
-        case .builtInTab:
+        case .builtInTab, .rdpTab:
             throw .failed("The built-in terminal opens from the xpnd window.")
         case .openURL(let url):
             guard NSWorkspace.shared.open(url) else { throw .failed("The connection couldn't be opened.") }
