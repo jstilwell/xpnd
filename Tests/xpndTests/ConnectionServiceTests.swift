@@ -613,8 +613,12 @@ struct ConnectionServiceTests {
         h.provider.held = ["login"]
         let service = h.service()
         await service.connect(aws.id, typedInto: nil, preferBuiltIn: true)
+        let task = try #require(service.passwordPhase)
+        #expect(await eventually { h.provider.isHolding("login") })
         service.cancelPasswordPhase()
         #expect(service.passwordPhase == nil)
+        h.provider.release("login")
+        await task.value
         #expect(!h.log.events.contains { $0.hasPrefix("copy") })
     }
 }
