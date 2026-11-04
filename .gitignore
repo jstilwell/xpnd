@@ -23,3 +23,6 @@ CLAUDE.md
 
 # Superpowers working files (brainstorm mockups, plan workspaces)
 .superpowers/
+
+# Vendored builds (bin/build-freerdp.sh): FreeRDP.xcframework, its work directory and licences
+/vendor/

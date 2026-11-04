@@ -22,9 +22,15 @@ DEVELOPER_ID   ?= $(shell security find-identity -v -p codesigning | awk '/"Deve
 # an exported signing key (which .gitignore keeps out of git), can end up in a release.
 RESOURCES      := $(filter-out Resources/Info.plist,$(shell git ls-files Resources))
 
-.PHONY: build app run stop test log clean release-app release print-developer-id
+.PHONY: build app run stop test log clean release-app release print-developer-id freerdp
 
-build:
+# FreeRDP and OpenSSL, built from the pins in bin/build-freerdp.sh; rebuilt when the script changes.
+freerdp: vendor/FreeRDP.xcframework
+
+vendor/FreeRDP.xcframework: bin/build-freerdp.sh
+	bash bin/build-freerdp.sh
+
+build: freerdp
 	$(SWIFT) build -c $(CONFIG) $(BUILD_FLAGS)
 
 SPARKLE := $(APP)/Contents/Frameworks/Sparkle.framework
@@ -41,6 +47,8 @@ app: build
 	$(if $(RESOURCES),cp $(RESOURCES) "$(APP)/Contents/Resources/")
 	# Sparkle's MIT license asks for its notice in every copy.
 	cp .build/artifacts/sparkle/Sparkle/LICENSE "$(APP)/Contents/Resources/Sparkle License.txt"
+	# FreeRDP's and OpenSSL's Apache 2.0 licences ask for their notices too.
+	cp vendor/licenses/*.txt "$(APP)/Contents/Resources/"
 	# Inside out, as Sparkle's documentation describes: its helpers, the framework, then the app.
 	for code in Versions/B/Autoupdate Versions/B/Updater.app .; do \
 		codesign --force $(SIGN_FLAGS) --sign "$(or $(SIGN_ID),-)" "$(SPARKLE)/$$code" || exit 1; \
@@ -50,7 +58,7 @@ app: build
 run: app stop
 	open "$(APP)"
 
-test:
+test: freerdp
 	$(SWIFT) test
 
 stop:
