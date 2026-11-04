@@ -4,6 +4,7 @@ import SwiftTerm
 /// Runs `/usr/bin/ssh` in a SwiftTerm view. Nothing the session shows or types is logged or stored.
 @MainActor final class LiveTerminalHost: NSObject, TerminalHost, LocalProcessTerminalViewDelegate {
     private let terminal: LocalProcessTerminalView
+    private let clipboardGuard: ClipboardReadGuard
     private var exited = false
     var onExit: ((Int32?) -> Void)?
     var view: NSView { terminal }
@@ -13,6 +14,7 @@ import SwiftTerm
         terminal = LocalProcessTerminalView(
             frame: .zero, font: settings.nsFont,
             options: TerminalOptions(cursorStyle: settings.cursorStyle, scrollback: settings.scrollback))
+        clipboardGuard = ClipboardReadGuard(terminal)
         super.init()
         terminal.processDelegate = self
         apply(settings)
@@ -56,5 +58,64 @@ import SwiftTerm
     }
     nonisolated func processFailedToStart(source: TerminalView, error: LocalProcessError) {
         MainActor.assumeIsolated { finish(nil) }
+    }
+}
+
+/// Sits between a `LocalProcessTerminalView` and itself as its `terminalDelegate` to deny OSC 52 clipboard
+/// reads: the view answers them from the general pasteboard, which would send a copied password to the
+/// remote host. Everything else goes to the view unchanged. `terminalDelegate` is weak, so the host keeps this.
+@MainActor final class ClipboardReadGuard: TerminalViewDelegate {
+    private let view: LocalProcessTerminalView
+
+    init(_ view: LocalProcessTerminalView) {
+        self.view = view
+        view.terminalDelegate = self
+    }
+
+    func clipboardRead(source: TerminalView) -> Data? { nil }
+
+    func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
+        view.sizeChanged(source: source, newCols: newCols, newRows: newRows)
+    }
+    func setTerminalTitle(source: TerminalView, title: String) { view.setTerminalTitle(source: source, title: title) }
+    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
+        view.hostCurrentDirectoryUpdate(source: source, directory: directory)
+    }
+    func send(source: TerminalView, data: ArraySlice<UInt8>) { view.send(source: source, data: data) }
+    func scrolled(source: TerminalView, position: Double) { view.scrolled(source: source, position: position) }
+    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+        view.requestOpenLink(source: source, link: link, params: params)
+    }
+    func bell(source: TerminalView) { view.bell(source: source) }
+    func clipboardCopy(source: TerminalView, content: Data) { view.clipboardCopy(source: source, content: content) }
+    func kittyClipboardCapabilities(source: TerminalView) -> KittyClipboardCapabilities {
+        view.kittyClipboardCapabilities(source: source)
+    }
+    func kittyClipboardAvailableMimeTypes(source: TerminalView, location: KittyClipboardLocation) -> [String]? {
+        view.kittyClipboardAvailableMimeTypes(source: source, location: location)
+    }
+    func kittyClipboardRead(
+        source: TerminalView, location: KittyClipboardLocation, mimeType: String
+    ) -> KittyClipboardReadResult? {
+        view.kittyClipboardRead(source: source, location: location, mimeType: mimeType)
+    }
+    func kittyClipboardWrite(
+        source: TerminalView, location: KittyClipboardLocation, content: KittyClipboardWriteContent
+    ) -> KittyClipboardWriteResult {
+        view.kittyClipboardWrite(source: source, location: location, content: content)
+    }
+    func kittyClipboardRequestPermission(
+        source: TerminalView, request: KittyClipboardPermissionRequest
+    ) -> KittyClipboardPermissionResult {
+        view.kittyClipboardRequestPermission(source: source, request: request)
+    }
+    func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {
+        view.iTermContent(source: source, content: content)
+    }
+    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {
+        view.rangeChanged(source: source, startY: startY, endY: endY)
+    }
+    func programStatusChanged(source: TerminalView, records: [TerminalProgramStatus]) {
+        view.programStatusChanged(source: source, records: records)
     }
 }

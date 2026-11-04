@@ -9,6 +9,13 @@ import SwiftTerm
         #expect(LiveTerminalHost.environment(from: [:], locale: "en_US@rg=gbzzzz").contains("LANG=en_US.UTF-8"))
     }
 
+    @Test func clipboardGuardDeniesOSC52Reads() {
+        let view = LocalProcessTerminalView(frame: .zero)
+        let guarded = ClipboardReadGuard(view)
+        #expect(view.terminalDelegate === guarded)
+        #expect(guarded.clipboardRead(source: view) == nil)
+    }
+
     @Test func cursorStyleMapping() {
         var s = BuiltInTerminalSettings.standard
         #expect(s.cursorStyle == .blinkBlock)
