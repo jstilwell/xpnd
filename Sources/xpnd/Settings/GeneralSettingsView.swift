@@ -8,6 +8,9 @@ struct GeneralSettingsView: View {
     var body: some View {
         Form {
             Toggle("Expand keywords", isOn: $settings.expansionEnabled)
+            Toggle("Type snippets as keystrokes", isOn: $settings.typesKeystrokes)
+            Text("Slower than pasting. Remote-desktop and VM apps are always typed.")
+                .font(.callout).foregroundStyle(.secondary)
             LaunchAtLoginToggle()
             LabeledContent("Snippet picker") {
                 ShortcutRecorder(shortcut: $settings.pickerShortcut)

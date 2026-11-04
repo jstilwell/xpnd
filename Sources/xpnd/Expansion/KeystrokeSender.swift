@@ -32,9 +32,44 @@ enum SyntheticEvent {
         post(combo.keyCode, flags: flags, times: 1)
     }
 
+    /// Pastes, or types where a paste can't land: apps that forward keys to another machine (Screen
+    /// Sharing, VNC, RDP, VMs) paste from that machine's clipboard, and ⌘ doesn't survive the trip.
     func paste(_ text: String) async {
+        if Self.typesKeystrokes(in: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, always: AppSettings.shared.typesKeystrokes) {
+            return type(text)
+        }
         await Self.paste(text, on: .general, settle: Self.pasteSettle) {
             post(CGKeyCode(kVK_ANSI_V), flags: .maskCommand, times: 1)
+        }
+    }
+
+    // shortcut: the list is the remote-desktop and VM apps known today; add a bundle id (prefix) when a
+    // user reports another, or turn on "always" in General settings meanwhile.
+    nonisolated static let remoteDesktopApps = [
+        "com.apple.ScreenSharing", "com.apple.RemoteDesktop", "com.microsoft.rdc", "com.realvnc.vncviewer",
+        "com.p5sys.jump", "com.edovia.screens", "com.lemonmojo.RoyalTSX", "com.parallels.desktop", "com.vmware.fusion", "com.utmapp.UTM",
+    ]
+
+    nonisolated static func typesKeystrokes(in bundleID: String?, always: Bool) -> Bool {
+        always || remoteDesktopApps.contains { bundleID?.hasPrefix($0) == true }
+    }
+
+    /// Types `text` one character at a time as Unicode key events; a newline is Return and a tab is Tab,
+    /// so terminals and remote machines see real keys.
+    private func type(_ text: String) {
+        for character in text {
+            switch character {
+            case "\n", "\r\n", "\r": post(KeyName.enter.keyCode, flags: [], times: 1)
+            case "\t": post(KeyName.tab.keyCode, flags: [], times: 1)
+            default:
+                let units = Array(String(character).utf16)
+                for down in [true, false] {
+                    guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down) else { continue }
+                    event.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
+                    event.setIntegerValueField(.eventSourceUserData, value: SyntheticEvent.marker)
+                    event.post(tap: .cghidEventTap)
+                }
+            }
         }
     }
 

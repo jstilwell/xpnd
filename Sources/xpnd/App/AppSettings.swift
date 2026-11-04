@@ -13,6 +13,7 @@ final class AppSettings {
         static let terminalSettings = "terminalSettings"
         static let onePasswordPath = "onePasswordPath"
         static let onePasswordAccount = "onePasswordAccount"
+        static let typesKeystrokes = "typesKeystrokes"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -43,6 +44,9 @@ final class AppSettings {
     /// The 1Password account id to search; nil uses the first signed-in one.
     var onePasswordAccount: String? { didSet { defaults.set(onePasswordAccount, forKey: Key.onePasswordAccount) } }
 
+    /// Type every snippet as keystrokes instead of pasting; off, only remote-desktop apps get typed.
+    var typesKeystrokes: Bool { didSet { defaults.set(typesKeystrokes, forKey: Key.typesKeystrokes) } }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [Key.expansionEnabled: true])
@@ -60,5 +64,6 @@ final class AppSettings {
         terminal = defaults.data(forKey: Key.terminalSettings).flatMap { try? JSONDecoder().decode(TerminalSettings.self, from: $0) } ?? .standard
         onePasswordPath = defaults.string(forKey: Key.onePasswordPath)
         onePasswordAccount = defaults.string(forKey: Key.onePasswordAccount)
+        typesKeystrokes = defaults.bool(forKey: Key.typesKeystrokes)
     }
 }
