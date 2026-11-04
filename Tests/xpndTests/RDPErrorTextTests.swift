@@ -13,6 +13,7 @@ struct RDPErrorTextTests {
             ("ERRCONNECT_DNS_NAME_NOT_FOUND", "the server refused the connection"),
             ("FREERDP_ERROR_FOO", "FREERDP_ERROR_FOO"),
             ("ERRINFO_IDLE_TIMEOUT", "the server closed the session (ERRINFO_IDLE_TIMEOUT)"),
+            ("ERRINFO_DISCONNECTED_BY_OTHER_CONNECTION", "another client took over the session"),
             (nil, "the server closed the session"),
         ]
         for (name, reason) in cases {
@@ -27,8 +28,19 @@ struct RDPErrorTextTests {
         #expect(RDPErrorText.reason(forErrorName: "ERRCONNECT_LOGON_FAILURE", afterConnect: true) == "logon failed")
     }
 
+    @Test func aSessionThatCouldNotStartSaysSo() {
+        #expect(RDPErrorText.startFailed == "the session could not start")
+    }
+
+    @Test func aRejectedLoginAsksForANewPassword() {
+        #expect(RDPErrorText.needsNewPassword("ERRCONNECT_LOGON_FAILURE"))
+        #expect(RDPErrorText.needsNewPassword("ERRCONNECT_ACCESS_DENIED"))
+        #expect(!RDPErrorText.needsNewPassword("ERRCONNECT_CONNECT_TRANSPORT_FAILED"))
+        #expect(!RDPErrorText.needsNewPassword(nil))
+    }
+
     @Test func logoffsAreClean() {
-        for name in [nil, "ERRINFO_LOGOFF_BY_USER", "ERRINFO_RPC_INITIATED_LOGOFF", "ERRINFO_RPC_INITIATED_DISCONNECT_BYUSER"] {
+        for name in [nil, "ERRINFO_LOGOFF_BY_USER", "ERRINFO_RPC_INITIATED_LOGOFF", "ERRINFO_RPC_INITIATED_DISCONNECT_BY_USER"] {
             #expect(RDPErrorText.isClean(name), "\(name ?? "nil")")
         }
         #expect(!RDPErrorText.isClean("ERRINFO_IDLE_TIMEOUT"))
@@ -64,7 +76,8 @@ struct RDPReconnectPolicyTests {
 
     @Test func neverRetriesLogonCertificateCancelOrACleanEnd() {
         for name in [nil, "ERRCONNECT_LOGON_FAILURE", "ERRCONNECT_ACCESS_DENIED", "ERRCONNECT_TLS_CONNECT_FAILED",
-                     "ERRCONNECT_CONNECT_CANCELLED", "ERRINFO_LOGOFF_BY_USER", "FREERDP_ERROR_FOO"] {
+                     "ERRCONNECT_CONNECT_CANCELLED", "ERRINFO_LOGOFF_BY_USER", "FREERDP_ERROR_FOO",
+                     "ERRINFO_DISCONNECTED_BY_OTHER_CONNECTION"] {
             #expect(!retry(name), "\(name ?? "nil")")
         }
     }

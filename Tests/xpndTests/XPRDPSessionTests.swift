@@ -43,6 +43,21 @@ struct XPRDPSessionTests {
         s.stop()
     }
 
+    @MainActor @Test func forgetPasswordLeavesFreeRDPToAskAgain() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: "g", delegate: FakeDelegate())
+        #expect(s.prepare())
+        s.forgetPassword()
+        #expect(s.stringSettingNamed("FreeRDP_Password") == nil)
+        #expect(s.stringSettingNamed("FreeRDP_GatewayPassword") == "g")
+        s.stop()
+        // A fresh context, as reconnect makes, gets no password either.
+        let fresh = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        fresh.forgetPassword()
+        #expect(fresh.prepare())
+        #expect(fresh.stringSettingNamed("FreeRDP_Password") == nil)
+        fresh.stop()
+    }
+
     @MainActor @Test func unknownSettingNameFailsPrepare() {
         let s = XPRDPSession(settings: [["FreeRDP_NoSuchSetting", "1"]], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
         #expect(!s.prepare())
@@ -80,6 +95,15 @@ struct XPRDPSessionTests {
         #expect(s.disconnectErrorName(forCode: 0) == "ERRCONNECT_LOGON_FAILURE")
         #expect(s.disconnectErrorName(forCode: Self.connectFailed) == "ERRCONNECT_LOGON_FAILURE")
         #expect(s.disconnectErrorName(forCode: Self.tlsConnectFailed) == "ERRCONNECT_TLS_CONNECT_FAILED")
+    }
+
+    @MainActor @Test func serverSideNamesAreTheOnesRDPErrorTextKnows() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        let otherConnection = s.disconnectErrorName(forCode: 1 << 16 | 0x05)
+        #expect(otherConnection == "ERRINFO_DISCONNECTED_BY_OTHER_CONNECTION")
+        #expect(RDPErrorText.reason(forErrorName: otherConnection) == "another client took over the session")
+        let rpcLogoff = s.disconnectErrorName(forCode: 1 << 16 | 0x02)
+        #expect(rpcLogoff == "ERRINFO_RPC_INITIATED_LOGOFF" && RDPErrorText.isClean(rpcLogoff))
     }
 
     @MainActor @Test func sessionMessagesAreNotLogonFailures() {

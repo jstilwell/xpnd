@@ -20,6 +20,8 @@ import xpndRDP
     /// A connect succeeded since the last user start, so a transport failure is a drop worth retrying.
     private var hadConnected = false
     private var retries = 0
+    /// The name the last `onDisconnect` came from.
+    private var lastError: String?
     private var retry: Task<Void, Never>?
     private var sheet: NSWindow?
 
@@ -39,8 +41,7 @@ import xpndRDP
                                gatewayPassword: gatewayPassword, delegate: self)
         session.commandAsWindowsKey = config.commandAsWindowsKey
         if !session.start() {
-            // After `onDisconnect` is set; the same name a failed reconnect reports.
-            Task { [weak self] in self?.ended("ERRCONNECT_CONNECT_FAILED") }
+            Task { [weak self] in self?.onDisconnect?(RDPErrorText.startFailed) } // after `onDisconnect` is set
         }
     }
 
@@ -61,6 +62,8 @@ import xpndRDP
         retry?.cancel()
         hadConnected = false
         retries = 0
+        // FreeRDP asks (the password sheet) only when it has no password.
+        if RDPErrorText.needsNewPassword(lastError) { session.forgetPassword() }
         session.reconnect()
     }
 
@@ -100,6 +103,7 @@ import xpndRDP
     // MARK: Private
 
     private func ended(_ errorName: String?) {
+        lastError = errorName
         onDisconnect?(RDPErrorText.isClean(errorName) ? nil : RDPErrorText.reason(forErrorName: errorName, afterConnect: hadConnected))
     }
 

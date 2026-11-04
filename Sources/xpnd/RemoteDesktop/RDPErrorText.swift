@@ -5,7 +5,11 @@ enum RDPErrorText {
     /// Failures to reach the server, which a dropped session also ends with.
     static let transportErrors: Set = ["ERRCONNECT_CONNECT_TRANSPORT_FAILED", "ERRCONNECT_CONNECT_FAILED", "ERRCONNECT_DNS_NAME_NOT_FOUND"]
     /// Ends the user asked for, from Windows: the tab closes as if they had closed it.
-    private static let cleanEnds: Set = ["ERRINFO_LOGOFF_BY_USER", "ERRINFO_RPC_INITIATED_LOGOFF", "ERRINFO_RPC_INITIATED_DISCONNECT_BYUSER"]
+    private static let cleanEnds: Set = ["ERRINFO_LOGOFF_BY_USER", "ERRINFO_RPC_INITIATED_LOGOFF", "ERRINFO_RPC_INITIATED_DISCONNECT_BY_USER"]
+    /// Another client signed in to the session; retrying would take it back from them.
+    static let takenOver = "ERRINFO_DISCONNECTED_BY_OTHER_CONNECTION"
+    /// `XPRDPSession.start` failed before connecting (the context or a setting).
+    static let startFailed = "the session could not start"
     private static let reasons = [
         "ERRCONNECT_LOGON_FAILURE": "logon failed",
         "ERRCONNECT_ACCESS_DENIED": "access denied",
@@ -14,10 +18,16 @@ enum RDPErrorText {
         "ERRCONNECT_TLS_CONNECT_FAILED": "the certificate was rejected",
         "ERRCONNECT_CONNECT_CANCELLED": "cancelled",
         "ERRCONNECT_DNS_NAME_NOT_FOUND": "the server refused the connection",
+        takenOver: "another client took over the session",
     ]
 
     static func isClean(_ name: String?) -> Bool {
         name.map(cleanEnds.contains) ?? true
+    }
+
+    /// The server rejected the password, so Reconnect asks for another instead of sending it again.
+    static func needsNewPassword(_ name: String?) -> Bool {
+        name == "ERRCONNECT_LOGON_FAILURE" || name == "ERRCONNECT_ACCESS_DENIED"
     }
 
     /// `afterConnect`: the session had been up, so a transport failure means the network went away.
@@ -34,9 +44,10 @@ enum RDPReconnectPolicy {
     static let delay = Duration.seconds(2)
 
     /// `attempt`: retries already made since the session was last up. Nothing is retried before the
-    /// first successful connect, nor a logon, certificate or cancel failure, nor a clean end.
+    /// first successful connect, nor a logon, certificate or cancel failure, nor a clean end, nor a
+    /// session another client took over.
     static func shouldRetry(errorName: String?, hadConnected: Bool, attempt: Int, config: RDPSessionConfig) -> Bool {
         guard let errorName, hadConnected, config.autoReconnect, attempt < config.reconnectTries else { return false }
-        return RDPErrorText.transportErrors.contains(errorName) || (errorName.hasPrefix("ERRINFO_") && !RDPErrorText.isClean(errorName))
+        return RDPErrorText.transportErrors.contains(errorName) || (errorName.hasPrefix("ERRINFO_") && !RDPErrorText.isClean(errorName) && errorName != RDPErrorText.takenOver)
     }
 }

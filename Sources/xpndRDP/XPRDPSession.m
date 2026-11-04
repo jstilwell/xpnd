@@ -278,6 +278,17 @@ static BOOL XPSetSecret(rdpSettings *settings, FreeRDP_Settings_Keys_String key,
     }
 }
 
+- (void)forgetPassword {
+    [_lock lock];
+    XPZeroSecret(_password);
+    _password = XPSecret(@"");  // XPSetSecret leaves an empty one unset, so FreeRDP calls AuthenticateEx
+    if (_context) {
+        XPZeroSetting(_context->settings, FreeRDP_Password);
+        (void)freerdp_settings_set_string(_context->settings, FreeRDP_Password, NULL);
+    }
+    [_lock unlock];
+}
+
 #pragma mark Test hooks
 
 - (nullable NSString *)stringSettingNamed:(NSString *)name {
