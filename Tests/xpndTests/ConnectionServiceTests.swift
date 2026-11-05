@@ -121,7 +121,8 @@ private let sudo = ref("sudo", .password)
     var settings = TerminalSettings.standard
     /// Stands in for the wiring through `ExpansionEngine.whenIdle`.
     var onCopy: () -> Void = {}
-    var opened: [(SSHCommand, Connection)] = []
+    var rdpSettings = RDPSettings.standard
+    var opened: [(TabRequest, Connection)] = []
 
     init(library: ConnectionLibrary) throws {
         provider = FakeProvider(log: log)
@@ -144,10 +145,11 @@ private let sudo = ref("sudo", .password)
             connections: store, provider: { [provider] in provider }, executor: executor,
             openTab: { [unowned self] in
                 opened.append(($0, $1))
-                log.events.append("tab \($1.name)")
+                log.events.append("tab \($1.name) (\($0.kind))")
             },
             sender: sender,
             terminal: { [unowned self] in settings },
+            remoteDesktop: { [unowned self] in rdpSettings },
             frontmost: { [unowned self] in front },
             notify: { [log] in log.events.append("notify \($0)") },
             copySecret: { [unowned self] secret in
@@ -167,6 +169,18 @@ private let sudo = ref("sudo", .password)
     func writeKey(_ ref: CredentialRef) throws {
         try FileManager.default.createDirectory(at: keys, withIntermediateDirectories: true)
         try Data("ssh-ed25519 AAAA".utf8).write(to: keyFile(ref))
+    }
+
+    func command(_ connection: Connection) throws -> SSHCommand {
+        try SSHCommandBuilder.build(connection.id, in: store.library, keysDirectory: keys)
+    }
+
+    /// The one remote desktop tab opened.
+    func desktop() throws -> (config: RDPSessionConfig, password: String, gateway: String?) {
+        guard opened.count == 1, case .remoteDesktop(let config, let password, let gateway) = opened[0].0 else {
+            throw CancellationError()
+        }
+        return (config, password, gateway)
     }
 
     func keyFile(_ ref: CredentialRef) -> URL { keys.appending(path: "\(ref.item).pub") }
@@ -595,9 +609,9 @@ struct ConnectionServiceTests {
         let aws = Connection(name: "aws", host: "54.1.2.3", credential: login)
         let h = try Harness(aws)
         await h.connect(aws, typedInto: nil, preferBuiltIn: true)
-        #expect(h.opened.count == 1 && h.opened[0].1.id == aws.id && h.opened[0].0.arguments.first == "ssh")
+        #expect(try h.opened.count == 1 && h.opened[0].1.id == aws.id && h.opened[0].0 == .terminal(h.command(aws)))
         #expect(h.executor.plans.isEmpty)
-        #expect(h.log.events == ["tab aws", "password login", "copy secret-login", "notify Password copied for aws"])
+        #expect(h.log.events == ["tab aws (terminal)", "password login", "copy secret-login", "notify Password copied for aws"])
     }
 
     @Test func missingConnectionOpensNoTab() async throws {
@@ -620,5 +634,86 @@ struct ConnectionServiceTests {
         h.provider.release("login")
         await task.value
         #expect(!h.log.events.contains { $0.hasPrefix("copy") })
+    }
+
+    @Test func rdpConnectionFetchesPasswordThenOpensATab() async throws {
+        let win = Connection(name: "win", type: .rdp, host: "win.example", domain: "CORP", credential: ref("login", .login, username: "me"))
+        let h = try Harness(win)
+        await h.connect(win)
+        #expect(h.log.events == ["password login", "tab win (remoteDesktop)"])
+        #expect(h.executor.plans.isEmpty)
+        let tab = try h.desktop()
+        #expect(tab.config.host == "win.example" && tab.config.port == 3389)
+        #expect(tab.config.username == "me" && tab.config.domain == "CORP")
+        #expect(tab.password == "secret-login" && tab.gateway == nil)
+    }
+
+    @Test func rdpOptionsOverTheGlobalDefaults() async throws {
+        var win = Connection(name: "win", type: .rdp, host: "win.example", port: 3390)
+        win.rdp = RDPOptions(nla: false)
+        let h = try Harness(win)
+        h.rdpSettings.reconnectTries = 2
+        await h.connect(win)
+        let tab = try h.desktop()
+        #expect(tab.config.port == 3390 && !tab.config.nla && tab.config.reconnectTries == 2)
+    }
+
+    @Test func rdpWithoutCredentialOpensATabWithEmptyPassword() async throws {
+        let win = Connection(name: "win", type: .rdp, host: "win.example", username: "me")
+        let h = try Harness(win)
+        await h.connect(win)
+        #expect(h.log.events == ["tab win (remoteDesktop)"])
+        let tab = try h.desktop()
+        #expect(tab.password == "" && tab.config.username == "me")
+    }
+
+    @Test func rdpProviderFailureOpensNoTab() async throws {
+        let win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
+        let h = try Harness(win)
+        h.provider.passwordFailures = ["login": .locked]
+        await h.connect(win)
+        #expect(h.log.events == ["password login", "notify \(CredentialError.locked.message)"])
+        #expect(h.opened.isEmpty)
+    }
+
+    @Test func rdpGatewayWithItsOwnCredentialFetchesBoth() async throws {
+        var win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
+        win.rdp = RDPOptions(gateway: .init(host: "gw.example", credential: ref("gw", .login, username: "gwuser")))
+        let h = try Harness(win)
+        await h.connect(win)
+        #expect(h.log.events == ["password login", "password gw", "tab win (remoteDesktop)"])
+        #expect(try h.desktop().gateway == "secret-gw")
+    }
+
+    @Test func rdpGatewayWithTheSameCredentialsGetsTheLoginPassword() async throws {
+        var win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
+        win.rdp = RDPOptions(gateway: .init(host: "gw.example"))
+        let h = try Harness(win)
+        await h.connect(win)
+        #expect(h.log.events == ["password login", "tab win (remoteDesktop)"])
+        let tab = try h.desktop()
+        #expect(tab.password == "secret-login" && tab.gateway == "secret-login")
+    }
+
+    @Test func rdpGatewayFailureOpensNoTab() async throws {
+        var win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
+        win.rdp = RDPOptions(gateway: .init(host: "gw.example", credential: ref("gw", .login)))
+        let h = try Harness(win)
+        h.provider.passwordFailures = ["gw": .notFound("gw")]
+        await h.connect(win)
+        #expect(h.log.events == ["password login", "password gw", "notify \(CredentialError.notFound("gw").message)"])
+        #expect(h.opened.isEmpty)
+    }
+
+    @Test func rdpDeletesTheTypedStringAndGuardsTheFrontApp() async throws {
+        let win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
+        let h = try Harness(win)
+        await h.connect(win, deleting: 3, sudo: true)
+        #expect(h.log.events == ["password login", "backspace x3", "tab win (remoteDesktop)"])
+        let moved = try Harness(win)
+        moved.front = inSafari
+        await moved.connect(win)
+        #expect(moved.log.events == ["password login", "notify \(ExpansionError.targetAppChanged.message)"])
+        #expect(moved.opened.isEmpty)
     }
 }

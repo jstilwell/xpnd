@@ -124,7 +124,7 @@ private struct ConnectionLauncherView: View {
                 Image(systemName: open ? "chevron.down" : "chevron.right").frame(width: 14).accessibilityHidden(true)
                 Image(systemName: "folder").accessibilityHidden(true)
             case .connection(let c):
-                Image(systemName: c.type == .ssh ? "terminal" : "display").frame(width: 14).accessibilityHidden(true)
+                Image(systemName: c.type.symbol).frame(width: 14).accessibilityHidden(true)
             }
             Text(row.title).lineLimit(1).foregroundStyle(row.color?.ui ?? Color.primary)
             Spacer()

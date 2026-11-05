@@ -16,10 +16,26 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Yams", package: "Yams"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
+                "xpndRDP",
             ],
             // Sparkle.framework goes in the app's Contents/Frameworks.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
-        .testTarget(name: "xpndTests", dependencies: ["xpnd"]),
+        // Static FreeRDP and OpenSSL, built by `make freerdp` (bin/build-freerdp.sh); git-ignored.
+        .binaryTarget(name: "FreeRDP", path: "vendor/FreeRDP.xcframework"),
+        // The only target that includes FreeRDP's headers.
+        .target(
+            name: "xpndRDP",
+            dependencies: ["FreeRDP"],
+            linkerSettings: [
+                .linkedFramework("Cocoa"), .linkedFramework("IOKit"),
+                .linkedFramework("CoreAudio"), .linkedFramework("AudioToolbox"),
+                // FreeRDP decodes H.264 with VideoToolbox (WITH_APPLE_VIDEOTOOLBOX, on by default).
+                .linkedFramework("VideoToolbox"),
+                // Pulled in with the Mac client: rdpsnd's AVAudioEngine output and zlib.
+                .linkedFramework("AVFoundation"), .linkedLibrary("z"),
+            ]
+        ),
+        .testTarget(name: "xpndTests", dependencies: ["xpnd", "xpndRDP"]),
     ]
 )

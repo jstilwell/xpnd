@@ -21,7 +21,7 @@ final class MainWindowModel {
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let model: MainWindowModel
-    let sessions = TerminalSessions(makeHost: { LiveTerminalHost(command: $0, settings: AppSettings.shared.builtInTerminal) })
+    let sessions: TerminalSessions
     private let cancelPasswordPhase: () -> Void
 
     init(store: SnippetStore, connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider,
@@ -30,6 +30,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
          cancelPasswordPhase: @escaping () -> Void, openSettings: @escaping () -> Void) {
         let model = MainWindowModel()
         self.model = model
+        weak var presenter: NSWindow? // set below, once the window exists
+        let sessions = TerminalSessions { request in
+            switch request {
+            case .terminal(let command):
+                LiveTerminalHost(command: command, settings: AppSettings.shared.builtInTerminal)
+            case .remoteDesktop(let config, let password, let gatewayPassword):
+                RDPHost(config: config, password: password, gatewayPassword: gatewayPassword, presentIn: { presenter })
+            }
+        }
+        self.sessions = sessions
         self.cancelPasswordPhase = cancelPasswordPhase
         let editing = ConnectionEditing(
             store: connections, snippets: store, provider: provider, preferredAccount: preferredAccount,
@@ -44,6 +54,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.setContentSize(NSSize(width: 1000, height: 640))
         window.isReleasedWhenClosed = false
+        presenter = window
         super.init(window: window)
         window.delegate = self
     }
@@ -59,10 +70,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// Opens a session's tab over any editor card, and shows the window.
-    func openTab(_ command: SSHCommand, for connection: Connection, color: ItemColor?) {
+    func openTab(_ request: TabRequest, for connection: Connection, color: ItemColor?) {
         model.hideEditor()
         show(selecting: nil)
-        sessions.open(command, for: connection, color: color)
+        sessions.open(request, for: connection, color: color)
     }
 
     /// Whether the keyboard is in a session's terminal. Requires the main window to be key: a window
@@ -70,6 +81,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var terminalHasFocus: Bool {
         guard let window, window.isKeyWindow, let responder = window.firstResponder as? NSView else { return false }
         return sessions.sessions.contains { responder.isDescendant(of: $0.host.view) }
+    }
+
+    /// The kind of the session whose view holds the first responder, under the same key-window rule.
+    var focusedSessionKind: TerminalSession.Kind? {
+        guard let window, window.isKeyWindow, let responder = window.firstResponder as? NSView else { return nil }
+        return sessions.sessions.first { responder.isDescendant(of: $0.host.view) }?.kind
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {

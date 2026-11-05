@@ -21,6 +21,13 @@ enum SyntheticEvent {
     /// state table, which only events from this source update, so a posted Shift or ⌘ shows there.
     private let source = CGEventSource(stateID: .hidSystemState)
 
+    /// The kind of session holding the keyboard focus in xpnd's main window, if any.
+    private let focusedSessionKind: @MainActor () -> TerminalSession.Kind?
+
+    init(focusedSessionKind: @escaping @MainActor () -> TerminalSession.Kind? = { nil }) {
+        self.focusedSessionKind = focusedSessionKind
+    }
+
     func backspace(times: Int) async { post(KeyName.delete.keyCode, flags: [], times: times) }
 
     func press(_ key: KeyName, times: Int) async { post(key.keyCode, flags: [], times: times) }
@@ -37,7 +44,11 @@ enum SyntheticEvent {
     /// Pastes, or types where a paste can't land: apps that forward keys to another machine (Screen
     /// Sharing, VNC, RDP, VMs) paste from that machine's clipboard, and ⌘ doesn't survive the trip.
     func paste(_ text: String) async {
-        if Self.typesKeystrokes(in: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, always: AppSettings.shared.typesKeystrokes) {
+        // In an RDP tab a paste would land on the remote clipboard, so it always types.
+        if Self.typesKeystrokes(
+            in: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, always: AppSettings.shared.typesKeystrokes,
+            remoteDesktopTabFocused: focusedSessionKind() == .remoteDesktop)
+        {
             return type(text)
         }
         await Self.paste(text, on: .general, settle: Self.pasteSettle) {
@@ -52,8 +63,8 @@ enum SyntheticEvent {
         "com.p5sys.jump", "com.edovia.screens", "com.lemonmojo.RoyalTSX", "com.parallels.desktop", "com.vmware.fusion", "com.utmapp.UTM",
     ]
 
-    nonisolated static func typesKeystrokes(in bundleID: String?, always: Bool) -> Bool {
-        always || remoteDesktopApps.contains { bundleID?.hasPrefix($0) == true }
+    nonisolated static func typesKeystrokes(in bundleID: String?, always: Bool, remoteDesktopTabFocused: Bool) -> Bool {
+        always || remoteDesktopTabFocused || remoteDesktopApps.contains { bundleID?.hasPrefix($0) == true }
     }
 
     /// Types `text` one character at a time as the key that makes it on the current layout (remote

@@ -5,10 +5,18 @@ import Testing
 @MainActor private final class FakeHost: TerminalHost {
     let view = NSView()
     var onExit: ((Int32?) -> Void)?
+    var onDisconnect: ((String?) -> Void)?
     var terminated = false
+    var reconnects = 0
     func terminate() { terminated = true }
     func apply(_ settings: BuiltInTerminalSettings) {}
+    var onReconnect: () -> Void = {}
+    func reconnect() {
+        reconnects += 1
+        onReconnect()
+    }
     func exit(_ status: Int32?) { onExit?(status) }
+    func disconnect(_ reason: String?) { onDisconnect?(reason) }
 }
 
 @MainActor private final class HostLog { var all: [FakeHost] = [] }
@@ -27,7 +35,13 @@ import Testing
     }
 
     @discardableResult private func open(_ name: String) -> TerminalSession.ID {
-        sessions.open(SSHCommand(arguments: ["ssh", name]), for: Connection(name: name, host: name), color: .blue)
+        sessions.open(.terminal(SSHCommand(arguments: ["ssh", name])), for: Connection(name: name, host: name), color: .blue)
+    }
+
+    @discardableResult private func openDesktop(_ name: String) -> TerminalSession.ID {
+        let config = RDPOptions().resolved(over: .standard, host: name, port: 3389, username: nil, domain: nil)
+        return sessions.open(.remoteDesktop(config, password: "", gatewayPassword: nil),
+                             for: Connection(name: name, type: .rdp, host: name), color: nil)
     }
 
     @Test func openSelectsAndCountsLive() {
@@ -111,6 +125,50 @@ import Testing
         #expect(!hosts.all[2].terminated)
         #expect(sessions.sessions.isEmpty)
         #expect(sessions.selected == nil)
+    }
+
+    @Test func openKeepsTheKind() {
+        open("a")
+        openDesktop("b")
+        #expect(sessions.sessions.map(\.kind) == [.terminal, .remoteDesktop])
+    }
+
+    @Test func disconnectedWithReasonKeepsTheTab() {
+        open("a")
+        openDesktop("b")
+        hosts.all[1].disconnect("logon failed")
+        #expect(sessions.sessions.count == 2)
+        #expect(sessions.sessions[1].state == .disconnected("logon failed"))
+        #expect(sessions.liveCount == 1)
+    }
+
+    @Test func cleanDisconnectClosesTheTab() {
+        let a = open("a")
+        openDesktop("b")
+        hosts.all[1].disconnect(nil)
+        #expect(sessions.sessions.map(\.id) == [a])
+        #expect(sessions.selected == a)
+    }
+
+    @Test func reconnectAsksTheHost() {
+        let b = openDesktop("b")
+        hosts.all[0].disconnect("the connection timed out")
+        sessions.reconnect(b)
+        #expect(hosts.all[0].reconnects == 1)
+        #expect(sessions.sessions[0].state == .running)
+        #expect(sessions.liveCount == 1)
+        // Only a disconnected tab reconnects.
+        sessions.reconnect(b)
+        #expect(hosts.all[0].reconnects == 1)
+    }
+
+    @Test func aReconnectThatFailsAtOnceStaysDisconnected() {
+        let b = openDesktop("b")
+        let host = hosts.all[0]
+        host.disconnect("the connection timed out")
+        host.onReconnect = { [unowned host] in host.disconnect("the connection timed out") }
+        sessions.reconnect(b)
+        #expect(sessions.sessions[0].state == .disconnected("the connection timed out"))
     }
 
     @Test func terminateQuestionPluralises() {

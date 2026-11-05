@@ -16,12 +16,17 @@ struct TerminalWorkspace: View {
             Divider()
             if let session = sessions.selectedSession {
                 // Per-session ids, so switching tabs swaps the view and the new one takes the keyboard.
-                // A little room around the text; the margin matches the terminal's own background.
+                // A little room around the text; the margin matches the terminal's own background. A
+                // desktop fills the tab.
                 TerminalHostView(view: session.host.view).id(session.id)
-                    .padding(8)
+                    .padding(session.kind == .remoteDesktop ? 0 : 8)
                     .background(Color(nsColor: settings.colors.background))
-                if case .ended(let status) = session.state {
-                    endedBar(status, session)
+                switch session.state {
+                case .running: EmptyView()
+                case .ended(let status):
+                    endedBar(status.map { "Session ended (exit \($0))" } ?? "Session ended (signal)", session)
+                case .disconnected(let reason):
+                    endedBar("Disconnected: \(reason)", session, reconnect: true)
                 }
             }
         }
@@ -45,6 +50,7 @@ struct TerminalWorkspace: View {
         return HStack(spacing: 6) {
             Button { sessions.selected = session.id } label: {
                 HStack(spacing: 6) {
+                    Image(systemName: session.kind == .remoteDesktop ? "pc" : "terminal").foregroundStyle(.secondary)
                     Text(session.name).foregroundStyle(session.color?.ui ?? .primary).lineLimit(1)
                     if !session.isLive {
                         Text("ended").font(.caption).foregroundStyle(.secondary)
@@ -65,10 +71,11 @@ struct TerminalWorkspace: View {
         }
     }
 
-    private func endedBar(_ status: Int32?, _ session: TerminalSession) -> some View {
+    private func endedBar(_ text: String, _ session: TerminalSession, reconnect: Bool = false) -> some View {
         HStack {
-            Text(status.map { "Session ended (exit \($0))" } ?? "Session ended (signal)")
+            Text(text)
             Spacer()
+            if reconnect { Button("Reconnect") { sessions.reconnect(session.id) } }
             Button("Close") { sessions.close(session.id) }
         }
         .padding(8)

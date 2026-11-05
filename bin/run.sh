@@ -78,6 +78,8 @@ fi
 
 # Apple silicon only: Xcode now warns on every Intel build, and a local run doesn't need one.
 # Releases (make release-app) stay universal.
+# The first build also builds FreeRDP (bin/build-freerdp.sh), which takes several minutes.
+[ -d vendor/FreeRDP.xcframework ] || make freerdp
 make run
 echo "xpnd is running from build/xpnd.app. Look for its icon in the menu bar."
 echo "If it just asked for Input Monitoring, quit it from the menu and run this again: macOS"

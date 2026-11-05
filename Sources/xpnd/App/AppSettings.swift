@@ -12,6 +12,7 @@ final class AppSettings {
         static let connectionLauncherShortcut = "connectionLauncherShortcut"
         static let terminalSettings = "terminalSettings"
         static let builtInTerminal = "builtInTerminal"
+        static let remoteDesktop = "remoteDesktop"
         static let onePasswordPath = "onePasswordPath"
         static let onePasswordAccount = "onePasswordAccount"
         static let typesKeystrokes = "typesKeystrokes"
@@ -43,6 +44,10 @@ final class AppSettings {
         didSet { defaults.set(try? JSONEncoder().encode(builtInTerminal), forKey: Key.builtInTerminal) }
     }
 
+    var remoteDesktop: RDPSettings {
+        didSet { defaults.set(try? JSONEncoder().encode(remoteDesktop), forKey: Key.remoteDesktop) }
+    }
+
     /// Where `op` is, when it isn't in Homebrew's or /usr/local's bin; nil looks only there.
     var onePasswordPath: String? { didSet { defaults.set(onePasswordPath, forKey: Key.onePasswordPath) } }
 
@@ -68,6 +73,7 @@ final class AppSettings {
         }
         terminal = defaults.data(forKey: Key.terminalSettings).flatMap { try? JSONDecoder().decode(TerminalSettings.self, from: $0) } ?? .standard
         builtInTerminal = defaults.data(forKey: Key.builtInTerminal).flatMap { try? JSONDecoder().decode(BuiltInTerminalSettings.self, from: $0) } ?? .standard
+        remoteDesktop = defaults.data(forKey: Key.remoteDesktop).flatMap { try? JSONDecoder().decode(RDPSettings.self, from: $0) } ?? .standard
         onePasswordPath = defaults.string(forKey: Key.onePasswordPath)
         onePasswordAccount = defaults.string(forKey: Key.onePasswordAccount)
         typesKeystrokes = defaults.bool(forKey: Key.typesKeystrokes)

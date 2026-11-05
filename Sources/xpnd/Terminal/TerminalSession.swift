@@ -1,19 +1,46 @@
 import AppKit
 import Observation
 
-/// What a session runs in: its view and process. The live one wraps SwiftTerm.
+/// What a tab opens: an SSH command in a terminal, or a Windows desktop. The passwords are handed to
+/// the desktop's session and kept nowhere else.
+enum TabRequest: Equatable {
+    case terminal(SSHCommand)
+    case remoteDesktop(RDPSessionConfig, password: String, gatewayPassword: String?)
+
+    var kind: TerminalSession.Kind {
+        if case .terminal = self { .terminal } else { .remoteDesktop }
+    }
+}
+
+/// What a session runs in: its view and process (or connection). The live ones wrap SwiftTerm and FreeRDP.
 @MainActor protocol TerminalHost: AnyObject {
     var view: NSView { get }
     /// Called once, on the main actor: exit status 0–255, or nil for a signal or a failed start.
     var onExit: ((Int32?) -> Void)? { get set }
+    /// A remote desktop's end, on the main actor: nil when clean, else the reason to show. May come
+    /// again after `reconnect`.
+    var onDisconnect: ((String?) -> Void)? { get set }
     func terminate()
     func apply(_ settings: BuiltInTerminalSettings)
+    /// Connects again after a disconnect.
+    func reconnect()
+}
+
+extension TerminalHost {
+    var onDisconnect: ((String?) -> Void)? {
+        get { nil }
+        set {}
+    }
+
+    func reconnect() {}
 }
 
 @MainActor @Observable final class TerminalSession: Identifiable {
-    enum State: Equatable { case running, ended(Int32?) }
+    enum Kind: Equatable { case terminal, remoteDesktop }
+    enum State: Equatable { case running, ended(Int32?), disconnected(String) }
 
     let id = UUID()
+    let kind: Kind
     let connectionID: Connection.ID
     let name: String
     let color: ItemColor?
@@ -22,7 +49,8 @@ import Observation
 
     var isLive: Bool { state == .running }
 
-    init(connection: Connection, color: ItemColor?, host: any TerminalHost) {
+    init(connection: Connection, kind: Kind, color: ItemColor?, host: any TerminalHost) {
+        self.kind = kind
         connectionID = connection.id
         name = connection.name
         self.color = color
@@ -31,21 +59,22 @@ import Observation
 }
 
 @MainActor @Observable final class TerminalSessions {
-    private let makeHost: @MainActor (SSHCommand) -> any TerminalHost
+    private let makeHost: @MainActor (TabRequest) -> any TerminalHost
     private(set) var sessions: [TerminalSession] = []
     var selected: TerminalSession.ID?
 
     var liveCount: Int { sessions.filter(\.isLive).count }
 
-    init(makeHost: @escaping @MainActor (SSHCommand) -> any TerminalHost) {
+    init(makeHost: @escaping @MainActor (TabRequest) -> any TerminalHost) {
         self.makeHost = makeHost
     }
 
     @discardableResult
-    func open(_ command: SSHCommand, for connection: Connection, color: ItemColor?) -> TerminalSession.ID {
-        let session = TerminalSession(connection: connection, color: color, host: makeHost(command))
+    func open(_ request: TabRequest, for connection: Connection, color: ItemColor?) -> TerminalSession.ID {
+        let session = TerminalSession(connection: connection, kind: request.kind, color: color, host: makeHost(request))
         let id = session.id
         session.host.onExit = { [weak self] status in self?.ended(id, status) }
+        session.host.onDisconnect = { [weak self] reason in self?.disconnected(id, reason) }
         sessions.append(session)
         selected = id
         return id
@@ -55,6 +84,13 @@ import Observation
         guard let session = sessions.first(where: { $0.id == id }) else { return }
         if session.isLive { session.host.terminate() }
         remove(id)
+    }
+
+    /// A disconnected tab only; it shows as running until the host reports again.
+    func reconnect(_ id: TerminalSession.ID) {
+        guard let session = sessions.first(where: { $0.id == id }), case .disconnected = session.state else { return }
+        session.state = .running
+        session.host.reconnect() // may report a failure before it returns
     }
 
     func terminateAll() {
@@ -70,6 +106,11 @@ import Observation
     private func ended(_ id: TerminalSession.ID, _ status: Int32?) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
         if status == 0 { remove(id) } else { session.state = .ended(status) }
+    }
+
+    private func disconnected(_ id: TerminalSession.ID, _ reason: String?) {
+        guard let session = sessions.first(where: { $0.id == id }) else { return }
+        if let reason { session.state = .disconnected(reason) } else { remove(id) }
     }
 
     /// Removes a tab; if it was selected, the tab after it (else before it) takes over.

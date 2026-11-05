@@ -178,3 +178,14 @@ struct ConnectionImportTests {
         #expect(replaced.folders[1].connections.isEmpty)
     }
 }
+
+struct ConnectionImportRDPTests {
+    @Test func importPreviewShowsRDPAddressAndGateway() {
+        let c = Connection(name: "w", type: .rdp, host: "win", username: "me", domain: "CORP",
+                           rdp: RDPOptions(gateway: .init(host: "gw")))
+        let p = ConnectionImport.preview(incoming: ConnectionLibrary(folders: [ConnectionFolder(name: "f", connections: [c])]),
+                                         existing: .empty, choice: .skip)
+        #expect(p.added.first?.address == "CORP\\me@win:3389")
+        #expect(p.added.first?.gateway == "gw")
+    }
+}

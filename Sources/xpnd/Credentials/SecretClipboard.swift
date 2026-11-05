@@ -5,6 +5,8 @@ import AppKit
 /// while putting the secret back, and restoring keeps every type.
 @MainActor enum SecretClipboard {
     static let clearAfter: Duration = .seconds(30)
+    /// Each copy's tag is this plus `.<UUID>`; xpndRDP's `XPRDPClipboardFilter` matches the prefix.
+    static let secretTypePrefix = "com.jessestilwell.xpnd.secret"
     /// Tuning value: outlasts a paste, which has the secret set aside until its settle ends.
     private static let recheckAfter = CGEventKeystrokeSender.pasteSettle * 2
 
@@ -13,7 +15,7 @@ import AppKit
 
     @discardableResult
     static func copy(_ secret: String, to pasteboard: NSPasteboard = .general, clearAfter: Duration = clearAfter) -> Task<Void, Never> {
-        let tag = NSPasteboard.PasteboardType("com.jessestilwell.xpnd.secret.\(UUID().uuidString)")
+        let tag = NSPasteboard.PasteboardType("\(secretTypePrefix).\(UUID().uuidString)")
         pasteboard.clearContents()
         let item = NSPasteboardItem()
         item.setString(secret, forType: .string)

@@ -2,7 +2,17 @@
 
 ## Build and run
 
-Requires Xcode (the Makefile uses `xcrun swift`).
+Requires Xcode (the Makefile uses `xcrun swift`) and CMake (Homebrew's is fine).
+
+`make freerdp` runs `bin/build-freerdp.sh`: it downloads FreeRDP 3.33.0 and OpenSSL 3.5.9, checks their
+SHA-256s, and builds both static for arm64 and x86_64 into `vendor/FreeRDP.xcframework` (about 5 minutes
+on an M3 Ultra; `vendor/` is untracked). `make build`, `make test` and `make app` run it when the
+xcframework is missing or the script changed. The script is the only place with the pins; to bump one,
+edit its version, URL and SHA-256 (`--print` lists them) and run `make freerdp`. It clears the
+environment and fences Homebrew and MacPorts out of FreeRDP's configure, pins every optional feature
+off (JSON, AAD, Kerberos, smart card, Opus and others, so a stray `certificates.json` or a host library
+can't change the build), and aborts if the configured cache differs. `make app` copies the FreeRDP and
+OpenSSL licences from `vendor/licenses/` into the bundle.
 
 ```sh
 ./bin/run.sh # build it (Apple silicon only) and launch it; --log also streams what it does
@@ -82,13 +92,26 @@ again after every build.
   `LaunchPlanner.plan(... preferBuiltIn:)` yields `LaunchPlan.builtInTab` (also the
   `NoTerminalAction.builtIn` choice), which `ConnectionService` hands to its `openTab` closure.
   `ExpansionTargeting` lets snippets expand inside a focused tab, and typed activations there open a new tab.
+- Remote desktops (RDP): `Sources/xpndRDP/` is Objective-C on FreeRDP's Mac client, the only code that
+  includes FreeRDP headers. `XPRDPSession` owns the FreeRDP context and its client thread, and calls back
+  through a delegate on main (certificates, passwords, disconnects); `XPRDPView` subclasses `MRDPView`
+  (input mapping, ⌘ as Ctrl or Windows, clipboard polling, drawing); `XPRDPClipboardFilter` keeps
+  concealed and secret items from the remote; `XPRDPResizeCoalescer` debounces Display Control resizes.
+  In `Sources/xpnd/RemoteDesktop/`: `RDPOptions`/`RDPSettings` (per connection and defaults) resolve to an
+  `RDPSessionConfig`, `RDPSettingMapping` turns that into FreeRDP setting names, `RDPHost` is the tab's
+  `TerminalHost` (`TerminalSession.kind` is `.remoteDesktop`), `RDPErrorText` words `ERRCONNECT_*`/`ERRINFO_*`,
+  `RDPReconnectPolicy` decides auto-reconnect, and `RDPPrompts` and `RDPOptionLabels` serve the sheets
+  and Settings → Remote Desktop. `ConnectionService` fetches the password before the `.rdpTab` plan opens
+  the tab; it goes into the session's memory, never the clipboard or a log. On close xpnd's copies are
+  zeroed; FreeRDP frees its own.
+  Snippets type as keystrokes in an RDP tab (`focusedSessionKind`).
 - `xpnd.entitlements` has `com.apple.security.automation.apple-events` and `Info.plist` has
   `NSAppleEventsUsageDescription`: the hardened release build needs both to send AppleScript to Terminal
   and iTerm2. The 1Password CLI needs "Integrate with 1Password CLI" (Settings → Developer) to answer.
 - Tests never run `op` against an account: they inject a fake runner into `OnePasswordProvider` or a fake `CredentialProvider`.
   Keep it that way, because a real call prompts for Touch ID and reads a real vault.
 - The app is a Dock app (`LSUIElement` false) with `MainWindowController`; Settings has General,
-  Terminal, Password Manager, and Import/Export.
+  Terminal, Remote Desktop, Password Manager, and Import/Export.
 - `./bin/run.sh --test-snippets` copies `Tests/Manual/test-snippets.yaml` (with `__MANUAL__` filled in)
   and `Tests/Manual/test-connections.yaml` into Application Support, first backing up any existing
   `snippets.yaml` and `connections.yaml` under a dated name. `manualTestSnippetsDecode` and

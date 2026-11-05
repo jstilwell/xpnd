@@ -149,6 +149,8 @@ enum ConnectionImport {
         let address: String
         /// The text, or the saved connection's name; nil for none.
         let jumpHost: String?
+        /// The RDP gateway host; nil otherwise.
+        let gateway: String?
         /// Verbatim, since they run on connect.
         let sshOptions: String
     }
@@ -192,10 +194,15 @@ enum ConnectionImport {
             case .text(let text): text
             case .connection(let id): merged.connection(id)?.name ?? "A missing connection"
             }
-            let user = merged.loginUser(for: c).map { "\($0)@" } ?? ""
+            let login = merged.loginUser(for: c).map { u in
+                guard c.type == .rdp else { return u }
+                let (user, domain) = RDPLogin.split(username: u, domain: c.domain)
+                return domain.map { "\($0)\\" + user } ?? user
+            }
+            let user = login.map { "\($0)@" } ?? ""
             let host = c.host.contains(":") && !c.host.hasPrefix("[") ? "[\(c.host)]" : c.host
             return PreviewRow(id: c.id, name: c.name, host: c.host, address: "\(user)\(host):\(c.effectivePort)",
-                              jumpHost: jump, sshOptions: c.sshOptions)
+                              jumpHost: jump, gateway: c.type == .rdp ? c.rdp?.gateway?.host : nil, sshOptions: c.sshOptions)
         }
         return Preview(added: added, removed: removed, rejumped: rejumped)
     }
