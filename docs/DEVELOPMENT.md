@@ -114,7 +114,7 @@ again after every build.
   are written back to `RDPHost.config` so a retry keeps them. `RDPNotch` is the SwiftUI overlay
   `TerminalWorkspace` draws over the desktop (handle, row, Display/Files/Info popovers; hover timing,
   pin, and a hidden ⌘⇧N button present only on a desktop tab). `RDPKeySequence` builds the key
-  steps (Ctrl+Alt+End, Win+R, Ctrl+V, typing `\\tsclient\xpnd` into Run) that `XPRDPSession` plays on its own
+  steps (Ctrl+Alt+Delete, Win+R, Ctrl+V, typing `\\tsclient\xpnd` into Run) that `XPRDPSession` plays on its own
   thread (`XPRDPKeyPlayer`, FreeRDP scancodes); the session also has `setClipboardSyncEnabled:`,
   `offerFilesForPaste:` (file URLs only), `sendLeftClickAtViewPoint:`, `reconnectWithSettings:`, a
   `connectionInfo` snapshot and `dropHandler`, which `XPRDPView` calls with the drop point.

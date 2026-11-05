@@ -19,12 +19,12 @@ import Testing
         #expect(!RDPKeySequence.isBalanced([.scancode(0x1D, down: false)]))
     }
 
-    @Test func ctrlAltDelIsCtrlAltEnd() {
+    @Test func ctrlAltDelIsTheRealThing() {
         let downs = RDPKeySequence.ctrlAltDel.compactMap { step -> UInt16? in
             if case let .scancode(code, down: true) = step { return code }
             return nil
         }
-        #expect(downs == [0x1D, 0x38, 0x014F])
+        #expect(downs == [0x1D, 0x38, 0x0153]) // FreeRDP forwards keys as is; End is mstsc's client-side alias
     }
 
     @Test func ctrlVIsCtrlAndV() {

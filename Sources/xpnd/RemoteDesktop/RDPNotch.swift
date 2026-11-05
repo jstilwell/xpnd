@@ -94,7 +94,7 @@ struct RDPNotch: View {
 
     private var row: some View {
         HStack(spacing: 2) {
-            item("keyboard", "Ctrl+Alt+Del", help: "Ctrl+Alt+Del (sends Ctrl+Alt+End, as a remote session needs)", action: model.ctrlAltDel)
+            item("keyboard", "Ctrl+Alt+Del", help: "Ctrl+Alt+Del: send it to Windows, not to this Mac", action: model.ctrlAltDel)
                 .disabled(!model.isConnected)
             item("terminal", "Win+R", help: "Win+R: open the Run box", action: model.winR)
                 .disabled(!model.isConnected)

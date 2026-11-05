@@ -21,15 +21,17 @@ extension RDPKeyStep {
 enum RDPKeySequence {
     private static let lCtrl: UInt16 = 0x1D
     private static let lAlt: UInt16 = 0x38
-    private static let end: UInt16 = 0x014F
+    private static let delete: UInt16 = 0x0153
     private static let lWin: UInt16 = 0x015B
     private static let r: UInt16 = 0x13
     private static let v: UInt16 = 0x2F
     private static let enter: UInt16 = 0x1C
 
+    /// The real keys: Windows takes them as the secure attention sequence from an RDP client. Ctrl+Alt+End is
+    /// mstsc's own client-side alias, which FreeRDP doesn't have.
     static let ctrlAltDel: [RDPKeyStep] = [
         .scancode(lCtrl, down: true), .scancode(lAlt, down: true),
-        .scancode(end, down: true), .scancode(end, down: false),
+        .scancode(delete, down: true), .scancode(delete, down: false),
         .scancode(lAlt, down: false), .scancode(lCtrl, down: false),
     ]
 

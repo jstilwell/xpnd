@@ -75,7 +75,7 @@ import xpndRDP
         }
     }
 
-    @Test func ctrlAltDelSendsCtrlAltEnd() {
+    @Test func theKeyButtonsSendTheirSequences() {
         model.ctrlAltDel()
         #expect(fake.sent == [RDPKeySequence.ctrlAltDel])
         model.winR()

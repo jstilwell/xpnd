@@ -17,8 +17,8 @@ handle and have it land on the Windows side.
   ⌘⇧N toggles it from the keyboard. It collapses when the pointer leaves (unless pinned). It must
   never steal keyboard focus from the desktop except while one of its popovers is open.
 - **Buttons, first version, in this order:**
-  1. Ctrl+Alt+Del — sends the secure-attention sequence (`Ctrl+Alt+End` on a remote session, as
-     Windows App does; tooltip says so).
+  1. Ctrl+Alt+Del — sends the secure-attention sequence, as real Ctrl+Alt+Delete. (Changed from
+     `Ctrl+Alt+End`: that alias is mstsc's client-side mapping, and FreeRDP forwards keys as they are.)
   2. Win+R — opens the Run box.
   3. Full screen — the tab's window goes full screen (and back); the notch stays reachable.
   4. Display — popover: Resize to fit / 1280×720 / 1920×1080 / 2560×1440 (the presets from
@@ -77,7 +77,7 @@ handle and have it land on the Windows side.
   (`freerdp/client/cmdline.h`).
 - Key sequences go through the existing `XPRDPView` keyboard path (scancodes via
   `freerdp_input_send_keyboard_event`), as `XPRDPSession` methods: `sendKeySequence:` taking an
-  ordered list of (scancode, down/up) pairs; Ctrl+Alt+Del uses `Ctrl+Alt+End`.
+  ordered list of (scancode, down/up) pairs; Ctrl+Alt+Del uses real Ctrl+Alt+Delete.
 - Live display changes reuse the Display Control path (`viewSizeSettled` / monitor layout) for
   fit, and a desktop-resize request for fixed sizes; audio and clipboard toggles flip the session's
   runtime state (clipboard: stop/start the poll and send an empty format list; audio: FreeRDP has
@@ -100,7 +100,7 @@ handle and have it land on the Windows side.
 - Drop folder per connection id under Application Support; drive name `xpnd`; default on.
 - Desktop drop pastes via click + Ctrl+V into whatever has focus at the drop point (dropping on
   Notepad pastes nothing useful; the tooltip on the Files button explains both targets).
-- Ctrl+Alt+Del sends Ctrl+Alt+End.
+- Ctrl+Alt+Del sends real Ctrl+Alt+Delete.
 - Audio toggle reconnects (FreeRDP limitation), stated in the tooltip.
 - Info's latency comes from FreeRDP's network auto-detect when the server supports it, else "—".
 - **Full screen** is the plain window full screen (`toggleFullScreen`): sidebar and tab bar stay,
