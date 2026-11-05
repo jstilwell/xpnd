@@ -96,6 +96,8 @@ NS_SWIFT_UI_ACTOR
 - (void)stop;
 /// Tears down the connection and starts again with the same settings and the latest password.
 - (void)reconnect;
+/// `reconnect` with `settings` (as at init) in place of the old ones; the passwords and drive stay.
+- (void)reconnectWithSettings:(NSArray<NSArray<NSString *> *> *)settings;
 /// Zeroes and drops the login and gateway passwords, so the next `start` / `reconnect` asks the delegate
 /// for them. Call it while disconnected. With a client thread, FreeRDP's copy goes at the following
 /// `reconnect` or `stop`.

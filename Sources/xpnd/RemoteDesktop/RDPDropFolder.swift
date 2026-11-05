@@ -42,9 +42,8 @@ enum RDPDropFolder {
         }
     }
 
-    static func copyIn(_ sources: [URL], for connectionID: Connection.ID) throws -> (names: [String], failures: [URL]) {
+    static func copyIn(_ sources: [URL], folder: URL) throws -> (names: [String], failures: [URL]) {
         let fm = FileManager.default
-        let folder = url(for: connectionID)
         try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let tree = root.resolvingSymlinksInPath().path + "/"
         var names: [String] = [], failures: [URL] = []
@@ -70,11 +69,9 @@ enum RDPDropFolder {
         return (names, failures)
     }
 
-    static func count(for connectionID: Connection.ID) -> Int {
-        (try? FileManager.default.contentsOfDirectory(atPath: url(for: connectionID).path).count) ?? 0
+    static func count(folder: URL) -> Int {
+        (try? FileManager.default.contentsOfDirectory(atPath: folder.path).count) ?? 0
     }
-
-    static func clear(for connectionID: Connection.ID) throws { try clear(folder: url(for: connectionID)) }
 
     /// Only a folder inside `root` is ever removed.
     static func clear(folder: URL) throws {

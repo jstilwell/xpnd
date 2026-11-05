@@ -377,6 +377,11 @@ static BOOL XPAddDrive(rdpSettings *settings, NSString *name, NSString *path) {
     }
 }
 
+- (void)reconnectWithSettings:(NSArray<NSArray<NSString *> *> *)settings {
+    _settings = [settings copy];
+    [self reconnect];
+}
+
 /// Main thread: the settings, while no client thread can free them. FreeRDP's thread never takes `_lock`, and a
 /// redirection (rdp_client_redirect, in any connection state and with no PostDisconnect) or a reconnect through the
 /// broker replaces them, so neither the lock nor `_connected` makes them safe to read from here.

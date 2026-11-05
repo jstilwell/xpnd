@@ -86,6 +86,14 @@ struct XPRDPSessionTests {
         #expect(!bad.prepare())
     }
 
+    @MainActor @Test func reconnectWithSettingsReplacesThem() {
+        let delegate = FakeDelegate()
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: delegate)
+        s.reconnect(withSettings: [["FreeRDP_NoSuchSetting", "1"]]) // the new settings are what the restart applies, and it fails on them
+        #expect(delegate.calls == ["disconnect"])
+        s.stop()
+    }
+
     @MainActor @Test func settingsReadBackOnlyForTheirType() {
         let s = XPRDPSession(settings: [["FreeRDP_ServerHostname", "win.example"]], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
         #expect(s.prepare())

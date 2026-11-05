@@ -14,6 +14,19 @@ import xpndRDP
     func stop() { calls.append("stop") }
     func reconnect() { calls.append("reconnect"); onConnect?() }
     func forgetPassword() { calls.append("forgetPassword") }
+    var settingsSeen: [[[String]]] = []
+    func reconnect(withSettings settings: [[String]]) { settingsSeen.append(settings); calls.append("reconnectWithSettings"); onConnect?() }
+    var keys: [[XPRDPKeyStep]] = []
+    func sendKeySequence(_ steps: [XPRDPKeyStep]) { calls.append("keys"); keys.append(steps) }
+    func sendLeftClick(atViewPoint point: NSPoint) { calls.append("click") }
+    func setClipboardSyncEnabled(_ enabled: Bool) { calls.append("clipboard(\(enabled))") }
+    var clipboardChannelLoaded = false
+    var offerResult = true
+    func offerFiles(forPaste urls: [URL]) -> Bool { calls.append("offer"); return offerResult }
+    var dropHandler: (([URL], NSPoint) -> Void)?
+    func requestDesktopFit() -> Bool { calls.append("fit"); return true }
+    func requestDesktopWidth(_ width: Int, height: Int) -> Bool { calls.append("size \(width)x\(height)"); return true }
+    var connectionInfo = XPRDPConnectionInfo()
 }
 
 @MainActor struct RDPHostTests {
@@ -110,5 +123,49 @@ import xpndRDP
         host.terminate()
         await host.retry?.value
         #expect(fake.calls == ["start", "stop"])
+    }
+
+    @Test func reconnectWithChangesRebuildsSettingsAndKeepsThePasswordRules() {
+        let (host, s) = host()
+        host.reconnect(with: { $0.audio = .off })
+        #expect(fake.calls == ["start", "reconnectWithSettings"])
+        #expect(host.config.audio == .off)
+        #expect(fake.settingsSeen.last?.isEmpty == false)
+        // After a rejected login the password is forgotten before the reconnect, as `reconnect()` does.
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_LOGON_FAILURE")
+        host.reconnect(with: { $0.clipboard = false })
+        #expect(fake.calls.suffix(2) == ["forgetPassword", "reconnectWithSettings"])
+        #expect(!host.config.clipboard)
+    }
+
+    @Test func sendsAndPastesOnlyWhenConnected() {
+        let (host, s) = host()
+        host.send(RDPKeySequence.winR)
+        #expect(!host.pasteFiles([URL(fileURLWithPath: "/tmp/a")], at: .zero))
+        #expect(fake.calls == ["start"])
+        host.sessionDidConnect(s)
+        host.send(RDPKeySequence.winR)
+        #expect(host.pasteFiles([URL(fileURLWithPath: "/tmp/a")], at: .zero))
+        #expect(fake.calls == ["start", "keys", "offer", "click", "keys"])
+        #expect(host.requestDisplay(.fit))
+        host.session(s, didDisconnectWithErrorName: "ERRINFO_IDLE_TIMEOUT")
+        #expect(!host.requestDisplay(.fit))
+    }
+
+    @Test func disconnectEndsCleanlyWithoutAReconnect() {
+        let (host, _) = host()
+        var ended: [String?] = []
+        host.onDisconnect = { ended.append($0) }
+        host.disconnect()
+        #expect(ended.count == 1 && ended[0] == nil)
+        #expect(fake.calls == ["start", "stop"])
+    }
+
+    @Test func theDropHandlerReachesTheNotch() {
+        let (host, s) = host()
+        host.sessionDidConnect(s)
+        fake.dropHandler?([URL(fileURLWithPath: "/tmp/a")], .zero)
+        #expect(fake.calls == ["start", "offer", "click", "keys"])
+        #expect(host.notch.notice == "Pasting 1 file…")
     }
 }

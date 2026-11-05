@@ -58,12 +58,12 @@ import xpndRDP
             let id = UUID()
             let a = try file("a.txt", in: dir, "one")
             let b = try file("b&.txt", in: dir, "two")
-            let result = try RDPDropFolder.copyIn([a, b, a], for: id)
+            let result = try RDPDropFolder.copyIn([a, b, a], folder: RDPDropFolder.url(for: id))
             #expect(result.names == ["a.txt", "b_.txt", "a 2.txt"])
             #expect(result.failures.isEmpty)
             #expect(FileManager.default.fileExists(atPath: a.path))
             #expect(try String(contentsOf: RDPDropFolder.url(for: id).appending(path: "b_.txt"), encoding: .utf8) == "two")
-            #expect(RDPDropFolder.count(for: id) == 3)
+            #expect(RDPDropFolder.count(folder: RDPDropFolder.url(for: id)) == 3)
             let mode = try FileManager.default.attributesOfItem(atPath: RDPDropFolder.url(for: id).path)[.posixPermissions] as? Int
             #expect(mode == 0o700)
         }
@@ -77,13 +77,13 @@ import xpndRDP
             try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
             let dotdot = URL(fileURLWithPath: "..", relativeTo: dir)
             let missing = dir.appending(path: "missing.txt")
-            let result = try RDPDropFolder.copyIn([link, dotdot, missing], for: id)
+            let result = try RDPDropFolder.copyIn([link, dotdot, missing], folder: RDPDropFolder.url(for: id))
             #expect(result.names == ["link.txt"])
             #expect(result.failures.count == 2)
             let folder = RDPDropFolder.url(for: id)
             #expect(try String(contentsOf: folder.appending(path: "link.txt"), encoding: .utf8) == "bytes")
             // A file already in the drop tree is refused.
-            let again = try RDPDropFolder.copyIn([folder.appending(path: "link.txt")], for: id)
+            let again = try RDPDropFolder.copyIn([folder.appending(path: "link.txt")], folder: RDPDropFolder.url(for: id))
             #expect(again.names.isEmpty && again.failures.count == 1)
             let outside = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
             #expect(outside == ["drop", "link.txt", "target.txt"])
@@ -93,14 +93,14 @@ import xpndRDP
     @Test func clearRemovesEverything() throws {
         try inTemp { dir in
             let one = UUID(), two = UUID()
-            _ = try RDPDropFolder.copyIn([try file("a.txt", in: dir)], for: one)
-            _ = try RDPDropFolder.copyIn([try file("a.txt", in: dir)], for: two)
-            try RDPDropFolder.clear(for: one)
-            #expect(RDPDropFolder.count(for: one) == 0)
-            #expect(RDPDropFolder.count(for: two) == 1)
+            _ = try RDPDropFolder.copyIn([try file("a.txt", in: dir)], folder: RDPDropFolder.url(for: one))
+            _ = try RDPDropFolder.copyIn([try file("a.txt", in: dir)], folder: RDPDropFolder.url(for: two))
+            try RDPDropFolder.clear(folder: RDPDropFolder.url(for: one))
+            #expect(RDPDropFolder.count(folder: RDPDropFolder.url(for: one)) == 0)
+            #expect(RDPDropFolder.count(folder: RDPDropFolder.url(for: two)) == 1)
             try RDPDropFolder.clearAll()
-            #expect(RDPDropFolder.count(for: two) == 0)
-            try RDPDropFolder.clear(for: one) // already gone is fine
+            #expect(RDPDropFolder.count(folder: RDPDropFolder.url(for: two)) == 0)
+            try RDPDropFolder.clear(folder: RDPDropFolder.url(for: one)) // already gone is fine
         }
     }
 
@@ -117,15 +117,15 @@ import xpndRDP
     @Test func launchCleanupRemovesOnlyOldFoldersUnderTheSevenDayPolicy() throws {
         try inTemp { dir in
             let oldID = UUID(), newID = UUID()
-            _ = try RDPDropFolder.copyIn([try file("a.txt", in: dir)], for: oldID)
-            _ = try RDPDropFolder.copyIn([try file("a.txt", in: dir)], for: newID)
+            _ = try RDPDropFolder.copyIn([try file("a.txt", in: dir)], folder: RDPDropFolder.url(for: oldID))
+            _ = try RDPDropFolder.copyIn([try file("a.txt", in: dir)], folder: RDPDropFolder.url(for: newID))
             let now = Date()
             try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-9 * 86400)], ofItemAtPath: RDPDropFolder.url(for: oldID).path)
             RDPDropFolder.applyLaunchCleanup(policy: .never, now: now)
-            #expect(RDPDropFolder.count(for: oldID) == 1)
+            #expect(RDPDropFolder.count(folder: RDPDropFolder.url(for: oldID)) == 1)
             RDPDropFolder.applyLaunchCleanup(policy: .after7Days, now: now)
-            #expect(RDPDropFolder.count(for: oldID) == 0)
-            #expect(RDPDropFolder.count(for: newID) == 1)
+            #expect(RDPDropFolder.count(folder: RDPDropFolder.url(for: oldID)) == 0)
+            #expect(RDPDropFolder.count(folder: RDPDropFolder.url(for: newID)) == 1)
         }
     }
 }
