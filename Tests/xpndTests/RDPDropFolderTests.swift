@@ -29,6 +29,14 @@ import xpndRDP
         #expect(RDPDropFolder.safeName("ok-name_1.txt", existing: []) == "ok-name_1.txt")
     }
 
+    @Test func safeNamesAvoidWhatWindowsRejects() {
+        let expected = ["foo.": "foo", "foo .": "foo", "...": "_", " ": "_", "CON.txt": "_CON.txt", "nul": "_nul",
+                        "COM1.log": "_COM1.log", "LPT9": "_LPT9", "con .txt": "_con .txt", "CONSOLE.txt": "CONSOLE.txt", "COM10.txt": "COM10.txt"]
+        for (input, output) in expected { #expect(RDPDropFolder.safeName(input, existing: []) == output, "\(input)") }
+        #expect(RDPDropFolder.safeName("foo.", existing: ["foo"]) == "foo 2")
+        #expect(RDPDropFolder.safeName("nul", existing: ["_nul"]) == "_nul 2")
+    }
+
     @Test func collisionsGetANumber() {
         #expect(RDPDropFolder.safeName("a.txt", existing: ["a.txt", "a 2.txt"]) == "a 3.txt")
     }

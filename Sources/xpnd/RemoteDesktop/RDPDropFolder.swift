@@ -12,12 +12,19 @@ enum RDPDropFolder {
 
     /// ASCII letters, digits, space, `_`, `-` and `.` survive; anything else (quotes, `&`, `%`, accents)
     /// becomes `_`, as does a leading dot. A taken name gets " 2", " 3"... before the extension.
+    private static let reservedDeviceNames: Set<String> =
+        Set(["CON", "PRN", "AUX", "NUL"] + (1...9).flatMap { ["COM\($0)", "LPT\($0)"] })
+
     static func safeName(_ name: String, existing: Set<String>) -> String {
         var clean = String(String.UnicodeScalarView(name.unicodeScalars.map { s in
             s.isASCII && (s.properties.isAlphabetic || ("0"..."9").contains(s) || " _-.".unicodeScalars.contains(s)) ? s : "_"
         }))
-        if clean.isEmpty { clean = "_" }
         if clean.hasPrefix(".") { clean = "_" + clean.dropFirst() }
+        // Windows drops a trailing dot or space and refuses device names (CON, COM1.txt...).
+        while let last = clean.last, last == "." || last == " " { clean.removeLast() }
+        if clean.isEmpty { clean = "_" }
+        let device = clean.prefix { $0 != "." }.uppercased().trimmingCharacters(in: .whitespaces)
+        if reservedDeviceNames.contains(device) { clean = "_" + clean }
         let taken = Set(existing.map { $0.lowercased() })
         guard taken.contains(clean.lowercased()) else { return clean }
         let ext = (clean as NSString).pathExtension
@@ -84,6 +91,7 @@ enum RDPDropFolder {
         }
     }
 
+    // shortcut: a folder's modification date stands in for last use, so one still being read can look old and one with an unreadable date is never cleared; record real last use if that bites.
     /// At launch under `after7Days`: removes each connection's folder not touched for seven days.
     static func applyLaunchCleanup(policy: DropFolderCleanup, now: Date) {
         let fm = FileManager.default
