@@ -142,13 +142,11 @@ struct RDPConnectionInfo: Equatable {
             let result = try actions.copyIntoDropFolder(urls)
             lastDropNames = result.names
             dropCount = actions.dropFolderCount()
-            var parts: [String] = []
-            if !result.names.isEmpty { parts.append("Copied \(Self.files(result.names.count)) into the xpnd drive") }
-            if !result.failures.isEmpty {
-                let n = result.failures.count
-                parts.append("\(n) item\(n == 1 ? "" : "s") couldn't be copied (folders aren't supported)")
-            }
-            notice = parts.isEmpty ? "Nothing to copy." : parts.joined(separator: ". ") + (result.failures.isEmpty ? "" : ".")
+            let copied = result.names.isEmpty ? nil : "Copied \(Self.files(result.names.count)) into the xpnd drive"
+            let n = result.failures.count
+            let failed = n == 0 ? nil : "\(n) item\(n == 1 ? "" : "s") couldn't be copied (folders aren't supported)."
+            notice = [copied.map { failed == nil ? $0 : $0 + "." }, failed].compactMap { $0 }.joined(separator: " ")
+            if notice?.isEmpty == true { notice = "Nothing to copy." }
         } catch {
             notice = "Couldn't copy into the xpnd drive."
         }

@@ -12,10 +12,9 @@ import xpndRDP
     var onConnect: (() -> Void)?
     func start() -> Bool { calls.append("start"); onConnect?(); return true }
     func stop() { calls.append("stop") }
-    func reconnect() { calls.append("reconnect"); onConnect?() }
     func forgetPassword() { calls.append("forgetPassword") }
     var settingsSeen: [[[String]]] = []
-    func reconnect(withSettings settings: [[String]]) { settingsSeen.append(settings); calls.append("reconnectWithSettings"); onConnect?() }
+    func reconnect(withSettings settings: [[String]]) { settingsSeen.append(settings); calls.append("reconnect"); onConnect?() }
     var keys: [[XPRDPKeyStep]] = []
     func sendKeySequence(_ steps: [XPRDPKeyStep]) { calls.append("keys"); keys.append(steps) }
     func sendLeftClick(atViewPoint point: NSPoint) { calls.append("click") }
@@ -128,13 +127,13 @@ import xpndRDP
     @Test func reconnectWithChangesRebuildsSettingsAndKeepsThePasswordRules() {
         let (host, s) = host()
         host.reconnect(with: { $0.audio = .off })
-        #expect(fake.calls == ["start", "reconnectWithSettings"])
+        #expect(fake.calls == ["start", "reconnect"])
         #expect(host.config.audio == .off)
         #expect(fake.settingsSeen.last?.isEmpty == false)
         // After a rejected login the password is forgotten before the reconnect, as `reconnect()` does.
         host.session(s, didDisconnectWithErrorName: "ERRCONNECT_LOGON_FAILURE")
         host.reconnect(with: { $0.clipboard = false })
-        #expect(fake.calls.suffix(2) == ["forgetPassword", "reconnectWithSettings"])
+        #expect(fake.calls.suffix(2) == ["forgetPassword", "reconnect"])
         #expect(!host.config.clipboard)
     }
 
@@ -167,5 +166,25 @@ import xpndRDP
         fake.dropHandler?([URL(fileURLWithPath: "/tmp/a")], .zero)
         #expect(fake.calls == ["start", "offer", "click", "keys"])
         #expect(host.notch.notice == "Pasting 1 file…")
+    }
+
+    @Test func aRetryCarriesLiveDisplayAndClipboardChanges() async {
+        let (host, s) = host(tries: 2)
+        host.sessionDidConnect(s)
+        #expect(host.requestDisplay(.fixed(width: 1920, height: 1080)))
+        host.setClipboardSync(false)
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_CONNECT_TRANSPORT_FAILED")
+        await host.retry?.value
+        let names = Dictionary(fake.settingsSeen.last!.map { ($0[0], $0[1]) }, uniquingKeysWith: { $1 })
+        #expect(names["FreeRDP_DesktopWidth"] == "1920")
+        #expect(names["FreeRDP_DesktopHeight"] == "1080")
+        #expect(names["FreeRDP_RedirectClipboard"] == "FALSE")
+    }
+
+    @Test func aFixedDisplayRequestGoesToTheSession() {
+        let (host, s) = host()
+        host.sessionDidConnect(s)
+        #expect(host.requestDisplay(.fixed(width: 1280, height: 720)))
+        #expect(fake.calls.last == "size 1280x720")
     }
 }

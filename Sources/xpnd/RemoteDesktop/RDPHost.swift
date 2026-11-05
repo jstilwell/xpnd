@@ -10,7 +10,6 @@ import xpndRDP
     var commandAsWindowsKey: Bool { get set }
     func start() -> Bool
     func stop()
-    func reconnect()
     func forgetPassword()
     func reconnect(withSettings settings: [[String]])
     func sendKeySequence(_ steps: [XPRDPKeyStep])
@@ -96,10 +95,7 @@ extension XPRDPSession: RDPSessionControlling {}
 
     func apply(_ settings: BuiltInTerminalSettings) {}
 
-    func reconnect() {
-        prepareReconnect()
-        session.reconnect()
-    }
+    func reconnect() { reconnect(with: { _ in }) }
 
     private func prepareReconnect() {
         isConnected = false
@@ -110,6 +106,11 @@ extension XPRDPSession: RDPSessionControlling {}
         // FreeRDP asks (the password sheet) only when it has no password.
         if RDPErrorText.needsNewPassword(lastError) { session.forgetPassword() }
         ensureDropFolder()
+    }
+
+    /// Every connect after the first uses settings rebuilt from `config`, so live changes survive a retry.
+    private func reconnectSession() {
+        session.reconnect(withSettings: freerdpSettings().map { [$0.name, $0.value] })
     }
 
     /// The settings for `config`. The tab's size isn't known yet at first: start from the window's, and
@@ -159,7 +160,7 @@ extension XPRDPSession: RDPSessionControlling {}
             try? await Task.sleep(for: retryDelay)
             guard !Task.isCancelled else { return }
             self?.ensureDropFolder()
-            self?.session.reconnect() // a failure to start reports before it returns
+            self?.reconnectSession() // a failure to start reports before it returns
         }
     }
 
@@ -220,22 +221,27 @@ extension RDPHost: RDPNotchActions {
         return true
     }
 
-    func setClipboardSync(_ on: Bool) { session.setClipboardSyncEnabled(on) }
+    func setClipboardSync(_ on: Bool) {
+        config.clipboard = on
+        session.setClipboardSyncEnabled(on)
+    }
 
     /// Applies `changes` to this session's config, then reconnects with the settings rebuilt from it. The
     /// password handling is `reconnect()`'s.
     func reconnect(with changes: (inout RDPSessionConfig) -> Void) {
         changes(&config)
         prepareReconnect()
-        session.reconnect(withSettings: freerdpSettings().map { [$0.name, $0.value] })
+        reconnectSession()
     }
 
     func requestDisplay(_ display: RDPOptions.Display) -> Bool {
         guard isConnected else { return false }
-        switch display {
-        case .fit: return session.requestDesktopFit()
-        case let .fixed(width, height): return session.requestDesktopWidth(width, height: height)
+        let accepted = switch display {
+        case .fit: session.requestDesktopFit()
+        case let .fixed(width, height): session.requestDesktopWidth(width, height: height)
         }
+        if accepted { config.display = display }
+        return accepted
     }
 
     /// The user ends the session as closing the tab does; `stop` reports nothing, so there is no retry.

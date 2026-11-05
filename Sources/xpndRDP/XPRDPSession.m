@@ -378,6 +378,7 @@ static BOOL XPAddDrive(rdpSettings *settings, NSString *name, NSString *path) {
 }
 
 - (void)reconnectWithSettings:(NSArray<NSArray<NSString *> *> *)settings {
+    [self tearDown];
     _settings = [settings copy];
     [self reconnect];
 }
