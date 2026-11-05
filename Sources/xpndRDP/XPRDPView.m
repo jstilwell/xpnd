@@ -36,6 +36,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
         _drawLock = [NSRecursiveLock new];
         _clipboard = [XPRDPClipboard new];
         _commandAsWindowsKey = YES;
+        self.clipsToBounds = YES;  // otherwise drawRect:'s rect reaches the top of the window, over the tab bar
         __weak XPRDPView *weakSelf = self;
         _coalescer = [[XPRDPResizeCoalescer alloc] initWithIdleInterval:0.2 handler:^(CGSize size) {
             [weakSelf.session viewSizeSettled:size];

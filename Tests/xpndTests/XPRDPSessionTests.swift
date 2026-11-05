@@ -19,6 +19,13 @@ import xpndRDP
 
 /// Nothing here connects: `prepare` builds the context and applies settings without a client thread.
 struct XPRDPSessionTests {
+    /// Unclipped, a view's dirty rect reaches the top of the window, and the black fill covers the tab bar.
+    @MainActor @Test func theDesktopNeverDrawsOutsideItsTab() {
+        let s = XPRDPSession(settings: [], password: "", gatewayPassword: nil, delegate: FakeDelegate())
+        #expect(s.view.clipsToBounds)
+        s.stop()
+    }
+
     @MainActor @Test func settingsAreAppliedByName() {
         let s = XPRDPSession(settings: [["FreeRDP_ServerHostname", "win.example"], ["FreeRDP_NlaSecurity", "FALSE"]],
                              password: "p", gatewayPassword: nil, delegate: FakeDelegate())

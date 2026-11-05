@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 0.2.0 - Unreleased
 
 ### Fixed
+- A Windows desktop tab no longer covers the tab bar, so you can switch tabs while it is showing.
 - The import preview lists the existing connections a Replace removes even when the file adds only folders.
 - The color picker's swatches show their colors in the open menu instead of white circles.
 - A folder string like `;dev` is now deleted when you pick a row from its menu, not before the menu opens, so none of it is left behind in the terminal; Esc keeps what you typed.
