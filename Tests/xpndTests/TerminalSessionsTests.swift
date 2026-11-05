@@ -68,6 +68,14 @@ import Testing
         #expect(ran)
     }
 
+    @Test func anSSHTabIsEstablishedWhileItRuns() {
+        let x = sessions.open(.terminal(SSHCommand(arguments: ["ssh", "x"])), for: connectionX, color: nil)
+        #expect(sessions.establishedConnectionIDs == [connectionX.id])
+        hosts.all[0].exit(1)
+        #expect(sessions.establishedConnectionIDs.isEmpty)
+        sessions.close(x)
+    }
+
     @Test func liveConnectionIDsFollowSessions() {
         let a = open(connectionX)
         open(connectionY)

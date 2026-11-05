@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import Testing
 @testable import xpnd
 import xpndRDP
@@ -94,6 +95,39 @@ import xpndRDP
         #expect(host != nil)
         sessions.close(id)
         #expect(host == nil)
+    }
+
+    @Test func aConnectingOrRetryingDesktopIsLiveButNotEstablished() async throws {
+        let fake = fake
+        var made: RDPHost?
+        let sessions = TerminalSessions { request in
+            guard case .remoteDesktop(let config, let password, let gateway) = request else { fatalError("a desktop only") }
+            let host = RDPHost(config: config, password: password, gatewayPassword: gateway, presentIn: { nil }, retryDelay: .seconds(60),
+                               makeSession: { _, _, _, _, _ in fake })
+            made = host
+            return host
+        }
+        var config = RDPOptions().resolved(over: .standard, host: "win", port: 3389, username: "me", domain: nil)
+        config.reconnectTries = 2
+        let connection = Connection(name: "win", type: .rdp, host: "win")
+        sessions.open(.remoteDesktop(config, password: "p", gatewayPassword: nil), for: connection, color: nil)
+        let host = try #require(made)
+        let s = XPRDPSession(settings: [], password: "", gatewayPassword: nil, delegate: host)
+        #expect(!host.isEstablished)
+        #expect(sessions.liveConnectionIDs == [connection.id]) // still cancellable
+        #expect(sessions.establishedConnectionIDs.isEmpty)
+
+        nonisolated(unsafe) var changed = false
+        withObservationTracking { _ = sessions.establishedConnectionIDs } onChange: { changed = true }
+        host.sessionDidConnect(s)
+        #expect(changed)
+        #expect(host.isEstablished)
+        #expect(sessions.establishedConnectionIDs == [connection.id])
+
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_CONNECT_TRANSPORT_FAILED") // retrying
+        #expect(sessions.liveConnectionIDs == [connection.id])
+        #expect(sessions.establishedConnectionIDs.isEmpty)
+        host.terminate()
     }
 
     @Test func aTabClosedDuringACopyGoesAwayWhenTheCopyEnds() async throws {

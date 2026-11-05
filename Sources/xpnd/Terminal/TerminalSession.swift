@@ -28,6 +28,8 @@ enum TabRequest: Equatable {
     func reconnect()
     /// A shortcut of xpnd's used the ⌘ held down: a remote desktop mustn't take its release as a tap.
     func noteCommandUsed()
+    /// The session is up, not just trying: a terminal's shell runs at once, a desktop has to connect.
+    var isEstablished: Bool { get }
 }
 
 extension TerminalHost {
@@ -43,6 +45,7 @@ extension TerminalHost {
 
     func reconnect() {}
     func noteCommandUsed() {}
+    var isEstablished: Bool { true }
 }
 
 @MainActor @Observable final class TerminalSession: Identifiable {
@@ -80,6 +83,10 @@ extension TerminalHost {
     var liveCount: Int { sessions.filter(\.isLive).count }
     /// Connections with a running session; one read per list lets SwiftUI track every session's state.
     var liveConnectionIDs: Set<Connection.ID> { Set(sessions.filter(\.isLive).map(\.connectionID)) }
+    /// The ones actually connected, for the sidebar's dot; a connecting tab is only live, so it can be cancelled.
+    var establishedConnectionIDs: Set<Connection.ID> {
+        Set(sessions.filter { $0.isLive && $0.host.isEstablished }.map(\.connectionID))
+    }
 
     /// The connection's running session (the selected tab if it qualifies), else any tab it still has.
     func session(for connectionID: Connection.ID) -> TerminalSession? {

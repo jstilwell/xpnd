@@ -35,6 +35,8 @@ extension XPRDPSession: RDPSessionControlling {}
     var onDisconnect: ((String?) -> Void)?
     var onReconnecting: (() -> Void)?
     var view: NSView { session.view }
+    /// The model's copy, which SwiftUI can observe.
+    var isEstablished: Bool { notch.isConnected }
 
     /// This session's config: the notch's reconnects change it, never the connection or Settings.
     private(set) var config: RDPSessionConfig

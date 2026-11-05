@@ -90,17 +90,17 @@ struct Sidebar: View {
 
     private var connectionsSection: some View {
         let namespace = KeywordNamespace(snippets: editing.store.library, connections: connections.library)
-        let live = sessions.liveConnectionIDs
+        let established = sessions.establishedConnectionIDs
         return Section {
                 if searching {
                     ForEach(ConnectionFilter.filter(ConnectionFilter.entries(connections.library), query: search), id: \.connection.id) { entry in
                         sidebarRow(entry.connection.name, detail: entry.pathText, symbol: ConnectionNode(connection: entry.connection, inherited: nil).symbol,
-                                   color: entry.color, connected: live.contains(entry.connection.id))
+                                   color: entry.color, connected: established.contains(entry.connection.id))
                             .tag(SidebarItem.connection(entry.connection.id))
                     }
                 } else {
                     ForEach(connections.library.folders) { folder in
-                        FolderRows(folder: folder, namespace: namespace, drops: drops, inherited: nil, live: live, expanded: $expandedFolders)
+                        FolderRows(folder: folder, namespace: namespace, drops: drops, inherited: nil, established: established, expanded: $expandedFolders)
                     }
                     .dropDestination(for: String.self) { texts, index in
                         for item in sidebarItems(texts) { drops.insert(item, nil, index, .folders) }
@@ -375,7 +375,7 @@ private struct FolderRows: View {
     /// The nearest ancestor's colour, for anything in here without its own.
     let inherited: ItemColor?
     /// Connections with a running session.
-    let live: Set<Connection.ID>
+    let established: Set<Connection.ID>
     /// Every open folder in the tree, shared by all levels so the sidebar can toggle one on double-click.
     @Binding var expanded: Set<ConnectionFolder.ID>
     @State private var targeted = false
@@ -392,7 +392,7 @@ private struct FolderRows: View {
             ) {
                 ForEach(folder.connections) { connection in
                     let node = ConnectionNode(connection: connection, inherited: color)
-                    sidebarRow(node.title, detail: node.detail, symbol: node.symbol, color: node.color, connected: live.contains(connection.id))
+                    sidebarRow(node.title, detail: node.detail, symbol: node.symbol, color: node.color, connected: established.contains(connection.id))
                         .tag(node.id)
                         .draggable(node.id.dragText)
                 }
@@ -400,7 +400,7 @@ private struct FolderRows: View {
                     for item in sidebarItems(texts) { drops.insert(item, folder.id, index, .connections) }
                 }
                 ForEach(folder.folders) { child in
-                    FolderRows(folder: child, namespace: namespace, drops: drops, inherited: color, live: live, expanded: $expanded)
+                    FolderRows(folder: child, namespace: namespace, drops: drops, inherited: color, established: established, expanded: $expanded)
                 }
                 .dropDestination(for: String.self) { texts, index in
                     for item in sidebarItems(texts) { drops.insert(item, folder.id, index, .folders) }
