@@ -1,0 +1,20 @@
+prefix=${pcfiledir}/../..
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include/freerdp3/
+libs=-lfreerdp3
+datarootdir=${prefix}/share
+datadir=${datarootdir}/freerdp3
+plugindir=${libdir}/freerdp3
+proxy_plugindir=${plugindir}/proxy
+extensiondir=${plugindir}/extensions
+
+Name: FreeRDP
+Description: FreeRDP: A Remote Desktop Protocol Implementation
+URL: https://freerdp.com/
+Version: 3.33.0
+Requires: winpr3
+Requires.private:  zlib  libssl  winpr3
+Libs: -L${libdir} ${libs}
+Libs.private: -L${plugindir} -lm -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework CoreFoundation
+Cflags: -I${includedir}

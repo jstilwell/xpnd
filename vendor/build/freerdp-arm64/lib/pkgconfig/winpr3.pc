@@ -1,0 +1,15 @@
+prefix=${pcfiledir}/../..
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include/winpr3
+libs=-lwinpr3
+
+Name: WinPR
+Description: WinPR: Windows Portable Runtime
+URL: https://freerdp.com/
+Version: 3.33.0
+Requires:
+Requires.private: libssl
+Libs: -L${libdir} ${libs}
+Libs.private: -lm
+Cflags: -I${includedir}
