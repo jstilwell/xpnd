@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - RDP connections: Windows desktops open as tabs beside SSH, with the domain login (`DOMAIN\user` or a separate domain) and password from 1Password, an RD Gateway, dynamic resize or a fixed size letterboxed in the tab, certificate and login prompts (asked again at once when the server rejects the login), and auto-reconnect after a lost connection. Settings → Remote Desktop and each connection's RDP options set the display, clipboard and sound. FreeRDP (Apache 2.0) is bundled.
+- A Windows desktop tab shares a per-connection drop folder as drive `xpnd`; Settings → Remote Desktop and each connection's RDP options turn it on or off, and Settings → Remote Desktop clears the folders never, on disconnect or after 7 days, or right away.
 - Files and folders copied in Finder can be pasted into a Windows desktop tab.
 - Snippets are typed into a Windows desktop tab as keystrokes.
 - Snippets typed in Screen Sharing, VNC and RDP clients, and VMs are typed as keystrokes on the remote machine instead of pasted; Settings → General can type them everywhere.

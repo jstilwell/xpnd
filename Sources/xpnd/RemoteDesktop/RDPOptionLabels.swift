@@ -21,6 +21,14 @@ enum RDPOptionLabels {
         }
     }
 
+    static func label(for cleanup: DropFolderCleanup) -> String {
+        switch cleanup {
+        case .never: "Never"
+        case .onDisconnect: "On disconnect"
+        case .after7Days: "After 7 days"
+        }
+    }
+
     static func label(for performance: RDPOptions.Performance) -> String {
         switch performance {
         case .auto: "Automatic"
