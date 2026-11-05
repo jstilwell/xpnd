@@ -279,6 +279,10 @@ final class AppIconDragSource: NSView, NSDraggingSource {
     /// System Settings is in front while this is dragged from.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// The window moves by its background, and a non-opaque view hands the mouse down to that by
+    /// default, so the drag would move the window instead of starting here.
+    override var mouseDownCanMoveWindow: Bool { false }
+
     override func mouseDragged(with event: NSEvent) {
         let item = NSDraggingItem(pasteboardWriter: bundleURL as NSURL)
         item.setDraggingFrame(bounds, contents: icon)
