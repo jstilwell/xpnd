@@ -119,8 +119,10 @@ extension XPRDPSession: RDPSessionControlling {}
         ensureDropFolder()
     }
 
-    /// Every connect after the first uses settings rebuilt from `config`, so live changes survive a retry.
+    /// Every connect after the first uses settings rebuilt from `config`, so live changes survive a retry. The
+    /// clipboard's switch outlives a connection, so it's set to agree as well.
     private func reconnectSession() {
+        session.setClipboardSyncEnabled(config.clipboard)
         session.reconnect(withSettings: freerdpSettings().map { [$0.name, $0.value] })
     }
 

@@ -183,9 +183,11 @@ import xpndRDP
         fake.clipboardChannelLoaded = false
         #expect(model.clipboardButtonTitle == "Reconnect to enable clipboard")
         fake.calls = []
+        fake.config.clipboard = false
         model.toggleClipboard()
+        // No live switch here: the reconnect carries it, and the host makes the session agree (RDPHostTests).
         #expect(fake.calls == ["reconnect", "restoreFocus"])
-        #expect(fake.config.clipboard)
+        #expect(fake.reconfigured.last?.clipboard == true)
         #expect(model.clipboardOn)
     }
 

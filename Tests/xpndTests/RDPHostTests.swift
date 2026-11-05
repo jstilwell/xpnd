@@ -18,7 +18,9 @@ import xpndRDP
     var keys: [[XPRDPKeyStep]] = []
     func sendKeySequence(_ steps: [XPRDPKeyStep]) { calls.append("keys"); keys.append(steps) }
     func sendLeftClick(atViewPoint point: NSPoint) { calls.append("click") }
-    func setClipboardSyncEnabled(_ enabled: Bool) { calls.append("clipboard(\(enabled))") }
+    /// As the real clipboard: on until told otherwise, and a reconnect leaves it as it was.
+    var clipboardEnabled = true
+    func setClipboardSyncEnabled(_ enabled: Bool) { clipboardEnabled = enabled }
     var clipboardChannelLoaded = false
     /// The pending offer's answer; a test calls it as the server's response would.
     var offerDone: ((Bool) -> Void)?
@@ -273,6 +275,30 @@ import xpndRDP
         #expect(fake.commandUsed == 1)
         host.notch.togglePin() // every notch action ends in restoreFocus, so a ⌘-click is covered
         #expect(fake.commandUsed == 2)
+    }
+
+    @Test func clipboardOffThenReconnectThenOnEnablesItAgain() {
+        let (host, s) = host()
+        host.sessionDidConnect(s)
+        fake.clipboardChannelLoaded = true
+        host.notch.toggleClipboard() // off, live
+        #expect(!fake.clipboardEnabled)
+        fake.clipboardChannelLoaded = false // off in the config: the reconnect comes back without the channel
+        host.notch.reconnect()
+        #expect(!fake.clipboardEnabled)
+        host.notch.toggleClipboard() // on: only a reconnect can load the channel
+        #expect(fake.calls.last == "reconnect")
+        #expect(fake.clipboardEnabled)
+    }
+
+    @Test func aRetryAgreesWithTheConfigAboutTheClipboard() async {
+        let (host, s) = host(tries: 1)
+        host.sessionDidConnect(s)
+        host.setClipboardSync(false)
+        fake.clipboardEnabled = true // whatever it holds, the retry puts it right
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_CONNECT_TRANSPORT_FAILED")
+        await host.retry?.value
+        #expect(!fake.clipboardEnabled)
     }
 
     @Test func aRetryCarriesLiveDisplayAndClipboardChanges() async {
