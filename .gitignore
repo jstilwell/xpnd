@@ -23,3 +23,6 @@ CLAUDE.md
 
 # Superpowers working files (brainstorm mockups, plan workspaces)
 .superpowers/
+
+# FreeRDP build chain (bin/build-freerdp.sh): sources, builds and the vendored xcframework
+/vendor/
