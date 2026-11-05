@@ -17,8 +17,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (readonly) XPRDPClipboard *clipboard;
 @property BOOL commandAsWindowsKey;
 /// A fixed-size desktop keeps its aspect ratio, letterboxed in black; otherwise (resized to fit) it fills the view.
-/// Main thread, before the client thread starts.
-@property BOOL letterbox;
+/// Main thread.
+@property (nonatomic) BOOL letterbox;
 
 /// Held while FreeRDP's thread swaps the desktop image (connect, resize, disconnect) and while drawing.
 - (void)lockDrawing;
@@ -31,11 +31,21 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)invalidateDesktopRect:(NSRect)rect desktopSize:(NSSize)desktopSize;
 /// Main thread, before the client thread starts: clears the ⌘ state and restores mouse tracking.
 - (void)prepareForConnection;
+/// Main thread: `scancode` in FreeRDP's encoding (KBDEXT for extended keys). Nothing without a connection.
+- (void)sendScancode:(DWORD)scancode down:(BOOL)down;
+/// Main thread: each UTF-16 unit as a Unicode key press.
+- (void)sendText:(NSString *)text;
+/// Main thread: one left click at `point`, in the view's coordinates.
+- (void)sendLeftClickAtViewPoint:(NSPoint)point;
+/// Main thread: the clipboard's switch; on again, the poll announces what the pasteboard holds now.
+- (void)setClipboardSyncEnabled:(BOOL)enabled;
 @end
 
 @interface XPRDPSession (XPRDPView)
 /// Main thread, once a live resize has settled.
 - (void)viewSizeSettled:(CGSize)size;
+/// Main thread: connected, and not stopped.
+@property (readonly) BOOL live;
 @end
 
 NS_ASSUME_NONNULL_END

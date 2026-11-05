@@ -28,6 +28,7 @@ static UINT XPServerFormatDataResponse(CliprdrClientContext *, const CLIPRDR_FOR
     CliprdrFileContext *_file;
     CliprdrClientContext *_cliprdr;  // while attached
     BOOL _sync;                      // MonitorReady seen: the server takes format lists
+    BOOL _enabled;
     UINT32 _requestedFormatId;       // the server text format asked for, or 0
     NSString *_text;                 // the Mac clipboard's offer
     NSData *_uriList;
@@ -45,9 +46,21 @@ static UINT XPServerFormatDataResponse(CliprdrClientContext *, const CLIPRDR_FOR
     return formats;
 }
 
++ (nullable NSData *)fileURIListForURLs:(NSArray<NSURL *> *)urls {
+    NSMutableString *list = [NSMutableString string];
+    for (NSURL *url in urls) {
+        // cliprdr_file_apple_get_uri_list's form; a Finder drag carries file reference URLs too.
+        NSURL *path = url.isFileURL ? url.filePathURL : nil;
+        if (path)
+            [list appendFormat:@"%@\r\n", path.absoluteString];
+    }
+    return list.length ? [list dataUsingEncoding:NSUTF8StringEncoding] : nil;
+}
+
 - (instancetype)init {
     if ((self = [super init])) {
         _lock = [NSLock new];
+        _enabled = YES;
         _writtenChangeCount = -1;
         _clip = ClipboardCreate();
         _fileClip = ClipboardCreate();
@@ -197,6 +210,8 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
         if (id == CF_UNICODETEXT || (!text && (id == CF_TEXT || id == CF_OEMTEXT)))
             text = id;
     }
+    if (!_enabled)
+        text = 0;  // the list is answered, as the protocol wants, and its data left on the server
     _requestedFormatId = text;
     if (rc == CHANNEL_RC_OK && text) {
         CLIPRDR_FORMAT_DATA_REQUEST request = {0};
@@ -312,8 +327,70 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     return _writtenChangeCount;
 }
 
+- (BOOL)channelAttached {
+    [_lock lock];
+    const BOOL attached = _cliprdr != NULL;
+    [_lock unlock];
+    return attached;
+}
+
+- (BOOL)enabled {
+    [_lock lock];
+    const BOOL enabled = _enabled;
+    [_lock unlock];
+    return enabled;
+}
+
+- (void)setEnabled:(BOOL)enabled {
+    [_lock lock];
+    _enabled = enabled;
+    if (!enabled) {
+        _text = nil;
+        _uriList = nil;
+        _requestedFormatId = 0;  // a reply still on its way stays off the Mac pasteboard
+        if (_file)
+            (void)cliprdr_file_context_clear(_file);
+        if (_cliprdr && _sync)
+            (void)[self sendFormatList];
+    }
+    [_lock unlock];
+    if (enabled)
+        _writtenChangeCount = -1;  // Windows lost its offer: the poll announces even the server's own text
+}
+
+- (XPRDPClipboardFormats)formatsToAnnounceNowForPasteboardTypes:(NSArray<NSString *> *)types {
+    return self.enabled ? [XPRDPClipboard formatsToAnnounceForPasteboardTypes:types] : 0;
+}
+
+- (XPRDPClipboardFormats)lastAnnouncedFormats {
+    [_lock lock];
+    const XPRDPClipboardFormats formats = (_text ? XPRDPClipboardFormatsText : 0) | (_uriList ? XPRDPClipboardFormatsFiles : 0);
+    [_lock unlock];
+    return formats;
+}
+
+- (BOOL)offerFileURLs:(NSArray<NSURL *> *)urls {
+    NSData *uriList = [XPRDPClipboard fileURIListForURLs:urls];
+    [_lock lock];
+    const BOOL ok = uriList && _enabled && _cliprdr;
+    if (ok) {
+        _text = nil;
+        _uriList = uriList;
+        if (_sync)
+            (void)[self sendFormatList];
+    }
+    [_lock unlock];
+    if (ok)
+        _writtenChangeCount = NSPasteboard.generalPasteboard.changeCount;
+    return ok;
+}
+
 - (void)offerText:(nullable NSString *)text fileURIList:(nullable NSData *)uriList {
     [_lock lock];
+    if (!_enabled) {
+        [_lock unlock];
+        return;
+    }
     _text = [text copy];
     _uriList = [uriList copy];
     // A paste Windows is reading keeps its files (it doesn't lock them: no CB_CAN_LOCK_CLIPDATA); the next

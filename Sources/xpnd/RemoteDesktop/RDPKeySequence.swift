@@ -1,9 +1,21 @@
+import xpndRDP
+
 /// One step of a keystroke sequence sent to a remote Windows session.
 /// Scancodes use FreeRDP's RDP_SCANCODE_* encoding: the extended flag is 0x0100.
 enum RDPKeyStep: Equatable, Sendable {
     case scancode(UInt16, down: Bool)
     case text(String)
     case pause(ms: Int)
+}
+
+extension RDPKeyStep {
+    var objc: XPRDPKeyStep {
+        switch self {
+        case let .scancode(code, down): XPRDPKeyStep(scancode: code, down: down)
+        case let .text(text): XPRDPKeyStep(text: text)
+        case let .pause(ms): XPRDPKeyStep(milliseconds: ms)
+        }
+    }
 }
 
 enum RDPKeySequence {
