@@ -1,4 +1,6 @@
-import Foundation
+import AppKit
+import Observation
+import SwiftUI
 import Testing
 @testable import xpnd
 import xpndRDP
@@ -15,6 +17,7 @@ import xpndRDP
     var dropCount = 0
     var copyResult: (names: [String], failures: [URL]) = ([], [])
     var reconfigured: [RDPSessionConfig] = []
+    var copied: [URL] = []
 
     func send(_ steps: [RDPKeyStep]) { calls.append("send"); sent.append(steps) }
     func pasteFiles(_ urls: [URL], at point: CGPoint) -> Bool { calls.append("pasteFiles"); return pasteResult }
@@ -30,7 +33,7 @@ import xpndRDP
     func restoreFocus() { calls.append("restoreFocus") }
     func dropFolderCount() -> Int { dropCount }
     func copyIntoDropFolder(_ urls: [URL]) throws -> (names: [String], failures: [URL]) {
-        calls.append("copyIntoDropFolder"); return copyResult
+        calls.append("copyIntoDropFolder"); copied += urls; return copyResult
     }
     func clearDropFolder() throws { calls.append("clearDropFolder"); dropCount = 0 }
     func revealDropFolder() { calls.append("revealDropFolder") }
@@ -204,8 +207,141 @@ import xpndRDP
         #expect(info.latencyMs == nil)
     }
 
+    @Test func connectionStateStartsFromTheHostAndIsObserved() {
+        fake.isConnected = false
+        let fresh = RDPNotchModel(actions: fake)
+        #expect(!fresh.isConnected)
+        nonisolated(unsafe) var changed = false
+        withObservationTracking { _ = fresh.isConnected } onChange: { changed = true }
+        fresh.isConnected = true
+        #expect(changed)
+    }
+
+    @Test func aRefusedDisplayShowsAsFixedUntilAcceptedOrReconnected() {
+        fake.displayResult = false
+        model.chooseDisplay(.fit)
+        #expect(model.displayRefused)
+        fake.displayResult = true
+        model.chooseDisplay(.fit)
+        #expect(!model.displayRefused)
+
+        fake.displayResult = false
+        model.chooseDisplay(.fit)
+        model.isConnected = false
+        #expect(model.displayRefused)
+        model.isConnected = true
+        #expect(!model.displayRefused)
+    }
+
+    @Test func aDisplayChoiceWithNoSessionIsNotBlamedOnTheServer() {
+        fake.isConnected = false
+        fake.displayResult = false
+        model.chooseDisplay(.fit)
+        #expect(!model.displayRefused)
+        #expect(model.notice == "Not connected")
+    }
+
+    @Test func pinningOpensTheRowAndUnpinningLeavesItToTheHover() {
+        model.togglePin()
+        #expect(model.isPinned && model.isExpanded)
+        #expect(fake.calls == ["restoreFocus"])
+        model.togglePin()
+        #expect(!model.isPinned && model.isExpanded)
+    }
+
+    @Test func theDropCountCanBeRefreshed() {
+        fake.dropCount = 4 // Windows saved into the drive
+        model.refreshDropCount()
+        #expect(model.dropCount == 4)
+    }
+
+    @Test func theDriveFollowsTheConnection() {
+        #expect(model.driveIsOn)
+        fake.config.dropDrive = false
+        #expect(!model.driveIsOn)
+    }
+
+    @Test func aNotchDropTakesOnlyFiles() {
+        model.dropOnNotch([URL(string: "https://example.com/a")!])
+        #expect(fake.copied.isEmpty)
+        #expect(model.notice == "Nothing to copy.")
+    }
+
+    @Test func infoWordsForWhatIsUnknown() {
+        let info = RDPConnectionInfo(XPRDPConnectionInfo())
+        #expect(info.desktopText == "—")
+        #expect(info.codecText == "—")
+        #expect(info.latencyText == "—")
+        #expect(info.connectedForText(at: Date()) == "—")
+        #expect(info.subjectText == "—")
+        #expect(info.fingerprintText == "—")
+        #expect(info.certificateNote == "Verified by a certificate authority, or not yet accepted")
+    }
+
+    @Test func infoWordsForWhatIsKnown() {
+        var info = RDPConnectionInfo(XPRDPConnectionInfo())
+        info.desktopWidth = 1920
+        info.desktopHeight = 1080
+        info.codec = "RemoteFX"
+        info.latencyMs = 12
+        info.connectedSince = Date(timeIntervalSince1970: 0)
+        info.certificateSubject = "CN=win"
+        info.certificateFingerprint = "AA:BB"
+        #expect(info.desktopText == "1920 × 1080")
+        #expect(info.codecText == "RemoteFX")
+        #expect(info.latencyText == "12 ms")
+        #expect(info.connectedForText(at: Date(timeIntervalSince1970: 3725)) == "1:02:05")
+        #expect(info.subjectText == "CN=win")
+        #expect(info.fingerprintText == "AA:BB")
+        #expect(info.certificateNote == nil)
+        info.certificateFingerprint = nil
+        #expect(info.certificateNote != nil)
+    }
+
     @Test func disconnectAndFullScreenGoToTheHost() {
         model.fullScreen(); model.disconnect()
         #expect(fake.calls == ["toggleFullScreen", "restoreFocus", "disconnect", "restoreFocus"])
+    }
+}
+
+/// The desktop under the notch: every click outside the notch's own frame must land here.
+private struct Desktop: NSViewRepresentable {
+    let view: NSView
+    func makeNSView(context: Context) -> NSView { view }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+@MainActor struct RDPNotchLayoutTests {
+    private let fake = FakeNotchActions()
+
+    @Test func theNotchIsOnlyTheHandleOrTheRow() {
+        let model = RDPNotchModel(actions: fake)
+        let handle = NSHostingView(rootView: RDPNotch(model: model)).fittingSize
+        #expect(handle == NSSize(width: 56, height: 12))
+        model.togglePin()
+        let row = NSHostingView(rootView: RDPNotch(model: model)).fittingSize
+        #expect(row.width < 360 && row.height < 40)
+    }
+
+    @Test func clicksBesideTheNotchReachTheDesktop() async {
+        for pinned in [false, true] {
+            let model = RDPNotchModel(actions: fake)
+            if pinned { model.togglePin() }
+            let desktop = NSView()
+            let window = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: 1000, height: 640),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let host = NSHostingView(rootView: Desktop(view: desktop).overlay(alignment: .top) { RDPNotch(model: model) })
+            window.contentView = host
+            window.orderFront(nil) // SwiftUI places the desktop's view only once it's on screen
+            defer { window.close() }
+            host.layoutSubtreeIfNeeded()
+            try? await Task.sleep(for: .milliseconds(100)) // not a run-loop spin: that stalls other tests' timers
+            let frame = window.contentView!.superview!
+            #expect(frame.hitTest(NSPoint(x: 500, y: 635)) !== desktop, "pinned: \(pinned)")
+            #expect(frame.hitTest(NSPoint(x: 40, y: 635)) === desktop, "pinned: \(pinned)")
+            #expect(frame.hitTest(NSPoint(x: 960, y: 635)) === desktop, "pinned: \(pinned)")
+            #expect(frame.hitTest(NSPoint(x: 500, y: 320)) === desktop, "pinned: \(pinned)")
+        }
     }
 }

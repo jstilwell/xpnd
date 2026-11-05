@@ -20,6 +20,8 @@ enum TabRequest: Equatable {
     /// A remote desktop's end, on the main actor: nil when clean, else the reason to show. May come
     /// again after `reconnect`.
     var onDisconnect: ((String?) -> Void)? { get set }
+    /// A remote desktop is connecting again, whoever asked: the tab's Reconnect or the notch.
+    var onReconnecting: (() -> Void)? { get set }
     func terminate()
     func apply(_ settings: BuiltInTerminalSettings)
     /// Connects again after a disconnect.
@@ -28,6 +30,11 @@ enum TabRequest: Equatable {
 
 extension TerminalHost {
     var onDisconnect: ((String?) -> Void)? {
+        get { nil }
+        set {}
+    }
+
+    var onReconnecting: (() -> Void)? {
         get { nil }
         set {}
     }
@@ -75,6 +82,7 @@ extension TerminalHost {
         let id = session.id
         session.host.onExit = { [weak self] status in self?.ended(id, status) }
         session.host.onDisconnect = { [weak self] reason in self?.disconnected(id, reason) }
+        session.host.onReconnecting = { [weak self] in self?.reconnecting(id) }
         sessions.append(session)
         selected = id
         return id
@@ -111,6 +119,11 @@ extension TerminalHost {
     private func disconnected(_ id: TerminalSession.ID, _ reason: String?) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
         if let reason { session.state = .disconnected(reason) } else { remove(id) }
+    }
+
+    private func reconnecting(_ id: TerminalSession.ID) {
+        guard let session = sessions.first(where: { $0.id == id }), case .disconnected = session.state else { return }
+        session.state = .running
     }
 
     /// Removes a tab; if it was selected, the tab after it (else before it) takes over.

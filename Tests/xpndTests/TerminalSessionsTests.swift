@@ -6,6 +6,7 @@ import Testing
     let view = NSView()
     var onExit: ((Int32?) -> Void)?
     var onDisconnect: ((String?) -> Void)?
+    var onReconnecting: (() -> Void)?
     var terminated = false
     var reconnects = 0
     func terminate() { terminated = true }
@@ -42,6 +43,16 @@ import Testing
         let config = RDPOptions().resolved(over: .standard, host: name, port: 3389, username: nil, domain: nil)
         return sessions.open(.remoteDesktop(config, password: "", gatewayPassword: nil),
                              for: Connection(name: name, type: .rdp, host: name), color: nil)
+    }
+
+    @Test func aDesktopReconnectingByItselfShowsAsRunningAgain() {
+        let id = openDesktop("win")
+        hosts.all[0].disconnect("the network connection was lost")
+        hosts.all[0].onReconnecting?()
+        #expect(sessions.sessions.first { $0.id == id }?.state == .running)
+        // So closing it now ends the session it started.
+        sessions.close(id)
+        #expect(hosts.all[0].terminated)
     }
 
     @Test func openSelectsAndCountsLive() {

@@ -32,6 +32,7 @@ extension XPRDPSession: RDPSessionControlling {}
     /// Never called: a desktop ends through `onDisconnect`.
     var onExit: ((Int32?) -> Void)?
     var onDisconnect: ((String?) -> Void)?
+    var onReconnecting: (() -> Void)?
     var view: NSView { session.view }
 
     /// This session's config: the notch's reconnects change it, never the connection or Settings.
@@ -39,7 +40,9 @@ extension XPRDPSession: RDPSessionControlling {}
     /// Set by the workspace: writes a display choice to the connection (the notch's "Set as default").
     var onSaveDisplayDefault: ((RDPOptions.Display) -> Void)?
     /// A connect succeeded and the session has not ended since.
-    private(set) var isConnected = false
+    private(set) var isConnected = false {
+        didSet { notch?.isConnected = isConnected }
+    }
     private(set) var notch: RDPNotchModel!
     private let presentIn: () -> NSWindow?
     private var session: (any RDPSessionControlling)!
@@ -231,6 +234,7 @@ extension RDPHost: RDPNotchActions {
     func reconnect(with changes: (inout RDPSessionConfig) -> Void) {
         changes(&config)
         prepareReconnect()
+        onReconnecting?() // first: a failure to start reports before `reconnectSession` returns
         reconnectSession()
     }
 

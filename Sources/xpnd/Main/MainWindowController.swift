@@ -129,7 +129,8 @@ private struct MainView: View {
                 if sessions.sessions.isEmpty {
                     details
                 } else {
-                    TerminalWorkspace(sessions: sessions, duplicate: duplicate, settings: AppSettings.shared.builtInTerminal)
+                    TerminalWorkspace(sessions: sessions, duplicate: duplicate, settings: AppSettings.shared.builtInTerminal,
+                                      saveDisplay: connections.saveDisplay)
                         .overlay { if model.editorShown { editorCard } }
                 }
             }

@@ -57,6 +57,31 @@ import xpndRDP
         #expect(ended == ["the network connection was lost"])
     }
 
+    @Test func theNotchFollowsEveryConnectionChange() async {
+        let (host, s) = host(tries: 1)
+        #expect(!host.notch.isConnected)
+        host.sessionDidConnect(s)
+        #expect(host.notch.isConnected)
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_CONNECT_TRANSPORT_FAILED")
+        #expect(!host.notch.isConnected) // retrying
+        await host.retry?.value
+        host.sessionDidConnect(s)
+        #expect(host.notch.isConnected)
+        host.reconnect()
+        #expect(!host.notch.isConnected)
+        host.sessionDidConnect(s)
+        host.terminate()
+        #expect(!host.notch.isConnected)
+    }
+
+    @Test func aReconnectTellsTheTabBeforeItCanFail() {
+        let (host, _) = host()
+        var calls: [String]? = nil
+        host.onReconnecting = { calls = self.fake.calls }
+        host.reconnect(with: { _ in })
+        #expect(calls == ["start"])
+    }
+
     @Test func aRejectedLoginForgetsThePasswordAndAsksAgainAtOnce() {
         let (host, s) = host()
         var ended: [String?] = []

@@ -24,6 +24,20 @@ struct RDPConnectionInfo: Equatable {
         certificateFingerprint = info.certificateFingerprint.isEmpty ? nil : info.certificateFingerprint
         gatewayHost = info.gatewayHost
     }
+
+    var desktopText: String { desktopWidth > 0 ? "\(desktopWidth) × \(desktopHeight)" : "—" }
+    var codecText: String { codec.isEmpty ? "—" : codec }
+    var latencyText: String { latencyMs.map { "\($0) ms" } ?? "—" }
+    var subjectText: String { certificateSubject ?? "—" }
+    var fingerprintText: String { certificateFingerprint ?? "—" }
+    var certificateNote: String? {
+        certificateSubject == nil || certificateFingerprint == nil ? "Verified by a certificate authority, or not yet accepted" : nil
+    }
+
+    func connectedForText(at now: Date) -> String {
+        guard let connectedSince else { return "—" }
+        return Duration.seconds(max(0, now.timeIntervalSince(connectedSince))).formatted(.time(pattern: .hourMinuteSecond))
+    }
 }
 
 /// What the notch asks of the tab that owns the session (`RDPHost`); a fake stands in for it in tests.
@@ -57,11 +71,17 @@ struct RDPConnectionInfo: Equatable {
 @MainActor @Observable final class RDPNotchModel {
     var isPinned = false
     var isExpanded = false
+    /// Pushed by the host on every change: the host isn't observable, and the buttons must follow it.
+    var isConnected: Bool {
+        didSet { if isConnected { displayRefused = false } }
+    }
     private(set) var audio: RDPOptions.Audio
     private(set) var clipboardOn: Bool
     private(set) var display: RDPOptions.Display
     private(set) var dropCount = 0
     private(set) var lastDropNames: [String] = []
+    /// The server turned down the last display choice in this connection.
+    private(set) var displayRefused = false
     var notice: String?
 
     /// Weak: the host owns the model (its drop handler calls in), so a strong reference would be a cycle.
@@ -69,6 +89,7 @@ struct RDPConnectionInfo: Equatable {
 
     init(actions: any RDPNotchActions) {
         self.actions = actions
+        isConnected = actions.isConnected
         audio = actions.config.audio
         clipboardOn = actions.config.clipboard
         display = actions.config.display
@@ -81,6 +102,7 @@ struct RDPConnectionInfo: Equatable {
     }
 
     var info: RDPConnectionInfo? { actions?.info }
+    var driveIsOn: Bool { actions?.config.driveDevice() != nil }
 
     func ctrlAltDel() { send(RDPKeySequence.ctrlAltDel) }
     func winR() { send(RDPKeySequence.winR) }
@@ -92,7 +114,15 @@ struct RDPConnectionInfo: Equatable {
     }
 
     func chooseDisplay(_ choice: RDPOptions.Display) {
-        if actions?.requestDisplay(choice) == true { display = choice } else { notice = "The server fixed the desktop size." }
+        if actions?.requestDisplay(choice) == true {
+            display = choice
+            displayRefused = false
+        } else if actions?.isConnected == true {
+            displayRefused = true
+            notice = "The server fixed the desktop size."
+        } else {
+            notice = "Not connected"
+        }
         actions?.restoreFocus()
     }
 
@@ -139,7 +169,7 @@ struct RDPConnectionInfo: Equatable {
             return
         }
         do {
-            let result = try actions.copyIntoDropFolder(urls)
+            let result = try actions.copyIntoDropFolder(urls.filter(\.isFileURL)) // a drag from a browser offers web links
             lastDropNames = result.names
             dropCount = actions.dropFolderCount()
             let copied = result.names.isEmpty ? nil : "Copied \(Self.files(result.names.count)) into the xpnd drive"
@@ -151,6 +181,9 @@ struct RDPConnectionInfo: Equatable {
             notice = "Couldn't copy into the xpnd drive."
         }
     }
+
+    /// Windows can save into the drive, so the count is read again when it's about to show.
+    func refreshDropCount() { dropCount = actions?.dropFolderCount() ?? 0 }
 
     func revealDropFolder() {
         actions?.revealDropFolder()
@@ -178,6 +211,14 @@ struct RDPConnectionInfo: Equatable {
         actions?.disconnect()
         actions?.restoreFocus()
     }
+
+    func togglePin() {
+        isPinned.toggle()
+        if isPinned { isExpanded = true }
+        actions?.restoreFocus()
+    }
+
+    func restoreFocus() { actions?.restoreFocus() }
 
     // MARK: Private
 
