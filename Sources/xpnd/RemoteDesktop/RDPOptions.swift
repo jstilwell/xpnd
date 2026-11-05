@@ -87,6 +87,34 @@ struct RDPSettings: Codable, Hashable, Sendable {
     static let standard = RDPSettings()
 }
 
+extension RDPSettings {
+    /// A key the saved settings lack keeps its default, so a new field doesn't reset the rest.
+    init(from decoder: Decoder) throws {
+        self = .standard
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func read<T: Decodable>(_ field: inout T, _ key: CodingKeys) throws {
+            field = try c.decodeIfPresent(T.self, forKey: key) ?? field
+        }
+        try read(&display, .display)
+        try read(&scaleToFit, .scaleToFit)
+        try read(&colorDepth, .colorDepth)
+        try read(&retina, .retina)
+        try read(&clipboard, .clipboard)
+        try read(&audio, .audio)
+        try read(&printers, .printers)
+        try read(&commandAsWindowsKey, .commandAsWindowsKey)
+        try read(&nla, .nla)
+        try read(&timeoutSeconds, .timeoutSeconds)
+        try read(&autoReconnect, .autoReconnect)
+        try read(&reconnectTries, .reconnectTries)
+        try read(&performance, .performance)
+        try read(&alternateShell, .alternateShell)
+        try read(&consoleSession, .consoleSession)
+        try read(&dropDrive, .dropDrive)
+        try read(&dropFolderCleanup, .dropFolderCleanup)
+    }
+}
+
 /// Everything one RDP session needs, with defaults applied.
 struct RDPSessionConfig: Equatable, Sendable {
     var host: String
