@@ -119,7 +119,8 @@ static void XPPostDisconnect(freerdp *);
 - (nullable id)waitForAnswer:(void (^)(id<XPRDPSessionDelegate> delegate, void (^answer)(id _Nullable value)))ask;
 - (void)rememberLogin:(NSArray<NSString *> *)login secret:(NSMutableData *)secret gateway:(BOOL)gateway;
 - (void)setDisp:(nullable DispClientContext *)disp;
-- (void)didConnect;
+- (void)didConnect:(rdpSettings *)settings;
+- (void)noteDesktopSize:(rdpSettings *)settings;
 - (void)didDisconnectWithCode:(UINT32)code;
 - (BOOL)sendLayoutSize:(NSSize)size inViewPoints:(BOOL)points;
 @end
@@ -146,6 +147,7 @@ static void XPPostDisconnect(freerdp *);
     BOOL _logonFailed;
     BOOL _certificateRejected;
     NSDate *_Nullable _connectedSince;
+    XPRDPConnectionInfo *_Nullable _connection;  // what `connectionInfo` keeps between connects
     DispClientContext *_disp;
     dispatch_semaphore_t _wait;
     id _answer;
@@ -318,6 +320,7 @@ static BOOL XPAddDrive(rdpSettings *settings, NSString *name, NSString *path) {
     _connected = NO;
     _logonFailed = NO;
     _certificateRejected = NO;
+    _connection = nil;
     [_lock unlock];
     atomic_store(&_gfxCodec, -1);
     [_view prepareForConnection];
@@ -336,6 +339,7 @@ static BOOL XPAddDrive(rdpSettings *settings, NSString *name, NSString *path) {
     _stopped = YES;
     _connected = NO;
     _connectedSince = nil;
+    _connection = nil;
     _disp = NULL;
     if (_wait) {
         dispatch_semaphore_signal(_wait);  // the waiting callback reads a nil answer
@@ -373,22 +377,31 @@ static BOOL XPAddDrive(rdpSettings *settings, NSString *name, NSString *path) {
     }
 }
 
+/// Main thread: the settings, while no client thread can free them. FreeRDP's thread never takes `_lock`, and a
+/// redirection (rdp_client_redirect, in any connection state and with no PostDisconnect) or a reconnect through the
+/// broker replaces them, so neither the lock nor `_connected` makes them safe to read from here.
+- (nullable rdpSettings *)idleSettings {
+    return _context && !_started ? _context->settings : NULL;
+}
+
 - (void)forgetPassword {
     [_lock lock];
     XPZeroSecret(_password);
     _password = XPSecret(@"");  // XPSetSecret leaves an empty one unset, so FreeRDP calls AuthenticateEx
-    if (_context) {
-        XPZeroSetting(_context->settings, FreeRDP_Password);
-        (void)freerdp_settings_set_string(_context->settings, FreeRDP_Password, NULL);
+    // With a client thread, reconnect's teardown zeroes the settings and its new context starts without.
+    rdpSettings *settings = self.idleSettings;
+    if (settings) {
+        XPZeroSetting(settings, FreeRDP_Password);
+        (void)freerdp_settings_set_string(settings, FreeRDP_Password, NULL);
     }
     // The gateway's too: a gateway refusal is also ACCESS_DENIED, and with the same credentials FreeRDP
     // copies an accepted gateway password back to the login (utils_sync_credentials). Kept, either would be
     // sent again without a prompt.
     XPZeroSecret(_gatewayPassword);
     _gatewayPassword = nil;
-    if (_context) {
-        XPZeroSetting(_context->settings, FreeRDP_GatewayPassword);
-        (void)freerdp_settings_set_string(_context->settings, FreeRDP_GatewayPassword, NULL);
+    if (settings) {
+        XPZeroSetting(settings, FreeRDP_GatewayPassword);
+        (void)freerdp_settings_set_string(settings, FreeRDP_GatewayPassword, NULL);
     }
     [_lock unlock];
 }
@@ -419,8 +432,8 @@ static BOOL XPAddDrive(rdpSettings *settings, NSString *name, NSString *path) {
 
 /// Lock held. A monitor layout of `size` unless the desktop already has it; NO without Display Control.
 - (BOOL)sendLayoutSize:(NSSize)size inViewPoints:(BOOL)points {
-    // Checked first, and held throughout: FreeRDP swaps context->settings during a redirection, and
-    // PostDisconnect clears _disp under the lock before the channel is freed.
+    // _disp is what makes the settings safe here, not the lock alone: FreeRDP closes the channels before a
+    // redirection frees the settings, and closing the channel waits for this lock in setDisp:.
     DispClientContext *disp = _connected && !_stopped && _context ? _disp : NULL;
     if (!disp || !disp->SendMonitorLayout)
         return NO;
@@ -477,7 +490,9 @@ static NSString *_Nullable XPCodecName(int32_t codecId) {
 }
 
 // shortcut: FreeRDP neither asks about nor stores a certificate that verifies against a CA, and keeps the peer's to
-// itself, so such a server shows none; upgrade if its API ever hands the transport's certificate out.
+// itself, so such a server shows none; and tls.c never updates the store, so a host whose self-signed certificate was
+// accepted earlier and which now has a CA-verified one shows the old subject and SHA-256. Upgrade if FreeRDP's API
+// ever hands the transport's certificate out.
 /// Known hosts rather than the certificate callback: that runs once per certificate, not per connect, and for a
 /// gateway's too. Whatever was accepted is there by now, as XPAskAboutCertificate answers "accept and store".
 static void XPReadCertificate(rdpSettings *settings, XPRDPConnectionInfo *info) {
@@ -495,23 +510,35 @@ static void XPReadCertificate(rdpSettings *settings, XPRDPConnectionInfo *info) 
     freerdp_certificate_store_free(store);
 }
 
+/// What holds for a whole connect. Only from FreeRDP's thread, or main with no such thread: see `idleSettings`.
+// shortcut: a redirection after PostConnect runs no callback, so Info keeps the first server's certificate and
+// gateway until the next connect; upgrade if brokers turn out to redirect a running session.
+static XPRDPConnectionInfo *XPConnectionFrom(rdpSettings *settings) {
+    XPRDPConnectionInfo *info = [XPRDPConnectionInfo new];
+    info.desktopWidth = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
+    info.desktopHeight = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
+    if (freerdp_settings_get_bool(settings, FreeRDP_GatewayEnabled))
+        info.gatewayHost = XPString(freerdp_settings_get_string(settings, FreeRDP_GatewayHostname));
+    XPReadCertificate(settings, info);
+    return info;
+}
+
 - (XPRDPConnectionInfo *)connectionInfo {
     XPRDPConnectionInfo *info = [XPRDPConnectionInfo new];
     info.codec = XPCodecName(atomic_load(&_gfxCodec)) ?: @"—";
-    info.certificateSubject = @"";
-    info.certificateFingerprint = @"";
-    [_lock lock];  // as sendLayoutSize:, for the settings
+    // rdpRdp's autodetect outlives redirections, unlike the settings. Written on FreeRDP's thread; only shown.
+    const UINT32 latency = _context && _context->autodetect ? _context->autodetect->netCharAverageRTT : 0;
+    info.latencyMs = latency ? @(latency) : nil;
+    rdpSettings *idle = self.idleSettings;
+    [_lock lock];
+    if (!_connection && idle)
+        _connection = XPConnectionFrom(idle);
     info.connectedSince = _connectedSince;
-    if (_context) {
-        rdpSettings *settings = _context->settings;
-        info.desktopWidth = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
-        info.desktopHeight = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
-        const UINT32 latency = _context->autodetect ? _context->autodetect->netCharAverageRTT : 0;
-        info.latencyMs = latency ? @(latency) : nil;
-        if (freerdp_settings_get_bool(settings, FreeRDP_GatewayEnabled))
-            info.gatewayHost = XPString(freerdp_settings_get_string(settings, FreeRDP_GatewayHostname));
-        XPReadCertificate(settings, info);
-    }
+    info.desktopWidth = _connection.desktopWidth;
+    info.desktopHeight = _connection.desktopHeight;
+    info.gatewayHost = _connection.gatewayHost;
+    info.certificateSubject = _connection.certificateSubject ?: @"";
+    info.certificateFingerprint = _connection.certificateFingerprint ?: @"";
     [_lock unlock];
     return info;
 }
@@ -519,29 +546,32 @@ static void XPReadCertificate(rdpSettings *settings, XPRDPConnectionInfo *info) 
 #pragma mark Test hooks
 
 - (NSUInteger)deviceCount {
-    return _context ? freerdp_settings_get_uint32(_context->settings, FreeRDP_DeviceCount) : 0;
+    rdpSettings *settings = self.idleSettings;
+    return settings ? freerdp_settings_get_uint32(settings, FreeRDP_DeviceCount) : 0;
 }
 
 - (nullable NSString *)drivePathAtIndex:(NSUInteger)index {
     if (index >= self.deviceCount)
         return nil;
-    const RDPDR_DRIVE *drive = freerdp_settings_get_pointer_array(_context->settings, FreeRDP_DeviceArray, index);
+    const RDPDR_DRIVE *drive = freerdp_settings_get_pointer_array(self.idleSettings, FreeRDP_DeviceArray, index);
     return drive && drive->device.Type == RDPDR_DTYP_FILESYSTEM ? XPString(drive->Path) : nil;
 }
 
 - (nullable NSString *)stringSettingNamed:(NSString *)name {
     const SSIZE_T key = freerdp_settings_get_key_for_name(name.UTF8String);
-    if (!_context || key < 0 || freerdp_settings_get_type_for_key(key) != RDP_SETTINGS_TYPE_STRING)
+    rdpSettings *settings = self.idleSettings;
+    if (!settings || key < 0 || freerdp_settings_get_type_for_key(key) != RDP_SETTINGS_TYPE_STRING)
         return nil;
-    const char *value = freerdp_settings_get_string(_context->settings, (FreeRDP_Settings_Keys_String)key);
+    const char *value = freerdp_settings_get_string(settings, (FreeRDP_Settings_Keys_String)key);
     return value ? [NSString stringWithUTF8String:value] : nil;
 }
 
 - (BOOL)boolSettingNamed:(NSString *)name {
     const SSIZE_T key = freerdp_settings_get_key_for_name(name.UTF8String);
-    if (!_context || key < 0 || freerdp_settings_get_type_for_key(key) != RDP_SETTINGS_TYPE_BOOL)
+    rdpSettings *settings = self.idleSettings;
+    if (!settings || key < 0 || freerdp_settings_get_type_for_key(key) != RDP_SETTINGS_TYPE_BOOL)
         return NO;
-    return freerdp_settings_get_bool(_context->settings, (FreeRDP_Settings_Keys_Bool)key);
+    return freerdp_settings_get_bool(settings, (FreeRDP_Settings_Keys_Bool)key);
 }
 
 - (nullable NSString *)disconnectErrorNameForCode:(uint32_t)code {
@@ -781,6 +811,7 @@ static BOOL XPDesktopResize(rdpContext *context) {
     [view lockDrawing];  // it swaps the image drawRect: reads
     const BOOL ok = resize ? resize(context) : YES;
     [view unlockDrawing];
+    [view.session noteDesktopSize:context->settings];
     return ok;
 }
 
@@ -820,7 +851,7 @@ static BOOL XPPostConnect(freerdp *instance) {
     const BOOL ok = mac_post_connect(instance);
     [view unlockDrawing];
     if (ok)
-        [view.session didConnect];
+        [view.session didConnect:instance->context->settings];
     return ok;
 }
 
@@ -882,10 +913,19 @@ static void XPPostDisconnect(freerdp *instance) {
         });
 }
 
-- (void)didConnect {
+- (void)noteDesktopSize:(rdpSettings *)settings {
+    [_lock lock];
+    _connection.desktopWidth = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
+    _connection.desktopHeight = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
+    [_lock unlock];
+}
+
+- (void)didConnect:(rdpSettings *)settings {
+    XPRDPConnectionInfo *connection = XPConnectionFrom(settings);
     [_lock lock];
     _connected = YES;
     _connectedSince = [NSDate date];
+    _connection = connection;
     _logonFailed = NO;  // with NLA a failure comes before this; with TLS the server reports it afterwards
     [_lock unlock];
     [self deliver:^(id<XPRDPSessionDelegate> delegate) {

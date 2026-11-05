@@ -1,4 +1,4 @@
-#import <Foundation/Foundation.h>
+#import <AppKit/AppKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -15,6 +15,8 @@ typedef NS_OPTIONS(NSUInteger, XPRDPClipboardFormats) {
 + (XPRDPClipboardFormats)formatsToAnnounceForPasteboardTypes:(NSArray<NSString *> *)types;
 /// `urls`' file URLs as the text/uri-list a Finder copy gives; nil when there are none.
 + (nullable NSData *)fileURIListForURLs:(NSArray<NSURL *> *)urls;
+/// The file URLs on `pasteboard`, and no others.
++ (NSArray<NSURL *> *)fileURLsOnPasteboard:(NSPasteboard *)pasteboard;
 
 /// YES by default. NO clears what is on offer (the server gets an empty format list), and from then on
 /// nothing is offered and the server's lists are answered but not fetched, until set back to YES.

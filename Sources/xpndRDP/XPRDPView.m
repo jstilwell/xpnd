@@ -404,6 +404,8 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 }
 
 - (void)setClipboardSyncEnabled:(BOOL)enabled {
+    if (enabled == _clipboard.enabled)
+        return;  // on again would replace a live file offer with the pasteboard
     _clipboard.enabled = enabled;
     if (enabled)
         pasteboard_changecount = -1;
@@ -416,7 +418,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     XPRDPSession *session = self.session;
     if (!session.dropHandler || !session.live)
         return @[];
-    return [info.draggingPasteboard readObjectsForClasses:@[ NSURL.class ] options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}] ?: @[];
+    return [XPRDPClipboard fileURLsOnPasteboard:info.draggingPasteboard];
 }
 
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {

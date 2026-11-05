@@ -57,6 +57,10 @@ static UINT XPServerFormatDataResponse(CliprdrClientContext *, const CLIPRDR_FOR
     return list.length ? [list dataUsingEncoding:NSUTF8StringEncoding] : nil;
 }
 
++ (NSArray<NSURL *> *)fileURLsOnPasteboard:(NSPasteboard *)pasteboard {
+    return [pasteboard readObjectsForClasses:@[ NSURL.class ] options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}] ?: @[];
+}
+
 - (instancetype)init {
     if ((self = [super init])) {
         _lock = [NSLock new];
@@ -305,6 +309,8 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     [_lock unlock];
     if (text)
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!self.enabled)
+                return;  // switched off while this was queued
             NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
             [pasteboard clearContents];
             [pasteboard setString:text forType:NSPasteboardTypeString];
@@ -343,18 +349,22 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
 
 - (void)setEnabled:(BOOL)enabled {
     [_lock lock];
+    const BOOL changed = enabled != _enabled;
     _enabled = enabled;
-    if (!enabled) {
+    if (changed && !enabled) {
         _text = nil;
         _uriList = nil;
         _requestedFormatId = 0;  // a reply still on its way stays off the Mac pasteboard
+        // shortcut: local_stream_discard skips locked streams and a Lock PDU isn't capability-checked, so a hostile
+        // server that sent Lock first may keep reading files already offered; upgrade by failing FileContents
+        // requests here while disabled if offers to untrusted servers matter.
         if (_file)
             (void)cliprdr_file_context_clear(_file);
         if (_cliprdr && _sync)
             (void)[self sendFormatList];
     }
     [_lock unlock];
-    if (enabled)
+    if (changed && enabled)
         _writtenChangeCount = -1;  // Windows lost its offer: the poll announces even the server's own text
 }
 

@@ -266,7 +266,7 @@ struct XPRDPSessionTests {
         #expect(c.lastAnnouncedFormats == .text)
     }
 
-    @MainActor @Test func aFileOfferNeedsTheChannelAndClipboardSync() {
+    @MainActor @Test func aFileOfferWithNoChannelIsRefused() {
         let c = XPRDPClipboard()
         #expect(!c.offerFileURLs([URL(fileURLWithPath: "/tmp/a.txt")]))  // no channel here
         #expect(c.lastAnnouncedFormats.isEmpty)
@@ -396,6 +396,18 @@ struct XPRDPSessionTests {
         #expect(!dropped)
     }
 
+    @MainActor @Test func aDropCarriesFileURLsOnly() {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        let file = URL(fileURLWithPath: "/tmp/a.txt")
+        pasteboard.writeObjects([URL(string: "https://example.com/x")! as NSURL, file as NSURL])
+        #expect(XPRDPClipboard.fileURLs(on: pasteboard) == [file])
+        pasteboard.clearContents()
+        pasteboard.writeObjects([URL(string: "https://example.com/x")! as NSURL])
+        #expect(XPRDPClipboard.fileURLs(on: pasteboard).isEmpty)
+    }
+
     @MainActor @Test func connectionInfoReadsTheSettings() {
         let s = XPRDPSession(settings: [["FreeRDP_DesktopWidth", "1280"], ["FreeRDP_DesktopHeight", "720"],
                                         ["FreeRDP_GatewayEnabled", "TRUE"], ["FreeRDP_GatewayHostname", "gw.example"]],
@@ -456,6 +468,12 @@ struct XPRDPSessionTests {
         let info = s.connectionInfo
         #expect(info.certificateSubject.contains("win.example"))
         #expect(info.certificateFingerprint.lowercased() == "20:c0:f6:d2:cc:0c:da:6d:01:8b:1e:72:14:2b:ab:44:5c:a8:ff:5a:05:4d:92:3b:cf:8c:a4:d9:98:72:5c:bf")
+        // Read once per connect: gone from disk, it is still what this connect had; a new context reads again.
+        try FileManager.default.removeItem(at: dir.appending(path: "server/win.example_3389.pem"))
+        #expect(s.connectionInfo.certificateSubject == info.certificateSubject)
+        s.stop()
+        #expect(s.prepare())
+        #expect(s.connectionInfo.certificateSubject == "")
         s.stop()
     }
 
