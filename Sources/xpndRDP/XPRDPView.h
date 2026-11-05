@@ -3,6 +3,7 @@
 #include <freerdp/freerdp.h>
 #import <freerdp/client/Mac/MRDPView.h>
 
+#import "XPRDPClipboard+Channel.h"
 #import "XPRDPSession.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -12,6 +13,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// desktop, display-control resizes, a drawing lock, the clipboard guard and the ⌘ key mapping.
 @interface XPRDPView : MRDPView
 @property (weak, nullable) XPRDPSession *session;
+/// The clipboard channel's xpnd side, fed by the pasteboard poll.
+@property (readonly) XPRDPClipboard *clipboard;
 @property BOOL commandAsWindowsKey;
 /// A fixed-size desktop keeps its aspect ratio, letterboxed in black; otherwise (resized to fit) it fills the view.
 /// Main thread, before the client thread starts.

@@ -95,8 +95,11 @@ again after every build.
 - Remote desktops (RDP): `Sources/xpndRDP/` is Objective-C on FreeRDP's Mac client, the only code that
   includes FreeRDP headers. `XPRDPSession` owns the FreeRDP context and its client thread, and calls back
   through a delegate on main (certificates, passwords, disconnects); `XPRDPView` subclasses `MRDPView`
-  (input mapping, ⌘ as Ctrl or Windows, clipboard polling, drawing); `XPRDPClipboardFilter` keeps
-  concealed and secret items from the remote; `XPRDPResizeCoalescer` debounces Display Control resizes.
+  (input mapping, ⌘ as Ctrl or Windows, clipboard polling, drawing); `XPRDPClipboard` is the clipboard
+  channel in place of the Mac client's (`XPPreConnect` unsubscribes MRDPView's channel handlers and passes
+  them every other channel): text both ways, and Finder files to Windows through FreeRDP's file context
+  (`client_cliprdr_file`); `XPRDPClipboardFilter` keeps concealed and secret items from the remote;
+  `XPRDPResizeCoalescer` debounces Display Control resizes.
   In `Sources/xpnd/RemoteDesktop/`: `RDPOptions`/`RDPSettings` (per connection and defaults) resolve to an
   `RDPSessionConfig`, `RDPSettingMapping` turns that into FreeRDP setting names, `RDPHost` is the tab's
   `TerminalHost` (`TerminalSession.kind` is `.remoteDesktop`), `RDPErrorText` words `ERRCONNECT_*`/`ERRINFO_*`,
