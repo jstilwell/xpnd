@@ -28,6 +28,7 @@ struct RDPOptions: Codable, Hashable, Sendable {
     var gateway: Gateway?
     var alternateShell: String?
     var consoleSession: Bool?
+    var dropDrive: Bool?
 }
 
 /// In an extension to keep the memberwise init; `port` and `credential` may be omitted in hand-written YAML.
@@ -61,6 +62,8 @@ extension RDPOptions.Display: Codable {
     }
 }
 
+enum DropFolderCleanup: String, Codable, Sendable { case never, onDisconnect, after7Days }
+
 /// App-wide RDP defaults, which a connection's `RDPOptions` override.
 struct RDPSettings: Codable, Hashable, Sendable {
     var display = RDPOptions.Display.fit
@@ -78,6 +81,8 @@ struct RDPSettings: Codable, Hashable, Sendable {
     var performance = RDPOptions.Performance.auto
     var alternateShell = ""
     var consoleSession = false
+    var dropDrive = true
+    var dropFolderCleanup = DropFolderCleanup.never
 
     static let standard = RDPSettings()
 }
@@ -104,10 +109,19 @@ struct RDPSessionConfig: Equatable, Sendable {
     var gateway: RDPOptions.Gateway?
     var alternateShell: String
     var consoleSession: Bool
+    var dropDrive = true
+    /// The folder redirected as the `xpnd` drive; nil means no device.
+    var dropFolder: String?
+
+    func driveDevice() -> (name: String, path: String)? {
+        guard dropDrive, let dropFolder else { return nil }
+        return ("xpnd", dropFolder)
+    }
 }
 
 extension RDPOptions {
-    func resolved(over d: RDPSettings, host: String, port: Int, username: String?, domain: String?) -> RDPSessionConfig {
+    func resolved(over d: RDPSettings, host: String, port: Int, username: String?, domain: String?,
+                  dropFolder: String? = nil) -> RDPSessionConfig {
         RDPSessionConfig(
             host: host, port: port, username: username, domain: domain,
             display: display ?? d.display, scaleToFit: scaleToFit ?? d.scaleToFit,
@@ -117,6 +131,7 @@ extension RDPOptions {
             timeoutSeconds: timeoutSeconds ?? d.timeoutSeconds, autoReconnect: autoReconnect ?? d.autoReconnect,
             reconnectTries: reconnectTries ?? d.reconnectTries, performance: performance ?? d.performance,
             gateway: gateway, alternateShell: alternateShell ?? d.alternateShell,
-            consoleSession: consoleSession ?? d.consoleSession)
+            consoleSession: consoleSession ?? d.consoleSession,
+            dropDrive: dropDrive ?? d.dropDrive, dropFolder: dropFolder)
     }
 }

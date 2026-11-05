@@ -101,7 +101,9 @@ import Foundation
             if connection.type == .rdp {
                 return .rdpTab((connection.rdp ?? RDPOptions()).resolved(
                     over: remoteDesktop(), host: connection.host, port: connection.effectivePort,
-                    username: library.loginUser(for: connection), domain: connection.domain))
+                    username: library.loginUser(for: connection), domain: connection.domain,
+                    dropFolder: ConnectionStore.defaultURL.deletingLastPathComponent()
+                        .appending(path: "drop/\(connection.id.uuidString)").path))
             }
             let command: SSHCommand
             do throws(SSHCommandError) {

@@ -66,3 +66,13 @@ struct RDPOptionsTests {
         #expect(try ConnectionYAML.decode(ConnectionYAML.encode(lib)) == lib)
     }
 }
+
+extension RDPOptionsTests {
+    @Test func cleanupPolicyRoundTrips() throws {
+        #expect(RDPSettings.standard.dropFolderCleanup == .never)
+        #expect(RDPSettings.standard.dropDrive)
+        var s = RDPSettings.standard
+        s.dropFolderCleanup = .after7Days
+        #expect(try JSONDecoder().decode(RDPSettings.self, from: JSONEncoder().encode(s)) == s)
+    }
+}

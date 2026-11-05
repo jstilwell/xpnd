@@ -52,7 +52,7 @@ extension RDPSessionConfig {
             s("ConfigPath", configPath),
             s("ServerHostname", host), s("ServerPort", port),
             s("DesktopWidth", width), s("DesktopHeight", height),
-            s("DynamicResolutionUpdate", fit), s("SupportDisplayControl", fit),
+            s("DynamicResolutionUpdate", fit), s("SupportDisplayControl", true),
             s("ColorDepth", colorDepth),
             s("DesktopScaleFactor", retina ? 200 : 100), s("DeviceScaleFactor", retina ? 180 : 100),
             s("RedirectClipboard", clipboard),
@@ -72,6 +72,7 @@ extension RDPSessionConfig {
         let login = RDPLogin.split(username: username ?? "", domain: domain)
         if !login.username.isEmpty { out.append(s("Username", login.username)) }
         if let domain = login.domain { out.append(s("Domain", domain)) }
+        if driveDevice() != nil { out.append(s("DeviceRedirection", true)) }
         if !alternateShell.isEmpty { out.append(s("AlternateShell", alternateShell)) }
         if let gateway {
             out += [s("GatewayHostname", gateway.host), s("GatewayPort", gateway.port), s("GatewayUseSameCredentials", sameCredentials)]
