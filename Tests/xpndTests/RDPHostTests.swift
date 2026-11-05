@@ -20,8 +20,9 @@ import xpndRDP
     func sendLeftClick(atViewPoint point: NSPoint) { calls.append("click") }
     func setClipboardSyncEnabled(_ enabled: Bool) { calls.append("clipboard(\(enabled))") }
     var clipboardChannelLoaded = false
-    var offerResult = true
-    func offerFiles(forPaste urls: [URL]) -> Bool { calls.append("offer"); return offerResult }
+    /// The pending offer's answer; a test calls it as the server's response would.
+    var offerDone: ((Bool) -> Void)?
+    func offerFiles(forPaste urls: [URL], completion: @escaping (Bool) -> Void) { calls.append("offer"); offerDone = completion }
     var dropHandler: (([URL], NSPoint) -> Void)?
     func requestDesktopFit() -> Bool { calls.append("fit"); return true }
     func requestDesktopWidth(_ width: Int, height: Int) -> Bool { calls.append("size \(width)x\(height)"); return true }
@@ -190,12 +191,16 @@ import xpndRDP
 
     @Test func sendsAndPastesOnlyWhenConnected() {
         let (host, s) = host()
+        var pasted: [Bool] = []
         host.send(RDPKeySequence.winR)
-        #expect(!host.pasteFiles([URL(fileURLWithPath: "/tmp/a")], at: .zero))
+        host.pasteFiles([URL(fileURLWithPath: "/tmp/a")], at: .zero) { pasted.append($0) }
+        #expect(pasted == [false])
         #expect(fake.calls == ["start"])
         host.sessionDidConnect(s)
         host.send(RDPKeySequence.winR)
-        #expect(host.pasteFiles([URL(fileURLWithPath: "/tmp/a")], at: .zero))
+        host.pasteFiles([URL(fileURLWithPath: "/tmp/a")], at: .zero) { pasted.append($0) }
+        fake.offerDone?(true)
+        #expect(pasted == [false, true])
         #expect(fake.calls == ["start", "keys", "offer", "click", "keys"])
         #expect(host.requestDisplay(.fit))
         host.session(s, didDisconnectWithErrorName: "ERRINFO_IDLE_TIMEOUT")
@@ -215,8 +220,49 @@ import xpndRDP
         let (host, s) = host()
         host.sessionDidConnect(s)
         fake.dropHandler?([URL(fileURLWithPath: "/tmp/a")], .zero)
+        #expect(fake.calls == ["start", "offer"])
+        fake.offerDone?(true)
         #expect(fake.calls == ["start", "offer", "click", "keys"])
         #expect(host.notch.notice == "Pasting 1 file…")
+    }
+
+    @Test func nothingIsClickedOrTypedUntilWindowsHasTheOffer() {
+        let (host, s) = host()
+        host.sessionDidConnect(s)
+        var pasted: [Bool] = []
+        host.pasteFiles([URL(fileURLWithPath: "/tmp/a")], at: .zero) { pasted.append($0) }
+        #expect(fake.calls == ["start", "offer"])
+        #expect(pasted.isEmpty)
+    }
+
+    @Test func aPasteClicksThenPausesThenSendsCtrlV() throws {
+        let (host, s) = host()
+        host.sessionDidConnect(s)
+        host.pasteFiles([URL(fileURLWithPath: "/tmp/a")], at: .zero) { _ in }
+        fake.offerDone?(true)
+        let steps = try #require(fake.keys.last)
+        #expect(steps.first?.kind == .pause)
+        #expect(steps.first?.milliseconds == 100)
+        #expect(steps.dropFirst().map(\.scancode) == RDPKeySequence.ctrlV.map(\.objc).map(\.scancode))
+    }
+
+    @Test func aRefusedOfferClicksAndTypesNothing() {
+        let (host, s) = host()
+        host.sessionDidConnect(s)
+        fake.dropHandler?([URL(fileURLWithPath: "/tmp/a")], .zero)
+        fake.offerDone?(false)
+        #expect(fake.calls == ["start", "offer"])
+        #expect(host.notch.notice == "Couldn't paste the files.")
+    }
+
+    @Test func aSessionEndingBeforeTheAnswerClicksAndTypesNothing() {
+        let (host, s) = host()
+        host.sessionDidConnect(s)
+        fake.dropHandler?([URL(fileURLWithPath: "/tmp/a")], .zero)
+        host.session(s, didDisconnectWithErrorName: "ERRINFO_IDLE_TIMEOUT")
+        fake.offerDone?(true) // accepted just before the end, and queued on main behind it
+        #expect(fake.calls == ["start", "offer"])
+        #expect(host.notch.notice == "Couldn't paste the files.")
     }
 
     @Test func aRetryCarriesLiveDisplayAndClipboardChanges() async {

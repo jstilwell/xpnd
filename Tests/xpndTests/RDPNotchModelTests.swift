@@ -12,7 +12,8 @@ import xpndRDP
     var info = RDPConnectionInfo(XPRDPConnectionInfo())
     var calls: [String] = []
     var sent: [[RDPKeyStep]] = []
-    var pasteResult = true
+    /// The pending paste's answer; a test calls it as the server's response would.
+    var pasteDone: ((Bool) -> Void)?
     var displayResult = true
     var dropCount = 0
     var copyResult: (names: [String], failures: [URL]) = ([], [])
@@ -20,7 +21,7 @@ import xpndRDP
     var saveResult = true
 
     func send(_ steps: [RDPKeyStep]) { calls.append("send"); sent.append(steps) }
-    func pasteFiles(_ urls: [URL], at point: CGPoint) -> Bool { calls.append("pasteFiles"); return pasteResult }
+    func pasteFiles(_ urls: [URL], at point: CGPoint, done: @escaping (Bool) -> Void) { calls.append("pasteFiles"); pasteDone = done }
     func setClipboardSync(_ on: Bool) { calls.append("setClipboardSync(\(on))") }
     func reconnect(with changes: (inout RDPSessionConfig) -> Void) {
         calls.append("reconnect")
@@ -83,7 +84,7 @@ import xpndRDP
 
     @Test func desktopDropPastesOnlyWhenConnected() {
         model.dropOnDesktop([url, url, url], at: CGPoint(x: 5, y: 6))
-        #expect(fake.calls == ["pasteFiles", "restoreFocus"])
+        #expect(fake.calls == ["pasteFiles", "restoreFocus"]) // no keys or anything else of its own
         #expect(model.notice == "Pasting 3 files…")
         model.dropOnDesktop([url], at: .zero)
         #expect(model.notice == "Pasting 1 file…")
@@ -102,9 +103,26 @@ import xpndRDP
         #expect(model.notice == "Clipboard sync is off")
     }
 
-    @Test func aRefusedPasteSaysSo() {
-        fake.pasteResult = false
+    @Test func aRefusedPasteSaysSoAndDoesNothingElse() {
         model.dropOnDesktop([url], at: .zero)
+        fake.pasteDone?(false)
+        #expect(model.notice == "Couldn't paste the files.")
+        #expect(fake.calls == ["pasteFiles", "restoreFocus"])
+    }
+
+    @Test func anAcceptedPasteKeepsItsNotice() {
+        model.dropOnDesktop([url], at: .zero)
+        fake.pasteDone?(true)
+        #expect(model.notice == "Pasting 1 file…")
+    }
+
+    @Test func aSupersededDropDoesNotSpeakOverTheNewerOne() {
+        model.dropOnDesktop([url], at: .zero)
+        let older = fake.pasteDone
+        model.dropOnDesktop([url, url], at: .zero)
+        older?(false)
+        #expect(model.notice == "Pasting 2 files…")
+        fake.pasteDone?(false)
         #expect(model.notice == "Couldn't paste the files.")
     }
 

@@ -28,11 +28,16 @@ static UINT XPServerFormatDataResponse(CliprdrClientContext *, const CLIPRDR_FOR
     CliprdrFileContext *_file;
     CliprdrClientContext *_cliprdr;  // while attached
     BOOL _sync;                      // MonitorReady seen: the server takes format lists
+    BOOL _firstList;                 // the next list is the one FreeRDP sends even when empty
+    NSUInteger _listsInFlight;       // format lists on the wire with no response yet
+    void (^_Nullable _offerDone)(BOOL);  // the file offer waiting for its response; always the newest list
+    NSUInteger _offerNumber;         // bumped by each offer, so an old timeout finds a newer one alone
     BOOL _enabled;
     UINT32 _requestedFormatId;       // the server text format asked for, or 0
     NSString *_text;                 // the Mac clipboard's offer
     NSData *_uriList;
     NSInteger _writtenChangeCount;  // main thread: the pasteboard change our own write of server text made
+    NSUInteger _testListsOnWire;
 }
 
 + (XPRDPClipboardFormats)formatsToAnnounceForPasteboardTypes:(NSArray<NSString *> *)types {
@@ -65,6 +70,7 @@ static UINT XPServerFormatDataResponse(CliprdrClientContext *, const CLIPRDR_FOR
     if ((self = [super init])) {
         _lock = [NSLock new];
         _enabled = YES;
+        _offerTimeout = 2;
         _writtenChangeCount = -1;
         _clip = ClipboardCreate();
         _fileClip = ClipboardCreate();
@@ -106,6 +112,7 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
         cliprdr->ServerFormatDataResponse = XPServerFormatDataResponse;
         _cliprdr = cliprdr;
         _sync = NO;
+        _listsInFlight = 0;
         _requestedFormatId = 0;
     }
     [_lock unlock];
@@ -119,12 +126,25 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
         cliprdr->custom = NULL;
         _cliprdr = NULL;
         _sync = NO;
+        [self finishOffer:NO];
     }
     [_lock unlock];
 }
 
+/// Lock held. Ends the offer waiting, if any; its completion runs on main.
+- (void)finishOffer:(BOOL)accepted {
+    void (^done)(BOOL) = _offerDone;
+    _offerDone = nil;
+    if (done)
+        dispatch_async(dispatch_get_main_queue(), ^{
+            done(accepted);
+        });
+}
+
 /// Lock held, attached and in sync. `_text` as every text format winpr converts it to, and the files.
+/// Whatever this announces takes the place of a file offer still waiting, so that offer has failed.
 - (UINT)sendFormatList {
+    [self finishOffer:NO];
     UINT32 *ids = NULL, count = 0;
     if (_text) {
         const char *utf8 = _text.UTF8String;
@@ -153,6 +173,10 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     UINT rc = cliprdr_file_context_notify_new_client_format_list(_file);
     if (rc == CHANNEL_RC_OK)
         rc = _cliprdr->ClientFormatList(_cliprdr, &list);
+    // cliprdr_client_format_list says OK but drops an empty list after the first: no response will come for it.
+    if (rc == CHANNEL_RC_OK && (n || _firstList))
+        _listsInFlight++;
+    _firstList = NO;
     ClipboardEmpty(_clip);
     free(formats);
     free(ids);
@@ -173,6 +197,7 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     UINT rc = cliprdr->ClientCapabilities(cliprdr, &capabilities);
     if (rc == CHANNEL_RC_OK && _cliprdr == cliprdr) {
         _sync = YES;
+        _firstList = YES;
         rc = [self sendFormatList];
     }
     [_lock unlock];
@@ -201,6 +226,7 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
 // and a data callback that requests from the server and waits, as SDL's ClipDataCb does, if pasting files into Finder is wanted.
 - (UINT)serverFormatList:(const CLIPRDR_FORMAT_LIST *)formatList channel:(CliprdrClientContext *)cliprdr {
     [_lock lock];
+    [self finishOffer:NO];  // Windows' clipboard is its own again: a paste now wouldn't be our files
     (void)cliprdr_file_context_clear(_file);  // the server stops reading the files it had from us
     UINT rc = cliprdr_file_context_notify_new_server_format_list(_file);
     CLIPRDR_FORMAT_LIST_RESPONSE response = {0};
@@ -225,6 +251,18 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     }
     [_lock unlock];
     return rc;
+}
+
+/// Responses come in the order the lists went out, and the offer waiting is always the newest list, so
+/// only the response that leaves none in flight is the offer's. The poll's, say, may come first.
+- (UINT)serverFormatListResponse:(const CLIPRDR_FORMAT_LIST_RESPONSE *)response {
+    [_lock lock];
+    if (_listsInFlight)
+        _listsInFlight--;
+    if (!_listsInFlight)
+        [self finishOffer:(response->common.msgFlags & CB_RESPONSE_OK) != 0];
+    [_lock unlock];
+    return CHANNEL_RC_OK;
 }
 
 /// The channel's thread, without the lock (a big folder takes a while to walk): `uriList` as a packed
@@ -379,20 +417,34 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     return formats;
 }
 
-- (BOOL)offerFileURLs:(NSArray<NSURL *> *)urls {
+- (void)offerFileURLs:(NSArray<NSURL *> *)urls completion:(void (^)(BOOL accepted))completion {
     NSData *uriList = [XPRDPClipboard fileURIListForURLs:urls];
     [_lock lock];
-    const BOOL ok = uriList && _enabled && _cliprdr;
-    if (ok) {
+    [self finishOffer:NO];  // a newer drop ends the one waiting, even if this one is refused
+    BOOL sent = NO;
+    if (uriList && _enabled && _cliprdr && _sync) {
         _text = nil;
         _uriList = uriList;
-        if (_sync)
-            (void)[self sendFormatList];
+        sent = [self sendFormatList] == CHANNEL_RC_OK;
     }
+    if (sent)
+        _offerDone = [completion copy];
+    const NSUInteger offer = ++_offerNumber;
     [_lock unlock];
-    if (ok)
-        _writtenChangeCount = NSPasteboard.generalPasteboard.changeCount;
-    return ok;
+    if (!sent) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(NO);
+        });
+        return;
+    }
+    _writtenChangeCount = NSPasteboard.generalPasteboard.changeCount;
+    // Strong: however the view goes, the completion still runs.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_offerTimeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self->_lock lock];
+        if (self->_offerNumber == offer)
+            [self finishOffer:NO];
+        [self->_lock unlock];
+    });
 }
 
 - (void)offerText:(nullable NSString *)text fileURIList:(nullable NSData *)uriList {
@@ -410,6 +462,57 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     if (_cliprdr && _sync)
         (void)[self sendFormatList];
     [_lock unlock];
+}
+
+#pragma mark Test hooks
+
+static UINT XPTestCapabilities(CliprdrClientContext *cliprdr, const CLIPRDR_CAPABILITIES *capabilities) {
+    return CHANNEL_RC_OK;
+}
+
+/// As cliprdr_client_format_list: an empty list after the first is dropped.
+static UINT XPTestFormatList(CliprdrClientContext *cliprdr, const CLIPRDR_FORMAT_LIST *list) {
+    XPRDPClipboard *c = XPClipboardFor(cliprdr);
+    if (list->numFormats || !c->_testListsOnWire)
+        c->_testListsOnWire++;
+    return CHANNEL_RC_OK;
+}
+
+static UINT XPTestFormatListResponse(CliprdrClientContext *cliprdr, const CLIPRDR_FORMAT_LIST_RESPONSE *response) {
+    return CHANNEL_RC_OK;
+}
+
+- (void)attachTestChannel {
+    CliprdrClientContext *cliprdr = calloc(1, sizeof(CliprdrClientContext));
+    cliprdr->ClientCapabilities = XPTestCapabilities;
+    cliprdr->ClientFormatList = XPTestFormatList;
+    cliprdr->ClientFormatListResponse = XPTestFormatListResponse;
+    (void)[self attachChannel:cliprdr];
+}
+
+- (void)detachTestChannel {
+    CliprdrClientContext *cliprdr = _cliprdr;
+    [self detachChannel:cliprdr];
+    free(cliprdr);
+}
+
+- (void)testServerReady {
+    (void)XPMonitorReady(_cliprdr, NULL);
+}
+
+- (void)testServerAnswersFormatList:(BOOL)ok {
+    CLIPRDR_FORMAT_LIST_RESPONSE response = {0};
+    response.common.msgFlags = ok ? CB_RESPONSE_OK : CB_RESPONSE_FAIL;
+    (void)XPServerFormatListResponse(_cliprdr, &response);
+}
+
+- (void)testServerSendsFormatList {
+    CLIPRDR_FORMAT_LIST list = {0};
+    (void)XPServerFormatList(_cliprdr, &list);
+}
+
+- (NSUInteger)testListsOnWire {
+    return _testListsOnWire;
 }
 
 @end
@@ -432,7 +535,8 @@ static UINT XPServerFormatList(CliprdrClientContext *cliprdr, const CLIPRDR_FORM
 }
 
 static UINT XPServerFormatListResponse(CliprdrClientContext *cliprdr, const CLIPRDR_FORMAT_LIST_RESPONSE *response) {
-    return CHANNEL_RC_OK;
+    XPRDPClipboard *c = XPClipboardFor(cliprdr);
+    return c ? [c serverFormatListResponse:response] : CHANNEL_RC_OK;
 }
 
 static UINT XPServerFormatDataRequest(CliprdrClientContext *cliprdr, const CLIPRDR_FORMAT_DATA_REQUEST *request) {

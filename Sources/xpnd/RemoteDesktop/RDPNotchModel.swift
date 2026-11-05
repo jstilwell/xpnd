@@ -49,8 +49,9 @@ struct RDPConnectionInfo: Equatable {
     var info: RDPConnectionInfo { get }
     /// Nothing unless connected.
     func send(_ steps: [RDPKeyStep])
-    /// Offers the files on the remote clipboard, clicks at `point` and sends Ctrl+V; false when it couldn't.
-    func pasteFiles(_ urls: [URL], at point: CGPoint) -> Bool
+    /// Offers the files on the remote clipboard and, once Windows has them, clicks at `point` and sends Ctrl+V.
+    /// `done` gets false when it was refused; then nothing is clicked or typed.
+    func pasteFiles(_ urls: [URL], at point: CGPoint, done: @escaping (Bool) -> Void)
     func setClipboardSync(_ on: Bool)
     /// Reconnects this session with `changes` applied; never saved to the connection or Settings.
     func reconnect(with changes: (inout RDPSessionConfig) -> Void)
@@ -87,6 +88,8 @@ struct RDPConnectionInfo: Equatable {
 
     /// Weak: the host owns the model (its drop handler calls in), so a strong reference would be a cycle.
     @ObservationIgnored private weak var actions: (any RDPNotchActions)?
+    /// The latest desktop drop; only it may report a refusal, as a newer drop ends an older one.
+    @ObservationIgnored private var latestPaste = 0
 
     init(actions: any RDPNotchActions) {
         self.actions = actions
@@ -160,10 +163,13 @@ struct RDPConnectionInfo: Equatable {
             notice = "Not connected"
         } else if !clipboardOn {
             notice = "Clipboard sync is off"
-        } else if actions?.pasteFiles(urls, at: point) == true {
-            notice = "Pasting \(Self.files(urls.count))…"
         } else {
-            notice = "Couldn't paste the files."
+            latestPaste += 1
+            let paste = latestPaste
+            notice = "Pasting \(Self.files(urls.count))…"
+            actions?.pasteFiles(urls, at: point) { [weak self] accepted in
+                if !accepted, self?.latestPaste == paste { self?.notice = "Couldn't paste the files." }
+            }
         }
         actions?.restoreFocus()
     }

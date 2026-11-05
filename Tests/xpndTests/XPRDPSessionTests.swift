@@ -275,9 +275,9 @@ struct XPRDPSessionTests {
         #expect(c.lastAnnouncedFormats == .text)
     }
 
-    @MainActor @Test func aFileOfferWithNoChannelIsRefused() {
+    @MainActor @Test func aFileOfferWithNoChannelIsRefused() async {
         let c = XPRDPClipboard()
-        #expect(!c.offerFileURLs([URL(fileURLWithPath: "/tmp/a.txt")]))  // no channel here
+        #expect(await !c.offerFileURLs([URL(fileURLWithPath: "/tmp/a.txt")]))  // no channel here
         #expect(c.lastAnnouncedFormats.isEmpty)
     }
 
@@ -358,12 +358,12 @@ struct XPRDPSessionTests {
         #expect(log.sent.isEmpty)
     }
 
-    @MainActor @Test func nothingHappensOnASessionThatIsNotConnected() {
+    @MainActor @Test func nothingHappensOnASessionThatIsNotConnected() async {
         let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
         #expect(s.prepare())
         s.sendKeySequence(steps(.scancode(0x1D, down: true), .pause(ms: 10), .text("x")))
         s.sendLeftClick(atViewPoint: NSPoint(x: 10, y: 10))
-        #expect(!s.offerFiles(forPaste: [URL(fileURLWithPath: "/tmp/a.txt")]))
+        #expect(await !s.offerFiles(forPaste: [URL(fileURLWithPath: "/tmp/a.txt")]))
         #expect(!s.requestDesktopFit())
         #expect(!s.requestDesktopWidth(1280, height: 720))
         #expect(!s.clipboardChannelLoaded)

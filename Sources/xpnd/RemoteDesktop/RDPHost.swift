@@ -16,7 +16,7 @@ import xpndRDP
     func sendLeftClick(atViewPoint point: NSPoint)
     func setClipboardSyncEnabled(_ enabled: Bool)
     var clipboardChannelLoaded: Bool { get }
-    func offerFiles(forPaste urls: [URL]) -> Bool
+    func offerFiles(forPaste urls: [URL], completion: @escaping (Bool) -> Void)
     var dropHandler: (([URL], NSPoint) -> Void)? { get set }
     func requestDesktopFit() -> Bool
     func requestDesktopWidth(_ width: Int, height: Int) -> Bool
@@ -223,11 +223,16 @@ extension RDPHost: RDPNotchActions {
         session.sendKeySequence(steps.map(\.objc))
     }
 
-    func pasteFiles(_ urls: [URL], at point: CGPoint) -> Bool {
-        guard isConnected, session.offerFiles(forPaste: urls) else { return false }
-        session.sendLeftClick(atViewPoint: point)
-        session.sendKeySequence(RDPKeySequence.ctrlV.map(\.objc))
-        return true
+    /// The offer only queues on the channel while input goes straight out, so nothing is clicked or typed
+    /// until the server has it: a Ctrl+V ahead of it would paste whatever Windows already held.
+    func pasteFiles(_ urls: [URL], at point: CGPoint, done: @escaping (Bool) -> Void) {
+        guard isConnected else { return done(false) }
+        session.offerFiles(forPaste: urls) { [weak self] accepted in
+            guard let self, accepted, isConnected else { return done(false) }
+            session.sendLeftClick(atViewPoint: point)
+            session.sendKeySequence(([.pause(ms: 100)] + RDPKeySequence.ctrlV).map(\.objc))
+            done(true)
+        }
     }
 
     func setClipboardSync(_ on: Bool) {

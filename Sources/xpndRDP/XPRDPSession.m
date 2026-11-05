@@ -432,8 +432,13 @@ static BOOL XPAddDrive(rdpSettings *settings, NSString *name, NSString *path) {
     return _view.clipboard.channelAttached;
 }
 
-- (BOOL)offerFilesForPaste:(NSArray<NSURL *> *)urls {
-    return self.live && [_view.clipboard offerFileURLs:urls];
+- (void)offerFilesForPaste:(NSArray<NSURL *> *)urls completion:(void (^)(BOOL accepted))completion {
+    if (self.live)
+        [_view.clipboard offerFileURLs:urls completion:completion];
+    else
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(NO);
+        });
 }
 
 /// Lock held. A monitor layout of `size` unless the desktop already has it; NO without Display Control.

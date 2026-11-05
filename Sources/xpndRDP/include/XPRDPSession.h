@@ -114,9 +114,11 @@ NS_SWIFT_UI_ACTOR
 - (void)setClipboardSyncEnabled:(BOOL)enabled;
 /// YES while the cliprdr channel is connected.
 @property (readonly) BOOL clipboardChannelLoaded;
-/// Offers `urls` (file URLs only) on the remote clipboard, and nothing else. NO unless connected, with the
-/// channel loaded and clipboard sync on.
-- (BOOL)offerFilesForPaste:(NSArray<NSURL *> *)urls;
+/// Offers `urls` (file URLs only) on the remote clipboard, and nothing else. `completion` runs once, on the main
+/// queue: YES when the server has accepted the offer, so a paste gets these files and not what Windows held.
+/// NO on a refusal, after 2 seconds, when the session ends or a newer offer replaces this one, and at once unless
+/// connected with the channel in sync and clipboard sync on.
+- (void)offerFilesForPaste:(NSArray<NSURL *> *)urls completion:(void (^)(BOOL accepted))completion;
 /// Set to take files dropped on `view`, with where they landed in its coordinates. Without it, or unless
 /// connected, `view` refuses them.
 @property (copy, nullable) void (^dropHandler)(NSArray<NSURL *> *urls, NSPoint viewPoint);
