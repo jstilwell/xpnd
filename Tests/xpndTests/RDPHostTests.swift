@@ -96,6 +96,27 @@ import xpndRDP
         #expect(host == nil)
     }
 
+    @Test func aTabClosedDuringACopyGoesAwayWhenTheCopyEnds() async throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "xpnd-host-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appending(path: "a.txt")
+        try Data("x".utf8).write(to: source)
+        let config = RDPOptions().resolved(over: .standard, host: "win", port: 3389, username: "me", domain: nil,
+                                           dropFolder: dir.appending(path: "drop").path)
+        let fake = fake
+        var host: RDPHost? = RDPHost(config: config, password: "p", gatewayPassword: nil, presentIn: { nil }, cleanup: { .never },
+                                     makeSession: { _, _, _, _, _ in fake })
+        weak let closed = host
+        #expect(host?.notch.dropOnNotch([source]) == true)
+        let copying = host?.notch.copying
+        await Task.yield() // the copy is on its way
+        host?.terminate()
+        host = nil
+        await copying?.value
+        #expect(closed == nil)
+    }
+
     @Test func aGoodPasswordIsKeptByALaterReconnect() {
         let (host, s) = host()
         host.session(s, didDisconnectWithErrorName: "ERRCONNECT_LOGON_FAILURE") // retyped on the sheet

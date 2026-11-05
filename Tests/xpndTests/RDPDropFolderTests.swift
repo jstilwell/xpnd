@@ -15,6 +15,15 @@ import xpndRDP
         try body(dir)
     }
 
+    private func inTemp(_ body: (URL) async throws -> Void) async throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "xpnd-drop-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let saved = RDPDropFolder.root
+        RDPDropFolder.root = dir.appending(path: "drop")
+        defer { RDPDropFolder.root = saved; try? FileManager.default.removeItem(at: dir) }
+        try await body(dir)
+    }
+
     private func file(_ name: String, in dir: URL, _ text: String = "data") throws -> URL {
         let url = dir.appending(path: name)
         try Data(text.utf8).write(to: url)
@@ -66,6 +75,20 @@ import xpndRDP
             #expect(RDPDropFolder.count(folder: RDPDropFolder.url(for: id)) == 3)
             let mode = try FileManager.default.attributesOfItem(atPath: RDPDropFolder.url(for: id).path)[.posixPermissions] as? Int
             #expect(mode == 0o700)
+        }
+    }
+
+    @Test func dropsCopiedAtOnceGoInTurnAndNeverShareAName() async throws {
+        try await inTemp { dir in
+            let folder = RDPDropFolder.url(for: UUID())
+            let a = try file("a.txt", in: dir)
+            let results = try await withThrowingTaskGroup(of: [String].self) { group in
+                for _ in 0..<8 { group.addTask { try await RDPDropFolder.copyInTurn([a, a], folder: folder).names } }
+                return try await group.reduce(into: []) { $0 += $1 }
+            }
+            #expect(results.count == 16)
+            #expect(Set(results).count == 16)
+            #expect(RDPDropFolder.count(folder: folder) == 16)
         }
     }
 

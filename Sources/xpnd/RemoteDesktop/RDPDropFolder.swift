@@ -3,6 +3,8 @@ import Foundation
 /// The per-connection folder redirected into a Windows session as drive `xpnd`. Files are copied in
 /// (the source stays) under names that are safe in a Windows shell; nothing outside the folder is written.
 enum RDPDropFolder {
+    typealias CopyResult = (names: [String], failures: [URL])
+
     /// Tests point this at a temporary directory.
     nonisolated(unsafe) static var root = ConnectionStore.defaultURL.deletingLastPathComponent().appending(path: "drop")
 
@@ -42,7 +44,18 @@ enum RDPDropFolder {
         }
     }
 
-    static func copyIn(_ sources: [URL], folder: URL) throws -> (names: [String], failures: [URL]) {
+    private static let copies = DispatchQueue(label: "com.jessestilwell.xpnd.drop-copy")
+
+    /// `copyIn`, off the caller's thread and one drop at a time, so two can't pick the same safe name (duplicate
+    /// tabs share a folder). A dispatch queue, not the cooperative pool: a copy from a NAS can block for minutes.
+    // shortcut: one queue for every connection, so a slow copy holds up another tab's drop; make it per folder if that bites.
+    static func copyInTurn(_ sources: [URL], folder: URL) async throws -> CopyResult {
+        try await withCheckedThrowingContinuation { continuation in
+            copies.async { continuation.resume(with: Result { try copyIn(sources, folder: folder) }) }
+        }
+    }
+
+    static func copyIn(_ sources: [URL], folder: URL) throws -> CopyResult {
         let fm = FileManager.default
         try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let tree = root.resolvingSymlinksInPath().path + "/"

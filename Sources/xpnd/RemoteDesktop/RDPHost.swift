@@ -282,9 +282,9 @@ extension RDPHost: RDPNotchActions {
         config.dropFolder.map { RDPDropFolder.count(folder: URL(fileURLWithPath: $0)) } ?? 0
     }
 
-    func copyIntoDropFolder(_ urls: [URL]) throws -> (names: [String], failures: [URL]) {
+    func copyIntoDropFolder(_ urls: [URL]) async throws -> RDPDropFolder.CopyResult {
         guard let folder = config.dropFolder else { throw CocoaError(.fileNoSuchFile) }
-        return try RDPDropFolder.copyIn(urls, folder: URL(fileURLWithPath: folder))
+        return try await RDPDropFolder.copyInTurn(urls, folder: URL(fileURLWithPath: folder))
     }
 
     /// The user's Clear, whatever the cleanup policy; the folder is made again while the drive is redirected.

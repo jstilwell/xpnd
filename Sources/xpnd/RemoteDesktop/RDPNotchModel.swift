@@ -61,7 +61,8 @@ struct RDPConnectionInfo: Equatable {
     func toggleFullScreen()
     func restoreFocus()
     func dropFolderCount() -> Int
-    func copyIntoDropFolder(_ urls: [URL]) throws -> (names: [String], failures: [URL])
+    /// Off the main thread: a big file from a NAS would otherwise freeze every tab and snippet expansion.
+    func copyIntoDropFolder(_ urls: [URL]) async throws -> RDPDropFolder.CopyResult
     func clearDropFolder() throws
     func revealDropFolder()
     /// False when it couldn't be saved.
@@ -81,7 +82,6 @@ struct RDPConnectionInfo: Equatable {
     private(set) var clipboardOn: Bool
     private(set) var display: RDPOptions.Display
     private(set) var dropCount = 0
-    private(set) var lastDropNames: [String] = []
     /// The server turned down the last display choice in this connection.
     private(set) var displayRefused = false
     var notice: String?
@@ -90,6 +90,8 @@ struct RDPConnectionInfo: Equatable {
     @ObservationIgnored private weak var actions: (any RDPNotchActions)?
     /// The latest desktop drop; only it may report a refusal, as a newer drop ends an older one.
     @ObservationIgnored private var latestPaste = 0
+    /// The latest notch drop's copy. Internal for tests, which await it.
+    @ObservationIgnored private(set) var copying: Task<Void, Never>?
 
     init(actions: any RDPNotchActions) {
         self.actions = actions
@@ -174,7 +176,8 @@ struct RDPConnectionInfo: Equatable {
         actions?.restoreFocus()
     }
 
-    /// True when at least one file was copied.
+    /// True once the drop is accepted, which is what the drag waits for; the copy goes on after, and a closed tab
+    /// only misses its notice. The host stays alive until the copy returns.
     @discardableResult func dropOnNotch(_ urls: [URL]) -> Bool {
         defer { actions?.restoreFocus() }
         guard let actions else { return false }
@@ -182,20 +185,20 @@ struct RDPConnectionInfo: Equatable {
             notice = "The file drop drive is off for this connection."
             return false
         }
-        do {
-            let result = try actions.copyIntoDropFolder(urls)
-            lastDropNames = result.names
-            dropCount = actions.dropFolderCount()
-            let copied = result.names.isEmpty ? nil : "Copied \(Self.files(result.names.count)) into the xpnd drive"
-            let n = result.failures.count
-            let failed = n == 0 ? nil : "\(n) item\(n == 1 ? "" : "s") couldn't be copied (folders aren't supported)."
-            notice = [copied.map { failed == nil ? $0 : $0 + "." }, failed].compactMap { $0 }.joined(separator: " ")
-            if notice?.isEmpty == true { notice = "Nothing to copy." }
-            return !result.names.isEmpty
-        } catch {
-            notice = "Couldn't copy into the xpnd drive."
+        guard !urls.isEmpty else {
+            notice = "Nothing to copy."
             return false
         }
+        notice = "Copying \(Self.files(urls.count))…"
+        copying = Task { [weak self, weak actions] in
+            do {
+                guard let result = try await actions?.copyIntoDropFolder(urls) else { return }
+                self?.noteCopied(result)
+            } catch {
+                self?.notice = "Couldn't copy into the xpnd drive."
+            }
+        }
+        return true
     }
 
     /// Windows can save into the drive, so the count is read again when it's about to show.
@@ -209,7 +212,6 @@ struct RDPConnectionInfo: Equatable {
     func clearDropFolder() {
         do { try actions?.clearDropFolder() } catch { notice = "Couldn't clear the drop folder." }
         dropCount = actions?.dropFolderCount() ?? 0
-        lastDropNames = []
         actions?.restoreFocus()
     }
 
@@ -237,6 +239,14 @@ struct RDPConnectionInfo: Equatable {
     func restoreFocus() { actions?.restoreFocus() }
 
     // MARK: Private
+
+    private func noteCopied(_ result: RDPDropFolder.CopyResult) {
+        refreshDropCount()
+        let copied = result.names.isEmpty ? nil : "Copied \(Self.files(result.names.count)) into the xpnd drive"
+        let n = result.failures.count
+        let failed = n == 0 ? nil : "\(n) item\(n == 1 ? "" : "s") couldn't be copied (folders aren't supported)."
+        notice = [copied.map { failed == nil ? $0 : $0 + "." }, failed].compactMap { $0 }.joined(separator: " ")
+    }
 
     private func send(_ steps: [RDPKeyStep]) {
         if actions?.isConnected == true { actions?.send(steps) } else { notice = "Not connected" }

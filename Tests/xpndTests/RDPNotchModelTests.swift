@@ -16,7 +16,11 @@ import xpndRDP
     var pasteDone: ((Bool) -> Void)?
     var displayResult = true
     var dropCount = 0
-    var copyResult: (names: [String], failures: [URL]) = ([], [])
+    var copyResult: RDPDropFolder.CopyResult = ([], [])
+    var copyError: (any Error)?
+    /// Set to hold copies until a test resumes `copyGate`.
+    var holdCopies = false
+    var copyGate: CheckedContinuation<Void, Never>?
     var reconfigured: [RDPSessionConfig] = []
     var saveResult = true
 
@@ -33,8 +37,11 @@ import xpndRDP
     func toggleFullScreen() { calls.append("toggleFullScreen") }
     func restoreFocus() { calls.append("restoreFocus") }
     func dropFolderCount() -> Int { dropCount }
-    func copyIntoDropFolder(_ urls: [URL]) throws -> (names: [String], failures: [URL]) {
-        calls.append("copyIntoDropFolder"); return copyResult
+    func copyIntoDropFolder(_ urls: [URL]) async throws -> RDPDropFolder.CopyResult {
+        calls.append("copyIntoDropFolder")
+        if holdCopies { await withCheckedContinuation { copyGate = $0 } }
+        if let copyError { throw copyError }
+        return copyResult
     }
     func clearDropFolder() throws { calls.append("clearDropFolder"); dropCount = 0 }
     func revealDropFolder() { calls.append("revealDropFolder") }
@@ -126,35 +133,77 @@ import xpndRDP
         #expect(model.notice == "Couldn't paste the files.")
     }
 
-    @Test func notchDropGoesToTheDrive() {
+    /// Drops and waits for the copy, as the notch's notices then stand.
+    private func dropOnNotch(_ urls: [URL]) async {
+        model.dropOnNotch(urls)
+        await model.copying?.value
+    }
+
+    private func copyHasStarted() async {
+        while fake.copyGate == nil { await Task.yield() }
+    }
+
+    @Test func notchDropGoesToTheDrive() async {
         fake.copyResult = (["a.txt", "b.txt"], [])
         fake.dropCount = 2
-        model.dropOnNotch([url, url])
-        #expect(fake.calls == ["copyIntoDropFolder", "restoreFocus"])
+        await dropOnNotch([url, url])
+        #expect(fake.calls == ["restoreFocus", "copyIntoDropFolder"])
         #expect(model.dropCount == 2)
-        #expect(model.lastDropNames == ["a.txt", "b.txt"])
         #expect(model.notice == "Copied 2 files into the xpnd drive")
     }
 
-    @Test func notchDropNoticesCountSingularAndPluralAndNeverNames() {
-        fake.copyResult = (["secret.txt"], [])
-        model.dropOnNotch([url])
+    @Test func notchDropSaysItIsCopyingAndReturnsAtOnce() async {
+        fake.holdCopies = true
+        fake.copyResult = (["a"], [])
+        fake.dropCount = 1
+        #expect(model.dropOnNotch([url, url, url]))
+        #expect(model.notice == "Copying 3 files…")
+        await copyHasStarted()
+        #expect(model.notice == "Copying 3 files…")
+        #expect(model.dropCount == 0)
+        fake.copyGate?.resume()
+        await model.copying?.value
         #expect(model.notice == "Copied 1 file into the xpnd drive")
-        fake.copyResult = (["a", "b"], [url])
-        model.dropOnNotch([url])
-        #expect(model.notice == "Copied 2 files into the xpnd drive. 1 item couldn't be copied (folders aren't supported).")
-        fake.copyResult = (["a"], [url, url])
-        model.dropOnNotch([url])
-        #expect(model.notice == "Copied 1 file into the xpnd drive. 2 items couldn't be copied (folders aren't supported).")
-        fake.copyResult = ([], [url])
-        model.dropOnNotch([url])
-        #expect(model.notice == "1 item couldn't be copied (folders aren't supported).")
-        #expect(model.lastDropNames.isEmpty)
+        #expect(model.dropCount == 1)
     }
 
-    @Test func notchDropWithTheDriveOffCopiesNothing() {
+    @Test func aFailedCopySaysSo() async {
+        fake.copyError = CocoaError(.fileNoSuchFile)
+        await dropOnNotch([url])
+        #expect(model.notice == "Couldn't copy into the xpnd drive.")
+    }
+
+    @Test func aTabClosedDuringACopyIsLeftAlone() async {
+        var model: RDPNotchModel? = RDPNotchModel(actions: fake)
+        weak let closed = model
+        fake.holdCopies = true
+        model?.dropOnNotch([url])
+        let copying = model?.copying
+        await copyHasStarted()
+        model = nil
+        #expect(closed == nil)
+        fake.copyGate?.resume()
+        await copying?.value
+    }
+
+    @Test func notchDropNoticesCountSingularAndPluralAndNeverNames() async {
+        fake.copyResult = (["secret.txt"], [])
+        await dropOnNotch([url])
+        #expect(model.notice == "Copied 1 file into the xpnd drive")
+        fake.copyResult = (["a", "b"], [url])
+        await dropOnNotch([url])
+        #expect(model.notice == "Copied 2 files into the xpnd drive. 1 item couldn't be copied (folders aren't supported).")
+        fake.copyResult = (["a"], [url, url])
+        await dropOnNotch([url])
+        #expect(model.notice == "Copied 1 file into the xpnd drive. 2 items couldn't be copied (folders aren't supported).")
+        fake.copyResult = ([], [url])
+        await dropOnNotch([url])
+        #expect(model.notice == "1 item couldn't be copied (folders aren't supported).")
+    }
+
+    @Test func notchDropWithTheDriveOffCopiesNothing() async {
         fake.config.dropDrive = false
-        model.dropOnNotch([url])
+        await dropOnNotch([url])
         #expect(fake.calls == ["restoreFocus"])
         #expect(model.notice == "The file drop drive is off for this connection.")
         // The desktop still takes a drop: it uses the clipboard.
@@ -281,11 +330,10 @@ import xpndRDP
         #expect(!model.driveIsOn)
     }
 
-    @Test func aNotchDropReportsWhetherAnythingWasAccepted() {
-        fake.copyResult = (["a"], [url])
-        #expect(model.dropOnNotch([url, url]))
-        fake.copyResult = ([], [url])
-        #expect(!model.dropOnNotch([url]))
+    @Test func aNotchDropReportsWhetherItWasAccepted() {
+        #expect(model.dropOnNotch([url]))
+        #expect(!model.dropOnNotch([]))
+        #expect(model.notice == "Nothing to copy.")
         fake.config.dropDrive = false
         #expect(!model.dropOnNotch([url]))
     }
