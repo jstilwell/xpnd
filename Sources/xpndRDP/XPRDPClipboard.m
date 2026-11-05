@@ -1,5 +1,6 @@
 // FreeRDP and winpr before Cocoa: see XPRDPVersion.m.
 #include <winpr/clipboard.h>
+#include <winpr/wlog.h>
 #include <freerdp/client/client_cliprdr_file.h>
 #include <freerdp/utils/cliprdr_utils.h>
 
@@ -23,12 +24,14 @@ static UINT XPServerFormatDataResponse(CliprdrClientContext *, const CLIPRDR_FOR
 @implementation XPRDPClipboard {
     NSLock *_lock;  // everything below
     wClipboard *_clip;
+    wClipboard *_fileClip;  // the channel's thread only, outside the lock: uri list → descriptors
     CliprdrFileContext *_file;
     CliprdrClientContext *_cliprdr;  // while attached
     BOOL _sync;                      // MonitorReady seen: the server takes format lists
     UINT32 _requestedFormatId;       // the server text format asked for, or 0
     NSString *_text;                 // the Mac clipboard's offer
     NSData *_uriList;
+    NSInteger _writtenChangeCount;  // main thread: the pasteboard change our own write of server text made
 }
 
 + (XPRDPClipboardFormats)formatsToAnnounceForPasteboardTypes:(NSArray<NSString *> *)types {
@@ -45,7 +48,12 @@ static UINT XPServerFormatDataResponse(CliprdrClientContext *, const CLIPRDR_FOR
 - (instancetype)init {
     if ((self = [super init])) {
         _lock = [NSLock new];
+        _writtenChangeCount = -1;
         _clip = ClipboardCreate();
+        _fileClip = ClipboardCreate();
+        // Both log local file names and paths (a name Windows refuses, a file that can't be opened).
+        WLog_SetLogLevel(WLog_Get("com.winpr.clipboard.synthetic.file"), WLOG_OFF);
+        WLog_SetLogLevel(WLog_Get("com.freerdp.client.common.cliprdr.file"), WLOG_OFF);
         _file = cliprdr_file_context_new((__bridge void *)self);  // unretained: the view owns self
         // Gates the file capability flags (cliprdr_file_context_current_flags), so it is needed for
         // Mac → Windows too.
@@ -58,6 +66,7 @@ static UINT XPServerFormatDataResponse(CliprdrClientContext *, const CLIPRDR_FOR
 - (void)dealloc {
     cliprdr_file_context_free(_file);
     ClipboardDestroy(_clip);
+    ClipboardDestroy(_fileClip);
 }
 
 static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
@@ -70,7 +79,7 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
 - (BOOL)attachChannel:(CliprdrClientContext *)cliprdr {
     [_lock lock];
     // Sets cliprdr->custom to the file context, and the lock, unlock and FileContents callbacks.
-    const BOOL ok = _clip && _file && cliprdr_file_context_init(_file, cliprdr);
+    const BOOL ok = _clip && _fileClip && _file && cliprdr_file_context_init(_file, cliprdr);
     if (ok) {
         cliprdr->MonitorReady = XPMonitorReady;
         cliprdr->ServerCapabilities = XPServerCapabilities;
@@ -199,15 +208,21 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     return rc;
 }
 
-/// Lock held: the files as a packed CLIPRDR_FILELIST, which the file context then serves FileContents for.
-- (nullable BYTE *)copyFileList:(UINT32 *)size {
-    const char *list = _uriList.bytes;
-    const size_t length = _uriList.length;
+/// The channel's thread, without the lock (a big folder takes a while to walk): `uriList` as a packed
+/// CLIPRDR_FILELIST, its files registered for the file context to serve FileContents from.
+// shortcut: one name Windows refuses (: ? * " < > |) anywhere in a copied folder fails the whole paste
+// (winpr's synthesizer gives up), upgrade by setting the clipboard delegate's IsFileNameComponentValid to skip such files.
+- (nullable BYTE *)copyFileList:(NSData *)uriList size:(UINT32 *)size {
+    const char *list = uriList.bytes;
+    const size_t length = uriList.length;
+    // update_client_data keeps the stream when the list is the one it has, and replaces it otherwise.
     if (!list || length > UINT32_MAX || !cliprdr_file_context_update_client_data(_file, list, length) ||
-        !ClipboardSetData(_clip, ClipboardRegisterFormat(_clip, XPMimeURIList), list, (UINT32)length))
+        !ClipboardSetData(_fileClip, ClipboardRegisterFormat(_fileClip, XPMimeURIList), list, (UINT32)length))
         return NULL;
     UINT32 descriptorsSize = 0;
-    FILEDESCRIPTORW *descriptors = ClipboardGetData(_clip, ClipboardRegisterFormat(_clip, XPFileGroupDescriptorW), &descriptorsSize);
+    FILEDESCRIPTORW *descriptors =
+        ClipboardGetData(_fileClip, ClipboardRegisterFormat(_fileClip, XPFileGroupDescriptorW), &descriptorsSize);
+    ClipboardEmpty(_fileClip);
     if (!descriptors)
         return NULL;
     BYTE *data = NULL;
@@ -227,21 +242,33 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     const UINT32 formatId = request->requestedFormatId;
     BYTE *data = NULL;
     UINT32 size = 0;
+    NSData *uriList = nil;
     if (formatId == ClipboardRegisterFormat(_clip, XPFileGroupDescriptorW)) {
-        data = [self copyFileList:&size];
+        uriList = _uriList;
     } else if (_text) {
         const char *utf8 = _text.UTF8String;
         if (ClipboardSetData(_clip, ClipboardRegisterFormat(_clip, XPMimeText), utf8, (UINT32)strlen(utf8) + 1))
             data = ClipboardGetData(_clip, formatId, &size);
+        ClipboardEmpty(_clip);
     }
-    ClipboardEmpty(_clip);
+    [_lock unlock];
+    if (uriList) {
+        data = [self copyFileList:uriList size:&size];
+        [_lock lock];
+        if (_uriList != uriList) {  // the Mac clipboard changed meanwhile: these files aren't on offer any more
+            free(data);
+            data = NULL;
+            if (!_text && !_uriList)
+                (void)cliprdr_file_context_clear(_file);  // nothing offered (a concealed copy): no reads at all
+        }
+        [_lock unlock];
+    }
     CLIPRDR_FORMAT_DATA_RESPONSE response = {0};
     response.common.msgType = CB_FORMAT_DATA_RESPONSE;
     response.common.msgFlags = data ? CB_RESPONSE_OK : CB_RESPONSE_FAIL;
     response.common.dataLen = data ? size : 0;
     response.requestedFormatData = data;
     const UINT rc = cliprdr->ClientFormatDataResponse(cliprdr, &response);
-    [_lock unlock];
     free(data);
     return rc;
 }
@@ -266,6 +293,8 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
             NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
             [pasteboard clearContents];
             [pasteboard setString:text forType:NSPasteboardTypeString];
+            // Announced back, this text would replace the richer copy Windows still holds (Excel cells...).
+            self->_writtenChangeCount = pasteboard.changeCount;
         });
     // A failed or late reply is dropped: an error here would end the channel's thread.
     return CHANNEL_RC_OK;
@@ -279,12 +308,17 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     return list ? [NSData dataWithBytesNoCopy:list length:size freeWhenDone:YES] : nil;
 }
 
+- (NSInteger)writtenChangeCount {
+    return _writtenChangeCount;
+}
+
 - (void)offerText:(nullable NSString *)text fileURIList:(nullable NSData *)uriList {
     [_lock lock];
     _text = [text copy];
     _uriList = [uriList copy];
-    // Files from an earlier copy are no longer served; a FileGroupDescriptorW request registers these.
-    if (_file)
+    // A paste Windows is reading keeps its files (it doesn't lock them: no CB_CAN_LOCK_CLIPDATA); the next
+    // FileGroupDescriptorW request replaces them. With nothing on offer (a concealed copy), none can be read.
+    if (_file && !_text && !_uriList)
         (void)cliprdr_file_context_clear(_file);
     if (_cliprdr && _sync)
         (void)[self sendFormatList];

@@ -6,7 +6,8 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /// One per view. The channel's callbacks come on FreeRDP's threads, the pasteboard from main; a lock
-/// serialises them, and nothing is kept in the winpr clipboard between calls (it only converts).
+/// serialises them. The winpr clipboards only convert: no data stays in them between calls, though winpr
+/// keeps the last file list's paths (its `localFiles`) until the next conversion.
 @interface XPRDPClipboard (Channel)
 /// FreeRDP's thread, when the cliprdr channel connects: installs every callback, its own and the file
 /// context's (lock, unlock, FileContents).
@@ -19,6 +20,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// Main thread: what the Mac clipboard now offers, nil for none. Announced at once if the channel is
 /// ready, otherwise when the server says it is (MonitorReady).
 - (void)offerText:(nullable NSString *)text fileURIList:(nullable NSData *)uriList;
+/// Main thread: the pasteboard's changeCount after it last wrote the server's text there, which the
+/// poll skips.
+@property (readonly) NSInteger writtenChangeCount;
 @end
 
 NS_ASSUME_NONNULL_END

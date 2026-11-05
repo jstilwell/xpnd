@@ -1,5 +1,6 @@
 #import "XPRDPView.h"  // FreeRDP's headers first; see XPRDPView.h
 
+#include <os/log.h>
 #include <stdatomic.h>
 #include <freerdp/client/disp.h>
 #include <freerdp/crypto/certificate.h>
@@ -529,14 +530,10 @@ static size_t XPHandlerCount(wPubSub *pubSub, const char *event) {
     return type ? type->EventHandlerCount : 0;
 }
 
-/// The one handler subscribed to `event` since it had `before`, now unsubscribed; NULL, and nothing
-/// changed, when there isn't exactly one.
-static pEventHandler XPTakeHandlerAdded(wPubSub *pubSub, const char *event, size_t before) {
+/// The one handler subscribed to `event` since it had `before`; NULL when there isn't exactly one.
+static pEventHandler XPHandlerAdded(wPubSub *pubSub, const char *event, size_t before) {
     const wEventType *type = PubSub_FindEventType(pubSub, event);
-    const pEventHandler handler = type && type->EventHandlerCount == before + 1 ? type->EventHandlers[before] : NULL;
-    if (handler)
-        (void)PubSub_Unsubscribe(pubSub, event, handler);
-    return handler;
+    return type && type->EventHandlerCount == before + 1 ? type->EventHandlers[before] : NULL;
 }
 
 /// MRDPView's EndPaint waits on the main queue (dispatch_sync) for every frame, which deadlocks a
@@ -574,12 +571,20 @@ static BOOL XPPreConnect(freerdp *instance) {
     const size_t disconnected = XPHandlerCount(pubSub, "ChannelDisconnected");
     if (!mac_pre_connect(instance))
         return NO;
-    // Should a FreeRDP update change what mac_pre_connect subscribes, its handlers stay and run first:
-    // mac_cliprdr_init still runs, and XPRDPClipboard's attach, after it, replaces every callback it set.
-    atomic_store(&XPMacChannelConnected,
-                 (pChannelConnectedEventHandler)XPTakeHandlerAdded(pubSub, "ChannelConnected", connected));
-    atomic_store(&XPMacChannelDisconnected,
-                 (pChannelDisconnectedEventHandler)XPTakeHandlerAdded(pubSub, "ChannelDisconnected", disconnected));
+    // Both or neither, so mac_cliprdr_init and mac_cliprdr_uninit stay paired. Should a FreeRDP update
+    // change what mac_pre_connect subscribes, its handlers stay and run first: mac_cliprdr_init still runs,
+    // and XPRDPClipboard's attach, after it, replaces every callback it set.
+    pEventHandler mac = XPHandlerAdded(pubSub, "ChannelConnected", connected);
+    pEventHandler macDisconnected = XPHandlerAdded(pubSub, "ChannelDisconnected", disconnected);
+    if (mac && macDisconnected) {
+        (void)PubSub_Unsubscribe(pubSub, "ChannelConnected", mac);
+        (void)PubSub_Unsubscribe(pubSub, "ChannelDisconnected", macDisconnected);
+    } else {
+        os_log_error(os_log_create("com.jessestilwell.xpnd", "rdp"), "MRDPView's channel handlers not found; FreeRDP's Mac clipboard runs first");
+        mac = macDisconnected = NULL;
+    }
+    atomic_store(&XPMacChannelConnected, (pChannelConnectedEventHandler)mac);
+    atomic_store(&XPMacChannelDisconnected, (pChannelDisconnectedEventHandler)macDisconnected);
     rdpUpdate *update = context->update;
     atomic_store(&XPMacDesktopResize, update->DesktopResize);
     update->DesktopResize = XPDesktopResize;

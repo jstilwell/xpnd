@@ -355,6 +355,10 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     const NSInteger changeCount = pasteboard.changeCount;
     if (!mfc || !pasteboard || changeCount == pasteboard_changecount)
         return;
+    if (changeCount == _clipboard.writtenChangeCount) {
+        pasteboard_changecount = (int)changeCount;  // the server's own text: Windows keeps its richer copy
+        return;
+    }
     NSArray<NSPasteboardItem *> *items = pasteboard.pasteboardItems;
     NSMutableArray<NSString *> *types = [NSMutableArray array];
     for (NSPasteboardItem *item in items)
