@@ -46,8 +46,8 @@ handle and have it land on the Windows side.
   `0700` permissions.
 - **Drop on the desktop = paste it there** (decided by the user): files dropped from Finder onto
   the desktop itself are offered on the remote clipboard exactly as a Finder copy is (the
-  `FileGroupDescriptorW` path), then xpnd sends a click at the drop point (so the window under the
-  cursor has focus) and Ctrl+V. Explorer pastes them into the folder shown; Windows pulls the bytes
+  `FileGroupDescriptorW` path), then, once the server has accepted the offer, xpnd sends a click at
+  the drop point (so the window under the cursor has focus) and Ctrl+V. Explorer pastes them into the folder shown; Windows pulls the bytes
   from the Mac as it pastes. The offer stays until the next clipboard change, so a second Ctrl+V
   by the user pastes again. Nothing is typed into a Run box; the earlier "Also copy to" idea is
   dropped.

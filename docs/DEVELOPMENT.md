@@ -114,17 +114,24 @@ again after every build.
   are written back to `RDPHost.config` so a retry keeps them. `RDPNotch` is the SwiftUI overlay
   `TerminalWorkspace` draws over the desktop (handle, row, Display/Files/Info popovers; hover timing,
   pin, and a hidden ⌘⇧N button present only on a desktop tab). `RDPKeySequence` builds the key
-  steps (Ctrl+Alt+Delete, Win+R, Ctrl+V, typing `\\tsclient\xpnd` into Run) that `XPRDPSession` plays on its own
-  thread (`XPRDPKeyPlayer`, FreeRDP scancodes); the session also has `setClipboardSyncEnabled:`,
-  `offerFilesForPaste:` (file URLs only), `sendLeftClickAtViewPoint:`, `reconnectWithSettings:`, a
-  `connectionInfo` snapshot and `dropHandler`, which `XPRDPView` calls with the drop point.
+  steps (Ctrl+Alt+Delete, Win+R, Ctrl+V, typing `\\tsclient\xpnd` into Run) that `XPRDPSession` plays on the main
+  thread, waiting out pauses without blocking it (`XPRDPKeyPlayer`, FreeRDP scancodes); the session also has
+  `setClipboardSyncEnabled:`, `offerFilesForPaste:completion:` (file URLs only),
+  `sendLeftClickAtViewPoint:`, `reconnectWithSettings:`, `noteCommandUsed`, a `connectionInfo` snapshot and
+  `dropHandler`, which `XPRDPView` calls with the drop point (never one on a letterbox bar).
   `RDPFileDropTarget` is an `NSViewRepresentable` registering only `.fileURL` for the handle, row and Files
   popover, because SwiftUI's `.dropDestination` registers other types and loses a Finder drag to the
-  desktop view beneath. A drop on the desktop becomes `pasteFiles` (offer the files, click there, send
-  Ctrl+V); one on the notch becomes `copyIntoDropFolder`.
+  desktop view beneath. A drop on the desktop becomes `pasteFiles`: offer the files, wait for
+  the server's Format List Response, and only then click there, pause 100 ms and send Ctrl+V, because the
+  list queues on the channel while input goes straight to the transport. `XPRDPClipboard` counts the lists in
+  flight, so the offer's response is the one that leaves none; a newer list on either side, the session ending
+  or 2 seconds refuse the offer, and nothing is clicked or typed. One on the notch becomes
+  `copyIntoDropFolder`, which runs on `RDPDropFolder`'s serial queue, one drop at a time for the whole app.
+  ⌘ held on a desktop is decided by the next key, so `TerminalSessions.shortcut` (every hidden shortcut) and
+  `RDPHost.restoreFocus` (every notch action) call `noteCommandUsed`, or its release would tap the Windows key.
   `RDPDropFolder` owns `<Application Support>/xpnd/drop/<connection id>` (mode 0700): `copyIn` (sanitised
-  names, no directories, no sources inside the tree), `count`, `clear`, `clearAll`, and the launch,
-  disconnect and 7-day cleanup. `XPAddDrive` adds the drive as `freerdp_device_new` plus
+  names, no directories, no sources inside the tree), `copyInTurn`, `count` (hidden files skipped), `clear`,
+  `clearAll`, and the launch, disconnect and 7-day cleanup. `XPAddDrive` adds the drive as `freerdp_device_new` plus
   `freerdp_device_collection_add` (not `freerdp_client_add_drive`, which skips a missing folder), named
   `xpnd`, only when `RDPSessionConfig.driveDevice()` is non-nil. Its scope is that one folder, read-write:
   the server can write, rename or delete inside it, and fill the disk, but not reach anything else.
