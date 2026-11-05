@@ -10,6 +10,11 @@ enum RDPDropFolder {
         root.appending(path: connectionID.uuidString, directoryHint: .isDirectory)
     }
 
+    /// Before a connect: on first use, or after a cleanup, there is no folder to redirect.
+    static func ensureExists(folder: URL) {
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    }
+
     private static let reservedDeviceNames: Set<String> =
         Set(["CON", "PRN", "AUX", "NUL"] + (1...9).flatMap { ["COM\($0)", "LPT\($0)"] })
 

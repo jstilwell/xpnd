@@ -46,7 +46,7 @@ extension XPRDPSession: RDPSessionControlling {}
     init(config: RDPSessionConfig, password: String, gatewayPassword: String?, presentIn: @escaping () -> NSWindow?,
          retryDelay: Duration = RDPReconnectPolicy.delay,
          cleanup: @escaping @MainActor () -> DropFolderCleanup = { AppSettings.shared.remoteDesktop.dropFolderCleanup },
-         makeSession: @MainActor ([RDPSetting], String, String?, any XPRDPSessionDelegate) -> any RDPSessionControlling = RDPHost.makeSession) {
+         makeSession: @MainActor ([RDPSetting], String, String?, (name: String, path: String)?, any XPRDPSessionDelegate) -> any RDPSessionControlling = RDPHost.makeSession) {
         self.config = config
         self.presentIn = presentIn
         self.retryDelay = retryDelay
@@ -58,8 +58,9 @@ extension XPRDPSession: RDPSessionControlling {}
         let size = window?.contentLayoutRect.size ?? NSSize(width: 1000, height: 640)
         let settings = config.freerdpSettings(
             configPath: Self.configPath, viewPixelSize: (Int(size.width * scale), Int(size.height * scale)))
-        session = makeSession(settings, password, gatewayPassword, self)
+        session = makeSession(settings, password, gatewayPassword, config.driveDevice(), self)
         session.commandAsWindowsKey = config.commandAsWindowsKey
+        ensureDropFolder()
         if !session.start() {
             Task { [weak self] in self?.onDisconnect?(RDPErrorText.startFailed) } // after `onDisconnect` is set
         }
@@ -67,10 +68,10 @@ extension XPRDPSession: RDPSessionControlling {}
 
     /// The real session; FreeRDP's known-hosts directory is made first.
     static func makeSession(_ settings: [RDPSetting], password: String, gatewayPassword: String?,
-                            delegate: any XPRDPSessionDelegate) -> any RDPSessionControlling {
+                            drive: (name: String, path: String)?, delegate: any XPRDPSessionDelegate) -> any RDPSessionControlling {
         try? FileManager.default.createDirectory(atPath: configPath, withIntermediateDirectories: true)
         return XPRDPSession(settings: settings.map { [$0.name, $0.value] }, password: password,
-                            gatewayPassword: gatewayPassword, delegate: delegate)
+                            gatewayPassword: gatewayPassword, driveName: drive?.name, drivePath: drive?.path, delegate: delegate)
     }
 
     func terminate() {
@@ -89,6 +90,7 @@ extension XPRDPSession: RDPSessionControlling {}
         retries = 0
         // FreeRDP asks (the password sheet) only when it has no password.
         if RDPErrorText.needsNewPassword(lastError) { session.forgetPassword() }
+        ensureDropFolder()
         session.reconnect()
     }
 
@@ -127,6 +129,7 @@ extension XPRDPSession: RDPSessionControlling {}
         retry = Task { [weak self, retryDelay] in
             try? await Task.sleep(for: retryDelay)
             guard !Task.isCancelled else { return }
+            self?.ensureDropFolder()
             self?.session.reconnect() // a failure to start reports before it returns
         }
     }
@@ -142,6 +145,11 @@ extension XPRDPSession: RDPSessionControlling {}
         lastError = errorName
         clearDropFolder()
         onDisconnect?(RDPErrorText.isClean(errorName) ? nil : RDPErrorText.reason(forErrorName: errorName, afterConnect: hadConnected))
+    }
+
+    private func ensureDropFolder() {
+        guard let drive = config.driveDevice() else { return }
+        RDPDropFolder.ensureExists(folder: URL(fileURLWithPath: drive.path))
     }
 
     /// Only a final end calls this, never a reconnect retry: the session that comes back still needs its files.

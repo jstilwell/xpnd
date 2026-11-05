@@ -8,9 +8,11 @@ import xpndRDP
     let view = NSView()
     var commandAsWindowsKey = true
     var calls: [String] = []
-    func start() -> Bool { calls.append("start"); return true }
+    /// Runs as each connect begins, for what must already be true by then.
+    var onConnect: (() -> Void)?
+    func start() -> Bool { calls.append("start"); onConnect?(); return true }
     func stop() { calls.append("stop") }
-    func reconnect() { calls.append("reconnect") }
+    func reconnect() { calls.append("reconnect"); onConnect?() }
     func forgetPassword() { calls.append("forgetPassword") }
 }
 
@@ -21,7 +23,7 @@ import xpndRDP
         var config = RDPOptions().resolved(over: .standard, host: "win", port: 3389, username: "me", domain: nil)
         config.reconnectTries = tries
         let fake = fake
-        let host = RDPHost(config: config, password: "p", gatewayPassword: nil, presentIn: { nil }, retryDelay: delay, makeSession: { _, _, _, _ in fake })
+        let host = RDPHost(config: config, password: "p", gatewayPassword: nil, presentIn: { nil }, retryDelay: delay, makeSession: { _, _, _, _, _ in fake })
         // Only the delegate methods' first argument; never started.
         let session = XPRDPSession(settings: [], password: "", gatewayPassword: nil, delegate: host)
         return (host, session)

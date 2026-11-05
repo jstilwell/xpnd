@@ -21,6 +21,18 @@ import xpndRDP
         return url
     }
 
+    @Test func ensureExistsMakesAPrivateFolderAndLeavesOneThatIsThere() throws {
+        try inTemp { _ in
+            let folder = RDPDropFolder.url(for: UUID())
+            RDPDropFolder.ensureExists(folder: folder)
+            let mode = try FileManager.default.attributesOfItem(atPath: folder.path)[.posixPermissions] as? Int
+            #expect(mode == 0o700)
+            try Data("x".utf8).write(to: folder.appending(path: "a.txt"))
+            RDPDropFolder.ensureExists(folder: folder)
+            #expect(FileManager.default.fileExists(atPath: folder.appending(path: "a.txt").path))
+        }
+    }
+
     @Test func safeNamesStripShellCharacters() {
         #expect(RDPDropFolder.safeName("x\" & calc & \".txt", existing: []) == "x_ _ calc _ _.txt")
         #expect(RDPDropFolder.safeName("%PATH%.txt", existing: []) == "_PATH_.txt")
@@ -137,8 +149,57 @@ extension RDPDropFolderTests {
         config.reconnectTries = 2
         let fake = fake
         let host = RDPHost(config: config, password: "p", gatewayPassword: nil, presentIn: { nil }, retryDelay: .zero,
-                           cleanup: { policy }, makeSession: { _, _, _, _ in fake })
+                           cleanup: { policy }, makeSession: { _, _, _, _, _ in fake })
         await body(host, XPRDPSession(settings: [], password: "", gatewayPassword: nil, delegate: host), folder)
+    }
+
+    /// A host over a temporary root with no folder yet; `folderThere` records whether it existed at each connect.
+    private func hostWithoutFolder(dropDrive: Bool = true,
+                                   body: @MainActor (RDPHost, XPRDPSession, URL, @MainActor () -> [Bool], (name: String, path: String)?) async -> Void) async {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "xpnd-host-\(UUID().uuidString)")
+        let saved = RDPDropFolder.root
+        RDPDropFolder.root = dir.appending(path: "drop")
+        defer { RDPDropFolder.root = saved; try? FileManager.default.removeItem(at: dir) }
+        let folder = RDPDropFolder.url(for: UUID())
+        var config = RDPOptions().resolved(over: .standard, host: "win", port: 3389, username: "me", domain: nil, dropFolder: folder.path)
+        config.dropDrive = dropDrive
+        config.reconnectTries = 2
+        let session = FakeSession()
+        var there: [Bool] = []
+        session.onConnect = { there.append(FileManager.default.fileExists(atPath: folder.path)) }
+        var drive: (name: String, path: String)?
+        let host = RDPHost(config: config, password: "p", gatewayPassword: nil, presentIn: { nil }, retryDelay: .zero, cleanup: { .never },
+                           makeSession: { _, _, _, d, _ in drive = d; return session })
+        await body(host, XPRDPSession(settings: [], password: "", gatewayPassword: nil, delegate: host), folder, { there }, drive)
+    }
+
+    @Test func theDriveReachesTheSession() async {
+        await hostWithoutFolder { _, _, folder, _, drive in
+            #expect(drive?.name == "xpnd")
+            #expect(drive?.path == folder.path)
+        }
+        await hostWithoutFolder(dropDrive: false) { _, _, _, _, drive in #expect(drive == nil) }
+    }
+
+    @Test func theFolderExistsBeforeEveryConnect() async {
+        await hostWithoutFolder { host, s, folder, there, _ in
+            #expect(there() == [true])  // first use
+            try? FileManager.default.removeItem(at: folder)  // cleanup on disconnect, then Reconnect
+            host.reconnect()
+            #expect(there() == [true, true])
+            host.sessionDidConnect(s)
+            try? FileManager.default.removeItem(at: folder)
+            host.session(s, didDisconnectWithErrorName: "ERRCONNECT_CONNECT_TRANSPORT_FAILED")
+            await host.retry?.value
+            #expect(there() == [true, true, true])
+        }
+    }
+
+    @Test func noDriveMakesNoFolder() async {
+        await hostWithoutFolder(dropDrive: false) { host, _, _, there, _ in
+            host.reconnect()
+            #expect(there() == [false, false])
+        }
     }
 
     @Test func theDropFolderIsClearedOnlyWhenTheSessionReallyEnds() async throws {
