@@ -27,6 +27,8 @@ import xpndRDP
     func requestDesktopFit() -> Bool { calls.append("fit"); return true }
     func requestDesktopWidth(_ width: Int, height: Int) -> Bool { calls.append("size \(width)x\(height)"); return true }
     var connectionInfo = XPRDPConnectionInfo()
+    var commandUsed = 0
+    func noteCommandUsed() { commandUsed += 1 }
 }
 
 @MainActor struct RDPHostTests {
@@ -263,6 +265,14 @@ import xpndRDP
         fake.offerDone?(true) // accepted just before the end, and queued on main behind it
         #expect(fake.calls == ["start", "offer"])
         #expect(host.notch.notice == "Couldn't paste the files.")
+    }
+
+    @Test func aHeldCommandIsSpentByAShortcutOrANotchButton() {
+        let (host, _) = host()
+        host.noteCommandUsed() // a hidden shortcut
+        #expect(fake.commandUsed == 1)
+        host.notch.togglePin() // every notch action ends in restoreFocus, so a ⌘-click is covered
+        #expect(fake.commandUsed == 2)
     }
 
     @Test func aRetryCarriesLiveDisplayAndClipboardChanges() async {

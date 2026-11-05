@@ -109,6 +109,9 @@ NS_SWIFT_UI_ACTOR
 /// One left click, down then up, at `point` in `view`'s coordinates. Nothing unless connected.
 - (void)sendLeftClickAtViewPoint:(NSPoint)point;
 
+/// xpnd used the ⌘ being held (a shortcut, a ⌘-click on its own controls), so releasing it doesn't tap the Windows key.
+- (void)noteCommandUsed;
+
 /// NO stops the pasteboard poll, sends an empty format list and ignores the server's lists; it lasts across
 /// reconnects, until YES.
 - (void)setClipboardSyncEnabled:(BOOL)enabled;

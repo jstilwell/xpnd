@@ -96,20 +96,22 @@ struct TerminalWorkspace: View {
     /// SwiftUI shortcut in the key window is offered before the main menu).
     private var shortcuts: some View {
         Group {
-            Button("Close Tab") { if let session = sessions.selectedSession { close(session) } }
+            Button("Close Tab") { sessions.shortcut { if let session = sessions.selectedSession { close(session) } } }
                 .keyboardShortcut("w", modifiers: .command)
             // ⌘⇧] arrives as "}": SwiftUI never matches "]" with .shift.
-            Button("Next Tab") { cycle(1) }.keyboardShortcut("}", modifiers: .command)
-            Button("Previous Tab") { cycle(-1) }.keyboardShortcut("{", modifiers: .command)
+            Button("Next Tab") { sessions.shortcut { cycle(1) } }.keyboardShortcut("}", modifiers: .command)
+            Button("Previous Tab") { sessions.shortcut { cycle(-1) } }.keyboardShortcut("{", modifiers: .command)
             ForEach(1...9, id: \.self) { number in
                 Button("Tab \(number)") {
-                    if sessions.sessions.indices.contains(number - 1) { sessions.selected = sessions.sessions[number - 1].id }
+                    sessions.shortcut {
+                        if sessions.sessions.indices.contains(number - 1) { sessions.selected = sessions.sessions[number - 1].id }
+                    }
                 }
                 .keyboardShortcut(KeyEquivalent(Character(String(number))), modifiers: .command)
             }
             // Only on a desktop tab, so a terminal still receives ⌘⇧N. A real ⌘⇧N matches "n" with .shift, not "N".
             if let notch = (sessions.selectedSession?.host as? RDPHost)?.notch {
-                Button("Toggle Notch") { notch.isExpanded.toggle() }.keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("Toggle Notch") { sessions.shortcut { notch.isExpanded.toggle() } }.keyboardShortcut("n", modifiers: [.command, .shift])
             }
         }
         .opacity(0)
@@ -134,6 +136,13 @@ struct TerminalWorkspace: View {
 
 extension TerminalSessions {
     var selectedSession: TerminalSession? { sessions.first { $0.id == selected } }
+
+    /// What every hidden shortcut runs through. It fires before the desktop's `performKeyEquivalent:`, so the
+    /// selected tab must hear that ⌘ was used, or releasing it taps the Windows key.
+    func shortcut(_ action: () -> Void) {
+        selectedSession?.host.noteCommandUsed()
+        action()
+    }
 
     /// Gives the selected tab's terminal the keyboard.
     func focusSelected() {

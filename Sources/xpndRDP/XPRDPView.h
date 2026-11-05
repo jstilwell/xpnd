@@ -37,6 +37,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)sendText:(NSString *)text;
 /// Main thread: one left click at `point`, in the view's coordinates.
 - (void)sendLeftClickAtViewPoint:(NSPoint)point;
+/// Main thread: xpnd took the ⌘ being held, so its release isn't a tap of the Windows key.
+- (void)noteCommandUsed;
 /// Main thread: the clipboard's switch; on again, the poll announces what the pasteboard holds now.
 - (void)setClipboardSyncEnabled:(BOOL)enabled;
 @end

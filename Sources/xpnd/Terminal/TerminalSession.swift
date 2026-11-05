@@ -26,6 +26,8 @@ enum TabRequest: Equatable {
     func apply(_ settings: BuiltInTerminalSettings)
     /// Connects again after a disconnect.
     func reconnect()
+    /// A shortcut of xpnd's used the ⌘ held down: a remote desktop mustn't take its release as a tap.
+    func noteCommandUsed()
 }
 
 extension TerminalHost {
@@ -40,6 +42,7 @@ extension TerminalHost {
     }
 
     func reconnect() {}
+    func noteCommandUsed() {}
 }
 
 @MainActor @Observable final class TerminalSession: Identifiable {

@@ -21,6 +21,7 @@ import xpndRDP
     func requestDesktopFit() -> Bool
     func requestDesktopWidth(_ width: Int, height: Int) -> Bool
     var connectionInfo: XPRDPConnectionInfo { get }
+    func noteCommandUsed()
 }
 
 extension XPRDPSession: RDPSessionControlling {}
@@ -102,6 +103,8 @@ extension XPRDPSession: RDPSessionControlling {}
     }
 
     func apply(_ settings: BuiltInTerminalSettings) {}
+
+    func noteCommandUsed() { session.noteCommandUsed() }
 
     func reconnect() { reconnect(with: { _ in }) }
 
@@ -267,7 +270,11 @@ extension RDPHost: RDPNotchActions {
 
     func toggleFullScreen() { view.window?.toggleFullScreen(nil) }
 
-    func restoreFocus() { _ = view.window?.makeFirstResponder(view) }
+    /// Every notch action ends here, so a ⌘-click on a button doesn't count as tapping ⌘.
+    func restoreFocus() {
+        noteCommandUsed()
+        _ = view.window?.makeFirstResponder(view)
+    }
 
     func dropFolderCount() -> Int {
         config.dropFolder.map { RDPDropFolder.count(folder: URL(fileURLWithPath: $0)) } ?? 0

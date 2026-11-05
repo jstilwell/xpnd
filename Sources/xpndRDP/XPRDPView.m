@@ -247,8 +247,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 - (void)rightMouseDragged:(NSEvent *)event { [self sendMouse:event flags:PTR_FLAGS_MOVE]; }
 - (void)otherMouseDragged:(NSEvent *)event { [self sendMouse:event flags:PTR_FLAGS_MOVE]; }
 - (void)mouseDown:(NSEvent *)event {
-    if (_command == XPCommandPending)
-        _command = XPCommandUsed;  // ⌘-click
+    [self noteCommandUsed];  // ⌘-click
     [self sendButton:0 event:event down:YES];
 }
 - (void)mouseUp:(NSEvent *)event { [self sendButton:0 event:event down:NO]; }
@@ -307,6 +306,11 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     _command = next;
 }
 
+- (void)noteCommandUsed {
+    if (_command == XPCommandPending)
+        _command = XPCommandUsed;
+}
+
 - (void)flagsChanged:(NSEvent *)event {
     if (self.is_connected) {
         const BOOL down = (event.modifierFlags & XPCommandFlag) != 0;
@@ -344,9 +348,10 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
         [self keyDown:event];
         return YES;
     }
-    // Another ⌘ shortcut is xpnd's (⌘1, ⌘⇧]...); if nothing takes it, keyDown: sends it on as before.
-    if (focused && _command == XPCommandPending)
-        _command = XPCommandUsed;
+    // Another ⌘ shortcut may be a menu's; if nothing takes it, keyDown: sends it on as before. The tab shortcuts
+    // (⌘1, ⌘⇧]...) never get here: a hidden SwiftUI button fires first, and marks ⌘ through `noteCommandUsed`.
+    if (focused)
+        [self noteCommandUsed];
     return [super performKeyEquivalent:event];
 }
 

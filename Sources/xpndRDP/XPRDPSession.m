@@ -424,6 +424,10 @@ static BOOL XPAddDrive(rdpSettings *settings, NSString *name, NSString *path) {
         [_view sendLeftClickAtViewPoint:point];
 }
 
+- (void)noteCommandUsed {
+    [_view noteCommandUsed];
+}
+
 - (void)setClipboardSyncEnabled:(BOOL)enabled {
     [_view setClipboardSyncEnabled:enabled];
 }

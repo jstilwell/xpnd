@@ -16,6 +16,8 @@ import Testing
         reconnects += 1
         onReconnect()
     }
+    var commandUsed = 0
+    func noteCommandUsed() { commandUsed += 1 }
     func exit(_ status: Int32?) { onExit?(status) }
     func disconnect(_ reason: String?) { onDisconnect?(reason) }
 }
@@ -50,6 +52,20 @@ import Testing
 
     private func open(_ connection: Connection) -> TerminalSession.ID {
         sessions.open(.terminal(SSHCommand(arguments: ["ssh", connection.host])), for: connection, color: nil)
+    }
+
+    @Test func aShortcutTellsTheSelectedHostFirst() {
+        open("x")
+        open("y")
+        var seen: [Int] = []
+        sessions.shortcut { seen = hosts.all.map(\.commandUsed) }
+        #expect(seen == [0, 1])
+    }
+
+    @Test func aShortcutWithNoTabsStillRuns() {
+        var ran = false
+        sessions.shortcut { ran = true }
+        #expect(ran)
     }
 
     @Test func liveConnectionIDsFollowSessions() {
