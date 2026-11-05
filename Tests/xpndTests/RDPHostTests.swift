@@ -4,7 +4,7 @@ import Testing
 import xpndRDP
 
 /// Records what `RDPHost` asks of its session; nothing connects.
-@MainActor private final class FakeSession: RDPSessionControlling {
+@MainActor final class FakeSession: RDPSessionControlling {
     let view = NSView()
     var commandAsWindowsKey = true
     var calls: [String] = []
@@ -21,7 +21,7 @@ import xpndRDP
         var config = RDPOptions().resolved(over: .standard, host: "win", port: 3389, username: "me", domain: nil)
         config.reconnectTries = tries
         let fake = fake
-        let host = RDPHost(config: config, password: "p", gatewayPassword: nil, presentIn: { nil }, retryDelay: delay) { _, _, _, _ in fake }
+        let host = RDPHost(config: config, password: "p", gatewayPassword: nil, presentIn: { nil }, retryDelay: delay, makeSession: { _, _, _, _ in fake })
         // Only the delegate methods' first argument; never started.
         let session = XPRDPSession(settings: [], password: "", gatewayPassword: nil, delegate: host)
         return (host, session)

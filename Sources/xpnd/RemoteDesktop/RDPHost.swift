@@ -29,6 +29,7 @@ extension XPRDPSession: RDPSessionControlling {}
     private let presentIn: () -> NSWindow?
     private var session: (any RDPSessionControlling)!
     private let retryDelay: Duration
+    private let cleanup: @MainActor () -> DropFolderCleanup
     /// A connect succeeded since the last user start, so a transport failure is a drop worth retrying.
     private var hadConnected = false
     private var retries = 0
@@ -41,13 +42,15 @@ extension XPRDPSession: RDPSessionControlling {}
     private(set) var retry: Task<Void, Never>?
     private var sheet: NSWindow?
 
-    /// `makeSession` and `retryDelay` are for tests: a fake session, and no wait between retries.
+    /// `makeSession`, `retryDelay` and `cleanup` are for tests: a fake session, no wait between retries, a fixed policy.
     init(config: RDPSessionConfig, password: String, gatewayPassword: String?, presentIn: @escaping () -> NSWindow?,
          retryDelay: Duration = RDPReconnectPolicy.delay,
+         cleanup: @escaping @MainActor () -> DropFolderCleanup = { AppSettings.shared.remoteDesktop.dropFolderCleanup },
          makeSession: @MainActor ([RDPSetting], String, String?, any XPRDPSessionDelegate) -> any RDPSessionControlling = RDPHost.makeSession) {
         self.config = config
         self.presentIn = presentIn
         self.retryDelay = retryDelay
+        self.cleanup = cleanup
         super.init()
         // The tab's size isn't known yet: start from the window's, and Display Control corrects it once laid out.
         let window = presentIn()
@@ -74,6 +77,7 @@ extension XPRDPSession: RDPSessionControlling {}
         retry?.cancel()
         dismissSheet()
         session.stop()
+        clearDropFolder()
     }
 
     func apply(_ settings: BuiltInTerminalSettings) {}
@@ -136,7 +140,16 @@ extension XPRDPSession: RDPSessionControlling {}
 
     private func ended(_ errorName: String?) {
         lastError = errorName
+        clearDropFolder()
         onDisconnect?(RDPErrorText.isClean(errorName) ? nil : RDPErrorText.reason(forErrorName: errorName, afterConnect: hadConnected))
+    }
+
+    /// Only a final end calls this, never a reconnect retry: the session that comes back still needs its files.
+    private func clearDropFolder() {
+        guard let folder = config.dropFolder,
+              RDPDropFolder.shouldClear(policy: cleanup(), lastUse: nil, now: Date(), disconnecting: true) else { return }
+        // shortcut: duplicate tabs of a connection share one folder, so one ending clears it for the other; track open tabs per connection to fix.
+        try? RDPDropFolder.clear(folder: URL(fileURLWithPath: folder))
     }
 
     private func present(_ prompt: some View, orElse refuse: () -> Void) {
