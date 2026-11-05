@@ -75,6 +75,14 @@ extension TerminalHost {
     var selected: TerminalSession.ID?
 
     var liveCount: Int { sessions.filter(\.isLive).count }
+    /// Connections with a running session; one read per list lets SwiftUI track every session's state.
+    var liveConnectionIDs: Set<Connection.ID> { Set(sessions.filter(\.isLive).map(\.connectionID)) }
+
+    /// The connection's running session (the selected tab if it qualifies), else any tab it still has.
+    func session(for connectionID: Connection.ID) -> TerminalSession? {
+        let mine = sessions.filter { $0.connectionID == connectionID }
+        return mine.first { $0.isLive && $0.id == selected } ?? mine.first(where: \.isLive) ?? mine.first
+    }
 
     init(makeHost: @escaping @MainActor (TabRequest) -> any TerminalHost) {
         self.makeHost = makeHost

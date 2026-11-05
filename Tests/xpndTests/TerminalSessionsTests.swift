@@ -45,6 +45,41 @@ import Testing
                              for: Connection(name: name, type: .rdp, host: name), color: nil)
     }
 
+    private let connectionX = Connection(name: "x", host: "x")
+    private let connectionY = Connection(name: "y", host: "y")
+
+    private func open(_ connection: Connection) -> TerminalSession.ID {
+        sessions.open(.terminal(SSHCommand(arguments: ["ssh", connection.host])), for: connection, color: nil)
+    }
+
+    @Test func liveConnectionIDsFollowSessions() {
+        let a = open(connectionX)
+        open(connectionY)
+        #expect(sessions.liveConnectionIDs == [connectionX.id, connectionY.id])
+        hosts.all[1].exit(1)
+        #expect(sessions.liveConnectionIDs == [connectionX.id])
+        sessions.close(a)
+        #expect(sessions.liveConnectionIDs.isEmpty)
+    }
+
+    @Test func sessionForConnectionFindsTheLiveOne() {
+        let first = open(connectionX)
+        hosts.all[0].exit(1)
+        let second = open(connectionX)
+        #expect(sessions.session(for: connectionX.id)?.id == second)
+        #expect(sessions.session(for: connectionY.id) == nil)
+        sessions.close(second)
+        #expect(sessions.session(for: connectionX.id)?.id == first) // an ended tab can still be shown
+    }
+
+    @Test func sessionForConnectionPrefersTheSelectedTab() {
+        let first = open(connectionX)
+        let second = open(connectionX)
+        #expect(sessions.session(for: connectionX.id)?.id == second)
+        sessions.selected = first
+        #expect(sessions.session(for: connectionX.id)?.id == first)
+    }
+
     @Test func aDesktopReconnectingByItselfShowsAsRunningAgain() {
         let id = openDesktop("win")
         hosts.all[0].disconnect("the network connection was lost")

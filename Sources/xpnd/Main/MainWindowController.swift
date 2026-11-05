@@ -43,7 +43,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         self.cancelPasswordPhase = cancelPasswordPhase
         let editing = ConnectionEditing(
             store: connections, snippets: store, provider: provider, preferredAccount: preferredAccount,
-            keysDirectory: keysDirectory, connect: connect)
+            keysDirectory: keysDirectory, connect: connect,
+            disconnect: { id in
+                guard let session = sessions.session(for: id), session.isLive else { return }
+                confirmTerminate(count: 1, in: NSApp.keyWindow) { sessions.close(session.id) }
+            },
+            showSession: { id in
+                guard let session = sessions.session(for: id) else { return }
+                sessions.selected = session.id
+                model.hideEditor()
+                sessions.focusSelected()
+            })
         let host = NSHostingController(rootView: MainView(
             model: model, connections: editing, editing: SnippetEditing(store: store), sessions: sessions,
             duplicate: duplicate, openSettings: openSettings))
@@ -121,7 +131,7 @@ private struct MainView: View {
 
     var body: some View {
         NavigationSplitView {
-            Sidebar(connections: connections, editing: editing, selection: $model.selection, focus: $model.focus,
+            Sidebar(connections: connections, editing: editing, sessions: sessions, selection: $model.selection, focus: $model.focus,
                     openSettings: openSettings)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
@@ -148,7 +158,7 @@ private struct MainView: View {
     }
 
     private var details: some View {
-        DetailsPane(connections: connections, editing: editing, selection: $model.selection, focus: $model.focus)
+        DetailsPane(connections: connections, editing: editing, sessions: sessions, selection: $model.selection, focus: $model.focus)
     }
 
     private var editorCard: some View {

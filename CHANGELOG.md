@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 0.2.0 - Unreleased
 
 ### Fixed
+- A connected connection can be disconnected from its sidebar menu or its Details (Disconnect, after the usual confirmation), and Show Session jumps to its tab.
 - A Windows desktop tab no longer covers the tab bar, so you can switch tabs while it is showing.
 - The import preview lists the existing connections a Replace removes even when the file adds only folders.
 - The color picker's swatches show their colors in the open menu instead of white circles.
@@ -12,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - With more than one 1Password account, Settings → Password Manager asks which is yours instead of guessing the first, and the status check now asks 1Password for access rather than reporting "not signed in" on a working setup.
 
 ### Added
+- A small green dot at the right of a sidebar row shows a connection that is connected in a tab.
 - RDP connections: Windows desktops open as tabs beside SSH, with the domain login (`DOMAIN\user` or a separate domain) and password from 1Password, an RD Gateway, dynamic resize or a fixed size letterboxed in the tab, certificate and login prompts (asked again at once when the server rejects the login), and auto-reconnect after a lost connection. Settings → Remote Desktop and each connection's RDP options set the display, clipboard and sound. FreeRDP (Apache 2.0) is bundled.
 - A Windows desktop tab shares a per-connection drop folder as drive `xpnd`; Settings → Remote Desktop and each connection's RDP options turn it on or off, and Settings → Remote Desktop clears the folders never, on disconnect or after 7 days, or right away.
 - Files and folders copied in Finder can be pasted into a Windows desktop tab.

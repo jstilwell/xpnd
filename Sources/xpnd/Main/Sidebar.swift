@@ -37,6 +37,7 @@ enum SidebarItem: Hashable {
 struct Sidebar: View {
     let connections: ConnectionEditing
     let editing: SnippetEditing
+    let sessions: TerminalSessions
     @Binding var selection: SidebarItem?
     @Binding var focus: EditorFocus?
     let openSettings: () -> Void
@@ -89,16 +90,17 @@ struct Sidebar: View {
 
     private var connectionsSection: some View {
         let namespace = KeywordNamespace(snippets: editing.store.library, connections: connections.library)
+        let live = sessions.liveConnectionIDs
         return Section {
                 if searching {
                     ForEach(ConnectionFilter.filter(ConnectionFilter.entries(connections.library), query: search), id: \.connection.id) { entry in
                         sidebarRow(entry.connection.name, detail: entry.pathText, symbol: ConnectionNode(connection: entry.connection, inherited: nil).symbol,
-                                   color: entry.color)
+                                   color: entry.color, connected: live.contains(entry.connection.id))
                             .tag(SidebarItem.connection(entry.connection.id))
                     }
                 } else {
                     ForEach(connections.library.folders) { folder in
-                        FolderRows(folder: folder, namespace: namespace, drops: drops, inherited: nil, expanded: $expandedFolders)
+                        FolderRows(folder: folder, namespace: namespace, drops: drops, inherited: nil, live: live, expanded: $expandedFolders)
                     }
                     .dropDestination(for: String.self) { texts, index in
                         for item in sidebarItems(texts) { drops.insert(item, nil, index, .folders) }
@@ -260,7 +262,15 @@ struct Sidebar: View {
             }
             .disabled(readOnly)
         case .connection(let id)?:
-            Button("Connect") { connections.connect(id, false) }
+            if sessions.liveConnectionIDs.contains(id) {
+                Button("Disconnect") { connections.disconnect(id) }
+            }
+            if sessions.session(for: id) != nil {
+                Button("Show Session") { connections.showSession(id) }
+            }
+            if !sessions.liveConnectionIDs.contains(id) {
+                Button("Connect") { connections.connect(id, false) }
+            }
             Group {
                 Button("Duplicate") { select(connections.duplicate(id).map(SidebarItem.connection), focus: .name, else: .connection(id)) }
                 moveMenu(.connection(id))
@@ -333,11 +343,16 @@ private func sidebarItems(_ texts: [String]) -> [SidebarItem] {
     texts.compactMap(SidebarItem.init(dragText:))
 }
 
-private func sidebarRow(_ title: String, detail: String?, symbol: String, color: ItemColor? = nil) -> some View {
+private func sidebarRow(_ title: String, detail: String?, symbol: String, color: ItemColor? = nil, connected: Bool = false) -> some View {
     HStack {
         Label(title, systemImage: symbol).lineLimit(1).foregroundStyle(color?.ui ?? Color.primary)
         if let detail {
             Text(detail).font(.callout.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+        }
+        if connected {
+            Spacer(minLength: 0)
+            Image(systemName: "circle.fill").font(.system(size: 7)).foregroundStyle(.green)
+                .help("Connected").accessibilityLabel("Connected")
         }
     }
 }
@@ -359,6 +374,8 @@ private struct FolderRows: View {
     let drops: SidebarDrops
     /// The nearest ancestor's colour, for anything in here without its own.
     let inherited: ItemColor?
+    /// Connections with a running session.
+    let live: Set<Connection.ID>
     /// Every open folder in the tree, shared by all levels so the sidebar can toggle one on double-click.
     @Binding var expanded: Set<ConnectionFolder.ID>
     @State private var targeted = false
@@ -375,7 +392,7 @@ private struct FolderRows: View {
             ) {
                 ForEach(folder.connections) { connection in
                     let node = ConnectionNode(connection: connection, inherited: color)
-                    sidebarRow(node.title, detail: node.detail, symbol: node.symbol, color: node.color)
+                    sidebarRow(node.title, detail: node.detail, symbol: node.symbol, color: node.color, connected: live.contains(connection.id))
                         .tag(node.id)
                         .draggable(node.id.dragText)
                 }
@@ -383,7 +400,7 @@ private struct FolderRows: View {
                     for item in sidebarItems(texts) { drops.insert(item, folder.id, index, .connections) }
                 }
                 ForEach(folder.folders) { child in
-                    FolderRows(folder: child, namespace: namespace, drops: drops, inherited: color, expanded: $expanded)
+                    FolderRows(folder: child, namespace: namespace, drops: drops, inherited: color, live: live, expanded: $expanded)
                 }
                 .dropDestination(for: String.self) { texts, index in
                     for item in sidebarItems(texts) { drops.insert(item, folder.id, index, .folders) }

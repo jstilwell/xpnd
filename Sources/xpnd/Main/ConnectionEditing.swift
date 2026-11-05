@@ -296,17 +296,23 @@ final class ConnectionEditing {
     private let preferredAccount: @MainActor () -> String?
     let keysDirectory: URL
     let connect: (Connection.ID, _ sudo: Bool) -> Void
+    /// Ends the connection's running session (after asking), and brings its tab forward.
+    let disconnect: (Connection.ID) -> Void
+    let showSession: (Connection.ID) -> Void
     var saveProblem: String?
 
     init(store: ConnectionStore, snippets: SnippetStore, provider: @escaping @MainActor () -> any CredentialProvider,
          preferredAccount: @escaping @MainActor () -> String? = { nil }, keysDirectory: URL,
-         connect: @escaping (Connection.ID, _ sudo: Bool) -> Void) {
+         connect: @escaping (Connection.ID, _ sudo: Bool) -> Void,
+         disconnect: @escaping (Connection.ID) -> Void = { _ in }, showSession: @escaping (Connection.ID) -> Void = { _ in }) {
         self.store = store
         self.snippets = snippets
         self.currentProvider = provider
         self.preferredAccount = preferredAccount
         self.keysDirectory = keysDirectory
         self.connect = connect
+        self.disconnect = disconnect
+        self.showSession = showSession
     }
 
     var provider: any CredentialProvider { currentProvider() }
