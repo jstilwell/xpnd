@@ -108,6 +108,26 @@ again after every build.
   the tab; it goes into the session's memory, never the clipboard or a log. On close xpnd's copies are
   zeroed; FreeRDP frees its own.
   Snippets type as keystrokes in an RDP tab (`focusedSessionKind`).
+  The notch: `RDPNotchModel` (main actor, observable) holds the toolbar's state and notices and calls
+  `RDPNotchActions`, which `RDPHost` implements (key sends, display, audio and clipboard changes, file
+  paste, drop folder, reconnect, disconnect); the model holds it weakly. Live display and clipboard changes
+  are written back to `RDPHost.config` so a retry keeps them. `RDPNotch` is the SwiftUI overlay
+  `TerminalWorkspace` draws over the desktop (handle, row, Display/Files/Info popovers; hover timing,
+  pin, and a hidden ⌘⇧N button present only on a desktop tab). `RDPKeySequence` builds the key
+  steps (Ctrl+Alt+End, Win+R, Ctrl+V, typing `\\tsclient\xpnd` into Run) that `XPRDPSession` plays on its own
+  thread (`XPRDPKeyPlayer`, FreeRDP scancodes); the session also has `setClipboardSyncEnabled:`,
+  `offerFilesForPaste:` (file URLs only), `sendLeftClickAtViewPoint:`, `reconnectWithSettings:`, a
+  `connectionInfo` snapshot and `dropHandler`, which `XPRDPView` calls with the drop point.
+  `RDPFileDropTarget` is an `NSViewRepresentable` registering only `.fileURL` for the handle, row and Files
+  popover, because SwiftUI's `.dropDestination` registers other types and loses a Finder drag to the
+  desktop view beneath. A drop on the desktop becomes `pasteFiles` (offer the files, click there, send
+  Ctrl+V); one on the notch becomes `copyIntoDropFolder`.
+  `RDPDropFolder` owns `<Application Support>/xpnd/drop/<connection id>` (mode 0700): `copyIn` (sanitised
+  names, no directories, no sources inside the tree), `count`, `clear`, `clearAll`, and the launch,
+  disconnect and 7-day cleanup. `XPAddDrive` adds the drive as `freerdp_device_new` plus
+  `freerdp_device_collection_add` (not `freerdp_client_add_drive`, which skips a missing folder), named
+  `xpnd`, only when `RDPSessionConfig.driveDevice()` is non-nil. Its scope is that one folder, read-write:
+  the server can write, rename or delete inside it, and fill the disk, but not reach anything else.
 - `xpnd.entitlements` has `com.apple.security.automation.apple-events` and `Info.plist` has
   `NSAppleEventsUsageDescription`: the hardened release build needs both to send AppleScript to Terminal
   and iTerm2. The 1Password CLI needs "Integrate with 1Password CLI" (Settings → Developer) to answer.
