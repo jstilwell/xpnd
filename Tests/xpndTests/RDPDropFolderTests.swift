@@ -78,6 +78,32 @@ import xpndRDP
         }
     }
 
+    @Test func hiddenFilesAreNotCountedButAreCleared() throws {
+        try inTemp { _ in
+            let folder = RDPDropFolder.url(for: UUID())
+            RDPDropFolder.ensureExists(folder: folder)
+            try Data("x".utf8).write(to: folder.appending(path: ".DS_Store"))
+            #expect(RDPDropFolder.count(folder: folder) == 0)
+            try Data("x".utf8).write(to: folder.appending(path: "a.txt"))
+            #expect(RDPDropFolder.count(folder: folder) == 1)
+            try RDPDropFolder.clear(folder: folder)
+            #expect(!FileManager.default.fileExists(atPath: folder.appending(path: ".DS_Store").path))
+        }
+    }
+
+    @Test func copyInSaysWhetherAFolderWasAmongTheFailures() throws {
+        try inTemp { dir in
+            let id = UUID()
+            let missing = dir.appending(path: "missing.txt")
+            #expect(!(try RDPDropFolder.copyIn([missing], folder: RDPDropFolder.url(for: id))).hasFolder)
+            let folder = dir.appending(path: "folder")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let result = try RDPDropFolder.copyIn([missing, folder], folder: RDPDropFolder.url(for: id))
+            #expect(result.failures.count == 2)
+            #expect(result.hasFolder)
+        }
+    }
+
     @Test func dropsCopiedAtOnceGoInTurnAndNeverShareAName() async throws {
         try await inTemp { dir in
             let folder = RDPDropFolder.url(for: UUID())

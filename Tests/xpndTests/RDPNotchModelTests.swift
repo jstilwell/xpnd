@@ -16,7 +16,7 @@ import xpndRDP
     var pasteDone: ((Bool) -> Void)?
     var displayResult = true
     var dropCount = 0
-    var copyResult: RDPDropFolder.CopyResult = ([], [])
+    var copyResult: RDPDropFolder.CopyResult = ([], [], false)
     var copyError: (any Error)?
     /// Set to hold copies until a test resumes `copyGate`.
     var holdCopies = false
@@ -144,7 +144,7 @@ import xpndRDP
     }
 
     @Test func notchDropGoesToTheDrive() async {
-        fake.copyResult = (["a.txt", "b.txt"], [])
+        fake.copyResult = (["a.txt", "b.txt"], [], false)
         fake.dropCount = 2
         await dropOnNotch([url, url])
         #expect(fake.calls == ["restoreFocus", "copyIntoDropFolder"])
@@ -154,7 +154,7 @@ import xpndRDP
 
     @Test func notchDropSaysItIsCopyingAndReturnsAtOnce() async {
         fake.holdCopies = true
-        fake.copyResult = (["a"], [])
+        fake.copyResult = (["a"], [], false)
         fake.dropCount = 1
         #expect(model.dropOnNotch([url, url, url]))
         #expect(model.notice == "Copying 3 files…")
@@ -187,18 +187,27 @@ import xpndRDP
     }
 
     @Test func notchDropNoticesCountSingularAndPluralAndNeverNames() async {
-        fake.copyResult = (["secret.txt"], [])
+        fake.copyResult = (["secret.txt"], [], false)
         await dropOnNotch([url])
         #expect(model.notice == "Copied 1 file into the xpnd drive")
-        fake.copyResult = (["a", "b"], [url])
+        fake.copyResult = (["a", "b"], [url], false)
         await dropOnNotch([url])
-        #expect(model.notice == "Copied 2 files into the xpnd drive. 1 item couldn't be copied (folders aren't supported).")
-        fake.copyResult = (["a"], [url, url])
+        #expect(model.notice == "Copied 2 files into the xpnd drive. 1 item couldn't be copied.")
+        fake.copyResult = (["a"], [url, url], false)
         await dropOnNotch([url])
-        #expect(model.notice == "Copied 1 file into the xpnd drive. 2 items couldn't be copied (folders aren't supported).")
-        fake.copyResult = ([], [url])
+        #expect(model.notice == "Copied 1 file into the xpnd drive. 2 items couldn't be copied.")
+        fake.copyResult = ([], [url], false)
         await dropOnNotch([url])
-        #expect(model.notice == "1 item couldn't be copied (folders aren't supported).")
+        #expect(model.notice == "1 item couldn't be copied.")
+    }
+
+    @Test func foldersAreBlamedOnlyWhenOneFailed() async {
+        fake.copyResult = (["a"], [url, url], true)
+        await dropOnNotch([url])
+        #expect(model.notice == "Copied 1 file into the xpnd drive. 2 items couldn't be copied. Folders aren't supported.")
+        fake.copyResult = ([], [url], true)
+        await dropOnNotch([url])
+        #expect(model.notice == "1 item couldn't be copied. Folders aren't supported.")
     }
 
     @Test func notchDropWithTheDriveOffCopiesNothing() async {

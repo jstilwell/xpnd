@@ -29,6 +29,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     NSTrackingArea *_tracking;
     XPCommandState _command;
     NSTimer *_clipboardPoll;  // main thread
+    BOOL _dragHasFiles;       // main thread: the drag in progress is one to take
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -426,13 +427,27 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     return [XPRDPClipboard fileURLsOnPasteboard:info.draggingPasteboard];
 }
 
+/// On the desktop as drawn, not a letterbox bar, where a click would clamp to the edge and land on something else.
+/// The image's size: main may not read the settings while a client thread runs (see `idleSettings`).
+- (BOOL)dragIsOverDesktop:(id<NSDraggingInfo>)info {
+    [_drawLock lock];
+    const NSSize desktop = bitmap_context ? NSMakeSize(CGBitmapContextGetWidth(bitmap_context), CGBitmapContextGetHeight(bitmap_context)) : NSZeroSize;
+    [_drawLock unlock];
+    return NSPointInRect([self convertPoint:info.draggingLocation fromView:nil], [self desktopRectForSize:desktop]);
+}
+
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
-    return [self dropURLs:sender].count ? NSDragOperationCopy : NSDragOperationNone;
+    _dragHasFiles = [self dropURLs:sender].count > 0;
+    return [self draggingUpdated:sender];
+}
+
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+    return _dragHasFiles && [self dragIsOverDesktop:sender] ? NSDragOperationCopy : NSDragOperationNone;
 }
 
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
     NSArray<NSURL *> *urls = [self dropURLs:sender];
-    if (!urls.count)
+    if (!urls.count || ![self dragIsOverDesktop:sender])
         return NO;  // the session may have ended since draggingEntered:
     self.session.dropHandler(urls, [self convertPoint:sender.draggingLocation fromView:nil]);
     return YES;

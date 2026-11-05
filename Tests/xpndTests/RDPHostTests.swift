@@ -151,6 +151,20 @@ import xpndRDP
         #expect(closed == nil)
     }
 
+    @Test func theDropCountIsZeroWithTheDriveOff() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "xpnd-host-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data("x".utf8).write(to: dir.appending(path: "a.txt"))
+        var config = RDPOptions().resolved(over: .standard, host: "win", port: 3389, username: "me", domain: nil, dropFolder: dir.path)
+        let fake = fake
+        let on = RDPHost(config: config, password: "p", gatewayPassword: nil, presentIn: { nil }, makeSession: { _, _, _, _, _ in fake })
+        #expect(on.dropFolderCount() == 1)
+        config.dropDrive = false
+        let off = RDPHost(config: config, password: "p", gatewayPassword: nil, presentIn: { nil }, makeSession: { _, _, _, _, _ in fake })
+        #expect(off.dropFolderCount() == 0)
+    }
+
     @Test func aGoodPasswordIsKeptByALaterReconnect() {
         let (host, s) = host()
         host.session(s, didDisconnectWithErrorName: "ERRCONNECT_LOGON_FAILURE") // retyped on the sheet

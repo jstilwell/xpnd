@@ -401,6 +401,7 @@ struct XPRDPSessionTests {
         pasteboard.writeObjects([URL(fileURLWithPath: "/tmp/a.txt") as NSURL])
         let drag = FakeDrag(pasteboard)
         #expect(s.view.draggingEntered(drag) == [])
+        #expect(s.view.draggingUpdated(drag) == [])
         #expect(s.view.performDragOperation(drag) == false)
         #expect(!dropped)
     }

@@ -244,7 +244,7 @@ struct RDPConnectionInfo: Equatable {
         refreshDropCount()
         let copied = result.names.isEmpty ? nil : "Copied \(Self.files(result.names.count)) into the xpnd drive"
         let n = result.failures.count
-        let failed = n == 0 ? nil : "\(n) item\(n == 1 ? "" : "s") couldn't be copied (folders aren't supported)."
+        let failed = n == 0 ? nil : "\(n) item\(n == 1 ? "" : "s") couldn't be copied." + (result.hasFolder ? " Folders aren't supported." : "")
         notice = [copied.map { failed == nil ? $0 : $0 + "." }, failed].compactMap { $0 }.joined(separator: " ")
     }
 

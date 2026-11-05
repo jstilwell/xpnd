@@ -3,7 +3,8 @@ import Foundation
 /// The per-connection folder redirected into a Windows session as drive `xpnd`. Files are copied in
 /// (the source stays) under names that are safe in a Windows shell; nothing outside the folder is written.
 enum RDPDropFolder {
-    typealias CopyResult = (names: [String], failures: [URL])
+    /// `hasFolder`: a directory is among the failures, which aren't otherwise told apart.
+    typealias CopyResult = (names: [String], failures: [URL], hasFolder: Bool)
 
     /// Tests point this at a temporary directory.
     nonisolated(unsafe) static var root = ConnectionStore.defaultURL.deletingLastPathComponent().appending(path: "drop")
@@ -59,13 +60,17 @@ enum RDPDropFolder {
         let fm = FileManager.default
         try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let tree = root.resolvingSymlinksInPath().path + "/"
-        var names: [String] = [], failures: [URL] = []
+        var names: [String] = [], failures: [URL] = [], hasFolder = false
         var used = Set(try fm.contentsOfDirectory(atPath: folder.path))
         for source in sources {
             let resolved = source.resolvingSymlinksInPath()
             var isDirectory: ObjCBool = false
             guard fm.fileExists(atPath: resolved.path, isDirectory: &isDirectory), !isDirectory.boolValue,
-                  !(resolved.path + "/").hasPrefix(tree) else { failures.append(source); continue }
+                  !(resolved.path + "/").hasPrefix(tree) else {
+                failures.append(source)
+                hasFolder = hasFolder || isDirectory.boolValue
+                continue
+            }
             let name = safeName(source.lastPathComponent, existing: used)
             let destination = folder.appending(path: name)
             guard destination.standardizedFileURL.path.hasPrefix(folder.standardizedFileURL.path + "/") else {
@@ -79,11 +84,12 @@ enum RDPDropFolder {
                 failures.append(source)
             }
         }
-        return (names, failures)
+        return (names, failures, hasFolder)
     }
 
+    /// What a person would count: `.DS_Store` and the like are skipped, though `clear` removes them.
     static func count(folder: URL) -> Int {
-        (try? FileManager.default.contentsOfDirectory(atPath: folder.path).count) ?? 0
+        (try? FileManager.default.contentsOfDirectory(atPath: folder.path).filter { !$0.hasPrefix(".") }.count) ?? 0
     }
 
     /// Only a folder inside `root` is ever removed.

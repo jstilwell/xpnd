@@ -281,7 +281,7 @@ extension RDPHost: RDPNotchActions {
     }
 
     func dropFolderCount() -> Int {
-        config.dropFolder.map { RDPDropFolder.count(folder: URL(fileURLWithPath: $0)) } ?? 0
+        config.driveDevice().map { RDPDropFolder.count(folder: URL(fileURLWithPath: $0.path)) } ?? 0
     }
 
     func copyIntoDropFolder(_ urls: [URL]) async throws -> RDPDropFolder.CopyResult {
