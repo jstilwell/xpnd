@@ -97,7 +97,8 @@ NS_SWIFT_UI_ACTOR
 /// Tears down the connection and starts again with the same settings and the latest password.
 - (void)reconnect;
 /// Zeroes and drops the login and gateway passwords, so the next `start` / `reconnect` asks the delegate
-/// for them. Call it while disconnected.
+/// for them. Call it while disconnected. With a client thread, FreeRDP's copy goes at the following
+/// `reconnect` or `stop`.
 - (void)forgetPassword;
 
 /// Scancodes, text and pauses, in order, behind any sequence still pausing. Nothing unless connected; what is

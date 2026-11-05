@@ -147,7 +147,7 @@ static void XPPostDisconnect(freerdp *);
     BOOL _logonFailed;
     BOOL _certificateRejected;
     NSDate *_Nullable _connectedSince;
-    XPRDPConnectionInfo *_Nullable _connection;  // what `connectionInfo` keeps between connects
+    XPRDPConnectionInfo *_Nullable _connection;  // what `connectionInfo` keeps during a connect
     DispClientContext *_disp;
     dispatch_semaphore_t _wait;
     id _answer;
@@ -511,7 +511,7 @@ static void XPReadCertificate(rdpSettings *settings, XPRDPConnectionInfo *info) 
 }
 
 /// What holds for a whole connect. Only from FreeRDP's thread, or main with no such thread: see `idleSettings`.
-// shortcut: a redirection after PostConnect runs no callback, so Info keeps the first server's certificate and
+// shortcut: a redirection after PostConnect runs no PostConnect, so Info keeps the first server's certificate and
 // gateway until the next connect; upgrade if brokers turn out to redirect a running session.
 static XPRDPConnectionInfo *XPConnectionFrom(rdpSettings *settings) {
     XPRDPConnectionInfo *info = [XPRDPConnectionInfo new];
@@ -867,8 +867,9 @@ static void XPPostDisconnect(freerdp *instance) {
 
 #pragma mark State from FreeRDP's threads
 
-/// Main reads these only before start and after stop's join, never while this thread runs.
+/// Locked: main's `forgetPassword` can run while this thread is still finishing.
 - (void)rememberLogin:(NSArray<NSString *> *)login secret:(NSMutableData *)secret gateway:(BOOL)gateway {
+    [_lock lock];
     XPZeroSecret(gateway ? _gatewayPassword : _password);
     if (gateway) {
         _gatewayLogin = login;
@@ -877,6 +878,7 @@ static void XPPostDisconnect(freerdp *instance) {
         _login = login;
         _password = secret;
     }
+    [_lock unlock];
 }
 
 /// FreeRDP's `data` is the ErrorNotificationData (LOGON_FAILED_*) and `type` the ErrorNotificationType
