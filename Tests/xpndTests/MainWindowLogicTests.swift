@@ -48,14 +48,14 @@ private struct TwoAccountProvider: CredentialProvider {
         let folder = try #require(editing.addFolder(in: nil))
         let id = try #require(editing.addConnection(in: folder))
         let size = RDPOptions.Display.fixed(width: 1920, height: 1080)
-        editing.saveDisplay(id, size)
+        #expect(editing.saveDisplay(id, size))
         #expect(editing.library.connection(id)?.rdp?.display == size)
     }
 
     @MainActor @Test func savingADisplayForAGoneConnectionDoesNothing() {
         let (editing, _) = editing(TwoAccountProvider())
         let before = editing.library
-        editing.saveDisplay(UUID(), .fit)
+        #expect(!editing.saveDisplay(UUID(), .fit))
         #expect(editing.library == before)
         #expect(editing.saveProblem == nil)
     }

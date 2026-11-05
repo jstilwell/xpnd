@@ -341,9 +341,9 @@ final class ConnectionEditing {
     }
 
     /// The notch's "Set as this connection's default". A tab can outlive its connection, which is then left alone.
-    func saveDisplay(_ id: Connection.ID, _ display: RDPOptions.Display) {
-        guard library.connection(id) != nil else { return }
-        edit(connection: id) {
+    func saveDisplay(_ id: Connection.ID, _ display: RDPOptions.Display) -> Bool {
+        guard library.connection(id) != nil else { return false }
+        return edit(connection: id) {
             var options = $0.rdp ?? RDPOptions()
             options.display = display
             $0.rdp = options

@@ -8,7 +8,7 @@ struct TerminalWorkspace: View {
     /// Re-applied to every host on change.
     let settings: BuiltInTerminalSettings
     /// Writes a desktop's display choice to its connection (the notch's "Set as default").
-    let saveDisplay: (Connection.ID, RDPOptions.Display) -> Void
+    let saveDisplay: (Connection.ID, RDPOptions.Display) -> Bool
     /// A `.system` scheme is read when `apply` runs, so an appearance change re-applies too.
     @Environment(\.colorScheme) private var colorScheme
 
@@ -41,9 +41,7 @@ struct TerminalWorkspace: View {
 
     @ViewBuilder private func notch(_ session: TerminalSession) -> some View {
         if let host = session.host as? RDPHost {
-            RDPNotch(model: host.notch).onAppear {
-                host.onSaveDisplayDefault = { [saveDisplay] in saveDisplay(session.connectionID, $0) }
-            }
+            RDPNotch(model: host.notch).onAppear { host.saveDisplay(to: session.connectionID, with: saveDisplay) }
         }
     }
 

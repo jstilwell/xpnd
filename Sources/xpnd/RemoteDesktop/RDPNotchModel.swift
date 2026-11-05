@@ -63,7 +63,8 @@ struct RDPConnectionInfo: Equatable {
     func copyIntoDropFolder(_ urls: [URL]) throws -> (names: [String], failures: [URL])
     func clearDropFolder() throws
     func revealDropFolder()
-    func saveDisplayAsDefault(_ display: RDPOptions.Display)
+    /// False when it couldn't be saved.
+    func saveDisplayAsDefault(_ display: RDPOptions.Display) -> Bool
 }
 
 /// The notch's state and actions. Audio, clipboard and display are this session's current values only;
@@ -103,6 +104,12 @@ struct RDPConnectionInfo: Equatable {
 
     var info: RDPConnectionInfo? { actions?.info }
     var driveIsOn: Bool { actions?.config.driveDevice() != nil }
+    /// What each drop target does, for the Files button's tooltip and popover.
+    var dropHelp: String {
+        let desktop = "Drop on the desktop to paste into the window there."
+        return driveIsOn ? "\(desktop) Drop here to put files in the xpnd drive."
+            : "The xpnd drive is off for this connection. \(desktop)"
+    }
 
     func ctrlAltDel() { send(RDPKeySequence.ctrlAltDel) }
     func winR() { send(RDPKeySequence.winR) }
@@ -161,15 +168,16 @@ struct RDPConnectionInfo: Equatable {
         actions?.restoreFocus()
     }
 
-    func dropOnNotch(_ urls: [URL]) {
+    /// True when at least one file was copied.
+    @discardableResult func dropOnNotch(_ urls: [URL]) -> Bool {
         defer { actions?.restoreFocus() }
-        guard let actions else { return }
+        guard let actions else { return false }
         guard actions.config.driveDevice() != nil else {
             notice = "The file drop drive is off for this connection."
-            return
+            return false
         }
         do {
-            let result = try actions.copyIntoDropFolder(urls.filter(\.isFileURL)) // a drag from a browser offers web links
+            let result = try actions.copyIntoDropFolder(urls)
             lastDropNames = result.names
             dropCount = actions.dropFolderCount()
             let copied = result.names.isEmpty ? nil : "Copied \(Self.files(result.names.count)) into the xpnd drive"
@@ -177,8 +185,10 @@ struct RDPConnectionInfo: Equatable {
             let failed = n == 0 ? nil : "\(n) item\(n == 1 ? "" : "s") couldn't be copied (folders aren't supported)."
             notice = [copied.map { failed == nil ? $0 : $0 + "." }, failed].compactMap { $0 }.joined(separator: " ")
             if notice?.isEmpty == true { notice = "Nothing to copy." }
+            return !result.names.isEmpty
         } catch {
             notice = "Couldn't copy into the xpnd drive."
+            return false
         }
     }
 
@@ -198,7 +208,7 @@ struct RDPConnectionInfo: Equatable {
     }
 
     func saveDisplayAsDefault() {
-        actions?.saveDisplayAsDefault(display)
+        notice = actions?.saveDisplayAsDefault(display) == true ? "Saved as this connection's default." : "Couldn't save the default display."
         actions?.restoreFocus()
     }
 

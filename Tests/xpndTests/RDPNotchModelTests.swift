@@ -17,7 +17,7 @@ import xpndRDP
     var dropCount = 0
     var copyResult: (names: [String], failures: [URL]) = ([], [])
     var reconfigured: [RDPSessionConfig] = []
-    var copied: [URL] = []
+    var saveResult = true
 
     func send(_ steps: [RDPKeyStep]) { calls.append("send"); sent.append(steps) }
     func pasteFiles(_ urls: [URL], at point: CGPoint) -> Bool { calls.append("pasteFiles"); return pasteResult }
@@ -33,11 +33,11 @@ import xpndRDP
     func restoreFocus() { calls.append("restoreFocus") }
     func dropFolderCount() -> Int { dropCount }
     func copyIntoDropFolder(_ urls: [URL]) throws -> (names: [String], failures: [URL]) {
-        calls.append("copyIntoDropFolder"); copied += urls; return copyResult
+        calls.append("copyIntoDropFolder"); return copyResult
     }
     func clearDropFolder() throws { calls.append("clearDropFolder"); dropCount = 0 }
     func revealDropFolder() { calls.append("revealDropFolder") }
-    func saveDisplayAsDefault(_ display: RDPOptions.Display) { calls.append("saveDisplayAsDefault") }
+    func saveDisplayAsDefault(_ display: RDPOptions.Display) -> Bool { calls.append("saveDisplayAsDefault"); return saveResult }
 }
 
 @MainActor struct RDPNotchModelTests {
@@ -261,10 +261,27 @@ import xpndRDP
         #expect(!model.driveIsOn)
     }
 
-    @Test func aNotchDropTakesOnlyFiles() {
-        model.dropOnNotch([URL(string: "https://example.com/a")!])
-        #expect(fake.copied.isEmpty)
-        #expect(model.notice == "Nothing to copy.")
+    @Test func aNotchDropReportsWhetherAnythingWasAccepted() {
+        fake.copyResult = (["a"], [url])
+        #expect(model.dropOnNotch([url, url]))
+        fake.copyResult = ([], [url])
+        #expect(!model.dropOnNotch([url]))
+        fake.config.dropDrive = false
+        #expect(!model.dropOnNotch([url]))
+    }
+
+    @Test func theDropHelpFollowsTheDrive() {
+        #expect(model.dropHelp == "Drop on the desktop to paste into the window there. Drop here to put files in the xpnd drive.")
+        fake.config.dropDrive = false
+        #expect(model.dropHelp == "The xpnd drive is off for this connection. Drop on the desktop to paste into the window there.")
+    }
+
+    @Test func savingTheDefaultSaysHowItWent() {
+        model.saveDisplayAsDefault()
+        #expect(model.notice == "Saved as this connection's default.")
+        fake.saveResult = false
+        model.saveDisplayAsDefault()
+        #expect(model.notice == "Couldn't save the default display.")
     }
 
     @Test func infoWordsForWhatIsUnknown() {
@@ -323,6 +340,12 @@ private struct Desktop: NSViewRepresentable {
         #expect(row.width < 360 && row.height < 40)
     }
 
+    @Test func theDropTargetTakesFileDragsAndNoClicks() {
+        let target = RDPFileDropTarget.DropView()
+        #expect(target.registeredDraggedTypes == [.fileURL])
+        #expect(target.hitTest(.zero) == nil)
+    }
+
     @Test func clicksBesideTheNotchReachTheDesktop() async {
         for pinned in [false, true] {
             let model = RDPNotchModel(actions: fake)
@@ -333,12 +356,13 @@ private struct Desktop: NSViewRepresentable {
             window.isReleasedWhenClosed = false
             let host = NSHostingView(rootView: Desktop(view: desktop).overlay(alignment: .top) { RDPNotch(model: model) })
             window.contentView = host
-            window.orderFront(nil) // SwiftUI places the desktop's view only once it's on screen
+            window.orderFront(nil)
             defer { window.close() }
             host.layoutSubtreeIfNeeded()
-            try? await Task.sleep(for: .milliseconds(100)) // not a run-loop spin: that stalls other tests' timers
             let frame = window.contentView!.superview!
-            #expect(frame.hitTest(NSPoint(x: 500, y: 635)) !== desktop, "pinned: \(pinned)")
+            // SwiftUI places the desktop's view a moment later. Not a run-loop spin: that stalls other tests' timers.
+            for _ in 0..<500 where frame.hitTest(NSPoint(x: 40, y: 635)) !== desktop { try? await Task.sleep(for: .milliseconds(10)) }
+            #expect(frame.hitTest(NSPoint(x: 500, y: 635)) === host, "pinned: \(pinned)") // the buttons, past the drop target
             #expect(frame.hitTest(NSPoint(x: 40, y: 635)) === desktop, "pinned: \(pinned)")
             #expect(frame.hitTest(NSPoint(x: 960, y: 635)) === desktop, "pinned: \(pinned)")
             #expect(frame.hitTest(NSPoint(x: 500, y: 320)) === desktop, "pinned: \(pinned)")

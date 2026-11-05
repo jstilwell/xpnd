@@ -74,6 +74,32 @@ import xpndRDP
         #expect(!host.notch.isConnected)
     }
 
+    @Test func aClosedDesktopGoesAway() {
+        let fake = fake
+        let sessions = TerminalSessions { request in
+            guard case .remoteDesktop(let config, let password, let gateway) = request else { fatalError("a desktop only") }
+            return RDPHost(config: config, password: password, gatewayPassword: gateway, presentIn: { nil }, makeSession: { _, _, _, _, _ in fake })
+        }
+        let config = RDPOptions().resolved(over: .standard, host: "win", port: 3389, username: "me", domain: nil)
+        let id = sessions.open(.remoteDesktop(config, password: "p", gatewayPassword: nil),
+                               for: Connection(name: "win", type: .rdp, host: "win"), color: nil)
+        weak var host = sessions.selectedSession?.host as? RDPHost
+        // As the workspace does.
+        host?.saveDisplay(to: sessions.selectedSession!.connectionID) { _, _ in true }
+        #expect(host != nil)
+        sessions.close(id)
+        #expect(host == nil)
+    }
+
+    @Test func aGoodPasswordIsKeptByALaterReconnect() {
+        let (host, s) = host()
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_LOGON_FAILURE") // retyped on the sheet
+        host.sessionDidConnect(s)
+        fake.calls = []
+        host.reconnect(with: { _ in })
+        #expect(fake.calls == ["reconnect"])
+    }
+
     @Test func aReconnectTellsTheTabBeforeItCanFail() {
         let (host, _) = host()
         var calls: [String]? = nil

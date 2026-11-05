@@ -55,6 +55,10 @@ extension TerminalHost {
     fileprivate(set) var state = State.running
 
     var isLive: Bool { state == .running }
+    /// A disconnected desktop is over but still holds its session and passwords until it's terminated.
+    var needsTerminating: Bool {
+        if case .ended = state { false } else { true }
+    }
 
     init(connection: Connection, kind: Kind, color: ItemColor?, host: any TerminalHost) {
         self.kind = kind
@@ -90,7 +94,7 @@ extension TerminalHost {
 
     func close(_ id: TerminalSession.ID) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
-        if session.isLive { session.host.terminate() }
+        if session.needsTerminating { session.host.terminate() }
         remove(id)
     }
 
@@ -102,7 +106,7 @@ extension TerminalHost {
     }
 
     func terminateAll() {
-        for session in sessions where session.isLive { session.host.terminate() }
+        for session in sessions where session.needsTerminating { session.host.terminate() }
         sessions = []
         selected = nil
     }

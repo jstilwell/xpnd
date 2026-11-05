@@ -38,7 +38,7 @@ extension XPRDPSession: RDPSessionControlling {}
     /// This session's config: the notch's reconnects change it, never the connection or Settings.
     private(set) var config: RDPSessionConfig
     /// Set by the workspace: writes a display choice to the connection (the notch's "Set as default").
-    var onSaveDisplayDefault: ((RDPOptions.Display) -> Void)?
+    private(set) var onSaveDisplayDefault: ((RDPOptions.Display) -> Bool)?
     /// A connect succeeded and the session has not ended since.
     private(set) var isConnected = false {
         didSet { notch?.isConnected = isConnected }
@@ -86,6 +86,11 @@ extension XPRDPSession: RDPSessionControlling {}
         try? FileManager.default.createDirectory(atPath: configPath, withIntermediateDirectories: true)
         return XPRDPSession(settings: settings.map { [$0.name, $0.value] }, password: password,
                             gatewayPassword: gatewayPassword, driveName: drive?.name, drivePath: drive?.path, delegate: delegate)
+    }
+
+    /// Takes the id, not the tab's session: that owns this host, and a cycle would keep the passwords alive.
+    func saveDisplay(to id: Connection.ID, with save: @escaping (Connection.ID, RDPOptions.Display) -> Bool) {
+        onSaveDisplayDefault = { save(id, $0) }
     }
 
     func terminate() {
@@ -169,6 +174,7 @@ extension XPRDPSession: RDPSessionControlling {}
 
     func sessionDidConnect(_ s: XPRDPSession) {
         isConnected = true
+        lastError = nil // the password worked, so a later reconnect keeps it
         hadConnected = true
         retries = 0
     }
@@ -280,5 +286,5 @@ extension RDPHost: RDPNotchActions {
         NSWorkspace.shared.open(URL(fileURLWithPath: folder))
     }
 
-    func saveDisplayAsDefault(_ display: RDPOptions.Display) { onSaveDisplayDefault?(display) }
+    func saveDisplayAsDefault(_ display: RDPOptions.Display) -> Bool { onSaveDisplayDefault?(display) ?? false }
 }

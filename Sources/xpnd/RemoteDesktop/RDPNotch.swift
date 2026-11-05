@@ -12,6 +12,7 @@ struct RDPNotch: View {
     @State private var info: RDPConnectionInfo?
     @State private var isHovering = false
     @State private var isDropTarget = false
+    @State private var confirmingClear = false
     @State private var settling: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -23,10 +24,7 @@ struct RDPNotch: View {
             ZStack { if showsRow { row } else { handle } }
                 .onHover { isHovering = $0; settle() }
                 // The handle too: a drag doesn't hover, and the row only opens once something is over it.
-                .dropDestination(for: URL.self) { urls, _ in
-                    model.dropOnNotch(urls)
-                    return true
-                } isTargeted: { isDropTarget = $0; settle() }
+                .background(RDPFileDropTarget(accept: model.dropOnNotch) { isDropTarget = $0; settle() })
             if let notice = model.notice {
                 Text(notice)
                     .font(.caption)
@@ -50,6 +48,14 @@ struct RDPNotch: View {
             AccessibilityNotification.Announcement(notice).post()
             try? await Task.sleep(for: .seconds(3))
             if !Task.isCancelled { model.notice = nil }
+        }
+        .onChange(of: showsRow, initial: true) { if showsRow { model.refreshDropCount() } }
+        // Here, not on the button: the popover closes first, and a transient popover can't hold a dialog.
+        .confirmationDialog("Clear \(EditorRules.count(model.dropCount, "file")) from the drop folder?", isPresented: $confirmingClear) {
+            Button("Clear", role: .destructive) { model.clearDropFolder() }
+            Button("Cancel", role: .cancel) { model.restoreFocus() }
+        } message: {
+            Text("Files Windows saved there are deleted too.")
         }
         .onAppear { model.isExpanded = model.isPinned }
         .onDisappear { settling?.cancel() }
@@ -122,8 +128,7 @@ struct RDPNotch: View {
     }
 
     private var files: some View {
-        item("folder.badge.plus", "Files",
-             help: "Drop on the desktop to paste into the window there. Drop here to put files in the xpnd drive.") {
+        item("folder.badge.plus", "Files", help: model.dropHelp) {
             model.refreshDropCount()
             panel = .files
         }
@@ -199,11 +204,7 @@ struct RDPNotch: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 56)
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, style: StrokeStyle(lineWidth: 1, dash: [4])))
-                    .contentShape(Rectangle())
-                    .dropDestination(for: URL.self) { urls, _ in
-                        model.dropOnNotch(urls)
-                        return true
-                    }
+                    .background(RDPFileDropTarget(accept: model.dropOnNotch))
                 Button("Open in Explorer") {
                     model.openDropFolderInExplorer()
                     panel = nil
@@ -213,18 +214,23 @@ struct RDPNotch: View {
                     model.revealDropFolder()
                     panel = nil
                 }
-                Button("Clear drop folder", role: .destructive) { model.clearDropFolder() }
-                Text("Files Windows saves here arrive without macOS's quarantine check, so treat them like downloads.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Button("Clear drop folder", role: .destructive) {
+                    panel = nil
+                    confirmingClear = true
+                }
+                .disabled(model.dropCount == 0)
+                note(model.dropHelp)
+                note("Files Windows saves here arrive without macOS's quarantine check, so treat them like downloads.")
             } else {
-                Text("The file drop drive is off for this connection.")
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(model.dropHelp).fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(12)
         .frame(width: 280, alignment: .leading)
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 }
 

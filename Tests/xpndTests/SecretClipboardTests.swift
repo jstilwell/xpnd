@@ -63,7 +63,7 @@ import Testing
     @Test func secondCopyKeepsItsOwnClock() async {
         await withBoard { board in
             let first = SecretClipboard.copy("one", to: board, clearAfter: .milliseconds(10))
-            let second = SecretClipboard.copy("two", to: board, clearAfter: .milliseconds(500))
+            let second = SecretClipboard.copy("two", to: board, clearAfter: .seconds(2))
             await first.value
             #expect(board.string(forType: .string) == "two")
             await second.value

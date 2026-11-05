@@ -55,6 +55,24 @@ import Testing
         #expect(hosts.all[0].terminated)
     }
 
+    @Test func closingADisconnectedDesktopTerminatesIt() {
+        let a = openDesktop("a")
+        openDesktop("b")
+        hosts.all[0].disconnect("the network connection was lost")
+        hosts.all[1].disconnect("the network connection was lost")
+        sessions.close(a) // its passwords live until terminate
+        #expect(hosts.all[0].terminated)
+        sessions.terminateAll()
+        #expect(hosts.all[1].terminated)
+    }
+
+    @Test func anEndedTerminalIsNotTerminatedAgain() {
+        let a = open("a")
+        hosts.all[0].exit(1)
+        sessions.close(a)
+        #expect(!hosts.all[0].terminated)
+    }
+
     @Test func openSelectsAndCountsLive() {
         open("a")
         let b = open("b")
