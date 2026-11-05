@@ -10,11 +10,11 @@ enum RDPDropFolder {
         root.appending(path: connectionID.uuidString, directoryHint: .isDirectory)
     }
 
-    /// ASCII letters, digits, space, `_`, `-` and `.` survive; anything else (quotes, `&`, `%`, accents)
-    /// becomes `_`, as does a leading dot. A taken name gets " 2", " 3"... before the extension.
     private static let reservedDeviceNames: Set<String> =
         Set(["CON", "PRN", "AUX", "NUL"] + (1...9).flatMap { ["COM\($0)", "LPT\($0)"] })
 
+    /// ASCII letters, digits, space, `_`, `-` and `.` survive; anything else (quotes, `&`, `%`, accents)
+    /// becomes `_`, as does a leading dot. A taken name gets " 2", " 3"... before the extension.
     static func safeName(_ name: String, existing: Set<String>) -> String {
         var clean = String(String.UnicodeScalarView(name.unicodeScalars.map { s in
             s.isASCII && (s.properties.isAlphabetic || ("0"..."9").contains(s) || " _-.".unicodeScalars.contains(s)) ? s : "_"
