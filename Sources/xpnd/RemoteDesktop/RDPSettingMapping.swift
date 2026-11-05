@@ -9,12 +9,22 @@ struct RDPSetting: Equatable, Sendable {
 /// FreeRDP splits `DOMAIN\user` only in its command-line and .rdp parsers (`freerdp_parse_username`);
 /// its core hands the username to NTLM as is, so xpnd splits it. `user@domain` stays whole, as there.
 enum RDPLogin {
-    /// At the first `\`; a non-empty `domain` wins over the prefix. An empty domain is nil.
+    /// A domain carried by the username wins: `CORP\me` splits at the first `\`, and `me@corp.local`
+    /// is sent whole (FreeRDP resolves the UPN), so the Domain field only matters for a plain name.
     static func split(username: String, domain: String?) -> (username: String, domain: String?) {
         let domain = domain?.isEmpty == false ? domain : nil
+        if username.contains("@") { return (username, nil) }
         guard let slash = username.firstIndex(of: "\\") else { return (username, domain) }
         let prefix = String(username[..<slash])
-        return (String(username[username.index(after: slash)...]), domain ?? (prefix.isEmpty ? nil : prefix))
+        return (String(username[username.index(after: slash)...]), prefix.isEmpty ? domain : prefix)
+    }
+
+    /// The domain a username carries, for the editor to show instead of a Domain field: "" for a UPN,
+    /// nil for a plain name.
+    static func carriedDomain(in username: String) -> String? {
+        if username.contains("@") { return "" }
+        guard let slash = username.firstIndex(of: "\\"), slash != username.startIndex else { return nil }
+        return String(username[..<slash])
     }
 }
 

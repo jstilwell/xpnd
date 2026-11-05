@@ -43,9 +43,16 @@ struct ConnectionEditorView: View {
                         editing.edit(connection: connection.id) { $0.username = name.isEmpty ? nil : name }
                     }), prompt: Text(login?.ref.username ?? ""))
                     if connection.type == .rdp {
-                        TextField("Domain", text: Binding(get: { connection.domain ?? "" }, set: { text in
-                            editing.edit(connection: connection.id) { $0.domain = text.isEmpty ? nil : text }
-                        }))
+                        // A username like CORP\me or me@corp.local carries its domain, so the field would mislead.
+                        if let carried = RDPLogin.carriedDomain(in: connection.username ?? login?.ref.username ?? "") {
+                            LabeledContent("Domain") {
+                                Text(carried.isEmpty ? "Part of the username" : carried).foregroundStyle(.secondary)
+                            }
+                        } else {
+                            TextField("Domain", text: Binding(get: { connection.domain ?? "" }, set: { text in
+                                editing.edit(connection: connection.id) { $0.domain = text.isEmpty ? nil : text }
+                            }))
+                        }
                     }
                     field(problem: activationProblem(namespace)) {
                         TextField("Activation string", text: Binding(get: { activationText }, set: editActivation), prompt: Text("None"))

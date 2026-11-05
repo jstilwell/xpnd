@@ -56,10 +56,23 @@ import Testing
         #expect(value(c, "FreeRDP_Domain") == "CORP")
     }
 
-    @Test func anExplicitDomainWinsOverTheBackslash() {
+    @Test func theBackslashWinsOverTheDomainField() {
         let c = config { $0.username = #"OTHER\me"#; $0.domain = "CORP" }
         #expect(value(c, "FreeRDP_Username") == "me")
-        #expect(value(c, "FreeRDP_Domain") == "CORP")
+        #expect(value(c, "FreeRDP_Domain") == "OTHER")
+    }
+
+    @Test func aUPNIgnoresTheDomainField() {
+        let c = config { $0.username = "me@corp.local"; $0.domain = "CORP" }
+        #expect(value(c, "FreeRDP_Username") == "me@corp.local")
+        #expect(value(c, "FreeRDP_Domain") == nil)
+    }
+
+    @Test func carriedDomainDrivesTheEditor() {
+        #expect(RDPLogin.carriedDomain(in: #"CORP\me"#) == "CORP")
+        #expect(RDPLogin.carriedDomain(in: "me@corp.local") == "")
+        #expect(RDPLogin.carriedDomain(in: "me") == nil)
+        #expect(RDPLogin.carriedDomain(in: #"\me"#) == nil)
     }
 
     @Test func aUPNLoginStaysWhole() {

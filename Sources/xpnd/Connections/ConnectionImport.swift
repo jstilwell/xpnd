@@ -194,7 +194,11 @@ enum ConnectionImport {
             case .text(let text): text
             case .connection(let id): merged.connection(id)?.name ?? "A missing connection"
             }
-            let login = merged.loginUser(for: c).map { u in c.type == .rdp ? (c.domain.flatMap { $0.isEmpty ? nil : "\($0)\\" } ?? "") + u : u }
+            let login = merged.loginUser(for: c).map { u in
+                guard c.type == .rdp else { return u }
+                let (user, domain) = RDPLogin.split(username: u, domain: c.domain)
+                return domain.map { "\($0)\\" + user } ?? user
+            }
             let user = login.map { "\($0)@" } ?? ""
             let host = c.host.contains(":") && !c.host.hasPrefix("[") ? "[\(c.host)]" : c.host
             return PreviewRow(id: c.id, name: c.name, host: c.host, address: "\(user)\(host):\(c.effectivePort)",
