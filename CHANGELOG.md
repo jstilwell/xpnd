@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.2.1 - Unreleased
+## 0.2.1 - 11-06-2026
 
 ### Fixed
 - xpnd no longer crashes while connected to a Windows desktop when that desktop shows its own mouse pointer.
