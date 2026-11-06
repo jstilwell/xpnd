@@ -33,6 +33,11 @@ guides the user through both and detects when they're on. The bundle is signed w
 Development / Developer ID identity so the grants survive rebuilds; ad-hoc signing means granting
 again after every build.
 
+The app icon is built from `assets/icon` by `./bin/build-icon.sh` (it needs Xcode and Chrome); commit the result.
+`AppIcon.icon`, an Icon Composer file, compiles to `Resources/Assets.car`, which macOS 26 and later use: without it they
+shrink the icon onto a gray plate. `Resources/AppIcon.icns` is for macOS 14 and 15, and `app-icon-small.svg` is its
+heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `MenuBarIcon`.
+
 ## How it works
 
 - `PermissionWatcher` follows Input Monitoring and Accessibility (`InputMonitoringPermission`,
