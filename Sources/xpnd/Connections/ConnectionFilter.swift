@@ -50,13 +50,14 @@ struct ConnectionTreeRow: Identifiable, Hashable {
     let depth: Int
     let kind: Kind
     let color: ItemColor?
+    var icon: FolderIcon? = nil
 
     /// Folders and connections in tree order; a folder's contents show only while it is in `expanded`.
     static func rows(_ library: ConnectionLibrary, expanded: Set<ConnectionFolder.ID>) -> [ConnectionTreeRow] {
         func walk(_ folder: ConnectionFolder, _ depth: Int) -> [ConnectionTreeRow] {
             let open = expanded.contains(folder.id)
             let head = ConnectionTreeRow(id: folder.id, title: folder.name, depth: depth, kind: .folder(expanded: open),
-                                         color: library.color(for: .folder(folder.id))?.color)
+                                         color: library.color(for: .folder(folder.id))?.color, icon: folder.icon)
             guard open else { return [head] }
             return [head]
                 + folder.connections.map {

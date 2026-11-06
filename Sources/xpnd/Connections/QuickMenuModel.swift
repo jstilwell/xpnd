@@ -11,6 +11,8 @@ struct QuickMenuRow: Hashable {
     let title: String
     let kind: Kind
     let color: ItemColor?
+    /// A folder's own icon; nil for a connection or a plain folder.
+    var icon: FolderIcon? = nil
 }
 
 /// What the quick menu shows: one folder's connections, then its subfolders, with a back stack for subfolders.
@@ -31,11 +33,11 @@ struct QuickMenuModel {
 
     var rows: [QuickMenuRow] {
         guard let folder = current else { return [] }
-        let items: [(String, QuickMenuRow.Kind, ActivationTarget)] =
-            folder.connections.map { ($0.name, .connection($0.id, $0.type), .connection($0.id)) }
-            + folder.folders.map { ($0.name, .folder($0.id), .folder($0.id)) }
+        let items: [(String, QuickMenuRow.Kind, ActivationTarget, FolderIcon?)] =
+            folder.connections.map { ($0.name, .connection($0.id, $0.type), .connection($0.id), nil) }
+            + folder.folders.map { ($0.name, .folder($0.id), .folder($0.id), $0.icon) }
         return items.enumerated().map {
-            QuickMenuRow(number: $0 < 9 ? $0 + 1 : nil, title: $1.0, kind: $1.1, color: library.color(for: $1.2)?.color)
+            QuickMenuRow(number: $0 < 9 ? $0 + 1 : nil, title: $1.0, kind: $1.1, color: library.color(for: $1.2)?.color, icon: $1.3)
         }
     }
 

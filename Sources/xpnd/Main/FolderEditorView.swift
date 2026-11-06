@@ -26,6 +26,13 @@ struct FolderEditorView: View {
                         inherited: library.folderPath(of: folder.id).dropLast().last.flatMap { library.color(for: .folder($0.id)) }) { color in
                 editing.edit(folder: folder.id) { $0.color = color }
             }
+            Picker("Icon", selection: Binding(get: { folder.icon }, set: { icon in editing.edit(folder: folder.id) { $0.icon = icon } })) {
+                Label("Folder", systemImage: "folder").tag(nil as FolderIcon?)
+                Divider()
+                ForEach(FolderIcon.allCases, id: \.self) { icon in
+                    Label(icon.label, systemImage: icon.symbolName).tag(Optional(icon))
+                }
+            }
             Section("Activation") {
                 Picker("Activation string", selection: Binding(get: { mode }, set: choose)) {
                     Text("Derived from the name").tag(Mode.derived)

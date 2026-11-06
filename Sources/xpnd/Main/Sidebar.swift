@@ -436,7 +436,7 @@ private struct ConnectionNode {
         id = .folder(folder.id)
         title = folder.name
         detail = namespace.effectiveActivation(ofFolder: folder.id).string
-        symbol = "folder"
+        symbol = folder.icon.symbol
         color = folder.color
     }
 

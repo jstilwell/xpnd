@@ -160,7 +160,7 @@ private struct QuickMenuView: View {
         let symbol: String, kind: String
         switch row.kind {
         case .connection(_, let type): (symbol, kind) = (type.symbol, type.rawValue)
-        case .folder: (symbol, kind) = ("folder", "folder")
+        case .folder: (symbol, kind) = (row.icon.symbol, "folder")
         }
         return HStack(spacing: 10) {
             Text(row.number.map(String.init) ?? "").font(.body.monospacedDigit()).foregroundStyle(.secondary)

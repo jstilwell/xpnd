@@ -49,6 +49,11 @@ enum ItemColor: String, Codable, CaseIterable, Sendable {
     case red, orange, yellow, green, blue, purple, gray
 }
 
+/// A folder's own symbol, hand-editable in YAML. Subfolders do not inherit it.
+enum FolderIcon: String, Codable, CaseIterable, Sendable {
+    case terminal, windows, desktop, server, network, cloud, shield, home, building
+}
+
 enum JumpHost: Hashable, Sendable {
     case connection(UUID), text(String)
 }
@@ -88,6 +93,8 @@ struct ConnectionFolder: Identifiable, Hashable, Sendable {
     var folders: [ConnectionFolder] = []
     /// nil inherits the nearest ancestor folder's.
     var color: ItemColor?
+    /// nil is the plain folder symbol.
+    var icon: FolderIcon?
 }
 
 struct ConnectionLibrary: Hashable, Sendable {
