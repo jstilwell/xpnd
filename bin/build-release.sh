@@ -3,8 +3,8 @@ set -e
 
 # Builds a release: a universal app signed with Developer ID and the hardened runtime, in a signed,
 # notarized, and stapled DMG, plus a signed Sparkle appcast pointing at it. With --upload it publishes
-# both as a GitHub release. The app reads the appcast from the latest release, so publishing the
-# release is what ships the update.
+# the DMG to updates.xpnd.dev and a GitHub release, then the appcast to updates.xpnd.dev. The app reads
+# that appcast, so uploading it, last of all, is what ships the update.
 #
 #   ./bin/build-release.sh [--upload]
 
@@ -27,8 +27,11 @@ PLIST_PATH="Resources/Info.plist"
 RELEASE_DIR="build/release"
 APP="$RELEASE_DIR/$APP_NAME.app"
 APPCAST="$RELEASE_DIR/appcast.xml"
-# The feed the app reads (SUFeedURL): the appcast attached to whichever release is latest.
-FEED_URL="https://github.com/${REPO}/releases/latest/download/appcast.xml"
+# Where updates live: the R2 bucket behind updates.xpnd.dev. The feed is SUFeedURL.
+UPDATES_URL="https://updates.xpnd.dev"
+UPDATES_BUCKET="xpnd-updates"
+FEED_URL="${UPDATES_URL}/appcast.xml"
+WRANGLER="npx --yes wrangler@4.152.0"
 # The team every release is signed by; the Makefile's TEAM_ID, passed to it below.
 TEAM_ID="G65RD22S57"
 # The keychain account holding xpnd's update signing key (see `generate_keys --account`).
@@ -48,6 +51,15 @@ if [ "$UPLOAD" = true ]; then
     if [ "$(gh repo view "$REPO" --json visibility --jq .visibility)" != "PUBLIC" ]; then
         echo -e "${RED}Error: ${REPO} is private, so installed copies couldn't download its releases.${NC}"
         echo "Make it public first: gh repo edit ${REPO} --visibility public --accept-visibility-change-consequences"
+        exit 1
+    fi
+    # Fail before the long build. The login covers several accounts, so name the one with the bucket.
+    if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+        echo -e "${RED}Error: set CLOUDFLARE_ACCOUNT_ID to the account holding the ${UPDATES_BUCKET} bucket.${NC}"
+        exit 1
+    fi
+    if ! $WRANGLER r2 bucket info "$UPDATES_BUCKET" > /dev/null 2>&1; then
+        echo -e "${RED}Error: can't reach the ${UPDATES_BUCKET} R2 bucket. Sign in with: npx wrangler login${NC}"
         exit 1
     fi
 fi
@@ -166,7 +178,7 @@ MIN_SYSTEM_VERSION=$(/usr/libexec/PlistBuddy -c "Print LSMinimumSystemVersion" "
 
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
 DMG_PATH="$RELEASE_DIR/$DMG_NAME"
-DOWNLOAD_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${DMG_NAME}"
+DOWNLOAD_URL="${UPDATES_URL}/${DMG_NAME}"
 echo -e "${YELLOW}Creating ${DMG_NAME}${NC}"
 DMG_TEMP=$(mktemp -d)
 trap 'rm -rf "$DMG_TEMP"' EXIT
@@ -265,16 +277,22 @@ fi
 echo -e "${GREEN}Built ${DMG_PATH} and a signed ${APPCAST}${NC}"
 
 if [ "$UPLOAD" = true ]; then
-    # A draft first, holding both files, then published in one step: the latest release never lacks
-    # its appcast or DMG. The tag is made on publishing, at the commit that was built.
+    # The DMG goes first, so the appcast never offers a file that isn't there.
+    echo -e "${YELLOW}Uploading ${DMG_NAME} to ${UPDATES_URL}...${NC}"
+    $WRANGLER r2 object put "${UPDATES_BUCKET}/${DMG_NAME}" --remote --file "$DMG_PATH" \
+        --content-type application/x-apple-diskimage
+    # A draft first, then published in one step, so the site never links a release without its DMG. The
+    # tag is made on publishing, at the commit that was built.
     echo -e "${YELLOW}Creating the GitHub release...${NC}"
-    gh release create "v${VERSION}" "$DMG_PATH" "$APPCAST" --draft --title "Version ${VERSION}" \
+    gh release create "v${VERSION}" "$DMG_PATH" --draft --title "Version ${VERSION}" \
         --notes "$GITHUB_NOTES" --target "$(git rev-parse HEAD)" --repo "$REPO"
     gh release edit "v${VERSION}" --draft=false --latest --repo "$REPO"
+    # Last, because this is what offers the update. Not cached, so it reaches installed copies at once.
+    echo -e "${YELLOW}Publishing the appcast...${NC}"
+    $WRANGLER r2 object put "${UPDATES_BUCKET}/appcast.xml" --remote --file "$APPCAST" \
+        --content-type application/xml --cache-control "no-cache"
     echo -e "${GREEN}Released: https://github.com/${REPO}/releases/tag/v${VERSION}${NC}"
 else
-    echo -e "${YELLOW}Next:${NC} ./bin/build-release.sh --upload builds and publishes it as a GitHub release."
-    echo "Or publish these by hand, with the appcast attached as appcast.xml:"
-    echo "  gh release create v${VERSION} ${DMG_PATH} ${APPCAST} --title \"Version ${VERSION}\" --latest --repo ${REPO}"
+    echo -e "${YELLOW}Next:${NC} ./bin/build-release.sh --upload builds and publishes it."
 fi
 echo -e "${GREEN}Done!${NC}"

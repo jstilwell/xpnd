@@ -156,22 +156,20 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
 
 ## Releases and updates
 
-Updates go through [Sparkle](https://sparkle-project.org). The app reads the appcast attached to the
-latest GitHub release and installs an update only if it's signed with the key whose public half is
-`SUPublicEDKey`.
+Updates go through [Sparkle](https://sparkle-project.org). The app reads
+`https://updates.xpnd.dev/appcast.xml`, served from the `xpnd-updates` R2 bucket, and installs an update
+only if it's signed with the key whose public half is `SUPublicEDKey`. The DMG sits beside the appcast
+and on the GitHub release, which is what xpnd.dev links to.
 
 ### One-time setup
 
-1. Generate the update signing key, which stays in the login keychain:
-   `.build/artifacts/sparkle/Sparkle/bin/generate_keys --account xpnd`. Back it up with
-   `generate_keys --account xpnd -x <file>`; without it no update can be signed for installed copies.
-2. Add to `Resources/Info.plist`: `SUPublicEDKey` (the printed public key) and `SUFeedURL`
-   (`https://github.com/jstilwell/xpnd/releases/latest/download/appcast.xml`). `SURequireSignedFeed` and
-   `SUVerifyUpdateBeforeExtraction` are already there. Until both keys are set, `Updates.isConfigured`
-   keeps updates off.
-3. Have a Developer ID Application certificate for team `G65RD22S57` (the Makefile and script refuse any
+1. The update signing key lives in the login keychain, under account `xpnd`. Back it up with
+   `.build/artifacts/sparkle/Sparkle/bin/generate_keys --account xpnd -x <file>`, somewhere safe outside
+   this repository; without it no update can be signed for installed copies.
+2. Have a Developer ID Application certificate for team `G65RD22S57` (the Makefile and script refuse any
    other team), notary credentials saved with `xcrun notarytool store-credentials notarytool-profile`,
-   the GitHub CLI signed in, and a public repository.
+   the GitHub CLI signed in, a public repository, Wrangler signed in, and `CLOUDFLARE_ACCOUNT_ID` set to
+   the account holding the `xpnd-updates` bucket.
 
 ### Each release
 
@@ -180,5 +178,6 @@ latest GitHub release and installs an update only if it's signed with the key wh
 2. Commit, then run `./bin/build-release.sh --upload`.
 
 The script builds a universal app signed with Developer ID and the hardened runtime, puts it in a
-signed DMG, notarizes and staples it, signs the update and the appcast, and publishes both as a GitHub
-release (a draft first). Without `--upload` it stops before publishing.
+signed DMG, notarizes and staples it, and signs the update and the appcast. It then uploads the DMG to
+R2, publishes the GitHub release (a draft first), and uploads the appcast last, since that is what offers
+the update. Without `--upload` it stops before publishing.
