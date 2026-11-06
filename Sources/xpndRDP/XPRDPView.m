@@ -1,5 +1,6 @@
 #import "XPRDPView.h"  // FreeRDP's headers first; see XPRDPView.h
 
+#import "XPRDPCursor.h"
 #import "XPRDPFitRect.h"
 #import "XPRDPResizeCoalescer.h"
 
@@ -29,6 +30,8 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     NSTrackingArea *_tracking;
     XPCommandState _command;
     NSTimer *_clipboardPoll;  // main thread
+    NSBitmapImageRep *_cursorBitmap;  // main thread: the server's pointer, nil for the system arrow
+    NSPoint _cursorHotSpot;
     BOOL _dragHasFiles;       // main thread: the drag in progress is one to take
 }
 
@@ -60,6 +63,14 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 
 - (void)unlockDrawing {
     [_drawLock unlock];
+}
+
+/// The image's size: main may not read the settings while a client thread runs (see `idleSettings`).
+- (NSSize)desktopPixelSize {
+    [_drawLock lock];
+    const NSSize size = bitmap_context ? NSMakeSize(CGBitmapContextGetWidth(bitmap_context), CGBitmapContextGetHeight(bitmap_context)) : NSZeroSize;
+    [_drawLock unlock];
+    return size;
 }
 
 /// The one rectangle drawing, invalidation and mouse mapping use for the desktop, in view points.
@@ -154,12 +165,39 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
         // the frame; the image is scaled to it instead.
         dispatch_async(dispatch_get_main_queue(), ^{
             self.needsDisplay = YES;
+            [self applyCursorScale];
         });
         return;
     }
     [super setFrameSize:size];
     self.needsDisplay = YES;  // the whole image is rescaled, and the letterbox moves
     [_coalescer noteSize:size];
+    [self applyCursorScale];
+}
+
+#pragma mark Cursor
+
+/// FreeRDP's thread. MRDPView makes a pointer's cursor one point per desktop pixel, so on a Retina desktop it is twice
+/// the size; it is drawn here at the desktop's own scale. The pixels are copied now, as FreeRDP frees them with the pointer.
+- (void)setCursor:(NSCursor *)cursor {
+    NSBitmapImageRep *bitmap = cursor == NSCursor.arrowCursor ? nil : XPRDPOwnedBitmap(cursor);
+    const NSPoint hotSpot = cursor.hotSpot;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self->_cursorBitmap = bitmap;
+        self->_cursorHotSpot = hotSpot;
+        if (bitmap)
+            [self applyCursorScale];
+        else
+            [super setCursor:cursor];
+    });
+}
+
+- (void)applyCursorScale {
+    if (!_cursorBitmap)
+        return;
+    const NSSize desktop = self.desktopPixelSize;
+    const CGFloat scale = XPRDPCursorScale(desktop, [self desktopRectForSize:desktop]);
+    [super setCursor:XPRDPScaledCursor(_cursorBitmap, _cursorHotSpot, scale)];
 }
 
 - (void)viewDidChangeBackingProperties {
@@ -428,11 +466,8 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 }
 
 /// On the desktop as drawn, not a letterbox bar, where a click would clamp to the edge and land on something else.
-/// The image's size: main may not read the settings while a client thread runs (see `idleSettings`).
 - (BOOL)dragIsOverDesktop:(id<NSDraggingInfo>)info {
-    [_drawLock lock];
-    const NSSize desktop = bitmap_context ? NSMakeSize(CGBitmapContextGetWidth(bitmap_context), CGBitmapContextGetHeight(bitmap_context)) : NSZeroSize;
-    [_drawLock unlock];
+    const NSSize desktop = self.desktopPixelSize;
     return NSPointInRect([self convertPoint:info.draggingLocation fromView:nil], [self desktopRectForSize:desktop]);
 }
 

@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 0.2.0 - Unreleased
 
 ### Fixed
+- The mouse pointer in a Windows desktop tab is the right size with Retina on, instead of twice as big.
 - A Windows desktop tab no longer covers the tab bar, so you can switch tabs while it is showing.
 - The import preview lists the existing connections a Replace removes even when the file adds only folders.
 - The color picker's swatches show their colors in the open menu instead of white circles.
