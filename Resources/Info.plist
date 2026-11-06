@@ -32,6 +32,10 @@
 	<string>xpnd opens your SSH connections in Terminal or iTerm2.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Stilwe LLC. All rights reserved.</string>
+	<key>SUFeedURL</key>
+	<string>https://updates.xpnd.dev/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>ny9hep60yohoiIPLEL9vHcfH2jq0ZUD9Yjd9qoKTing=</string>
 	<key>SURequireSignedFeed</key>
 	<true/>
 	<key>SUVerifyUpdateBeforeExtraction</key>

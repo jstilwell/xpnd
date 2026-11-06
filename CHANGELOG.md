@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Settings → Password Manager has a "Use the login for sudo" switch; turn it off to stop sudo falling back to the login password, so you can have no global sudo password without clearing the login.
 
 ### Added
+- xpnd checks for updates and installs them, with signed releases from updates.xpnd.dev.
 - xpnd has its own app icon and menu bar symbol: a prompt with lines growing out of it.
 - A folder can have an icon (terminal, PC, desktop, server rack, network, cloud, shield, home or building) in its Details, to tell Linux and Windows folders apart at a glance. It shows in the sidebar, the folder menu and the launcher; subfolders don't inherit it.
 - A small green dot at the right of a sidebar row shows a connection that is connected in a tab.
