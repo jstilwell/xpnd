@@ -66,3 +66,37 @@ struct RDPOptionsTests {
         #expect(try ConnectionYAML.decode(ConnectionYAML.encode(lib)) == lib)
     }
 }
+
+extension RDPOptionsTests {
+    @Test func cleanupPolicyRoundTrips() throws {
+        #expect(RDPSettings.standard.dropFolderCleanup == .never)
+        #expect(RDPSettings.standard.dropDrive)
+        var s = RDPSettings.standard
+        s.dropFolderCleanup = .after7Days
+        #expect(try JSONDecoder().decode(RDPSettings.self, from: JSONEncoder().encode(s)) == s)
+    }
+
+    /// Settings saved before a field existed keep every value they do have.
+    @Test func settingsSavedBeforeANewFieldKeepTheirValues() throws {
+        var s = RDPSettings.standard
+        s.colorDepth = 16
+        s.clipboard = false
+        var saved = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(s)) as? [String: Any])
+        saved["dropDrive"] = nil
+        saved["dropFolderCleanup"] = nil
+        let decoded = try JSONDecoder().decode(RDPSettings.self, from: JSONSerialization.data(withJSONObject: saved))
+        #expect(decoded.colorDepth == 16)
+        #expect(!decoded.clipboard)
+        #expect(decoded.dropDrive)
+        #expect(decoded.dropFolderCleanup == .never)
+    }
+
+    /// A field left out of `init(from:)` would come back as its default here.
+    @Test func everySettingRoundTrips() throws {
+        let s = RDPSettings(display: .fixed(width: 1920, height: 1080), scaleToFit: false, colorDepth: 16, retina: false, clipboard: false,
+                            audio: .off, printers: true, commandAsWindowsKey: false, nla: false, timeoutSeconds: 30,
+                            autoReconnect: false, reconnectTries: 2, performance: .lan, alternateShell: "x",
+                            consoleSession: true, dropDrive: false, dropFolderCleanup: .onDisconnect)
+        #expect(try JSONDecoder().decode(RDPSettings.self, from: JSONEncoder().encode(s)) == s)
+    }
+}

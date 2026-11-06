@@ -12,4 +12,10 @@ struct RDPOptionLabelsTests {
         #expect(RDPOptionLabels.label(for: RDPOptions.Performance.auto) == "Automatic")
         #expect(RDPOptionLabels.presets.count == 4)
     }
+
+    @Test func cleanupLabels() {
+        #expect(RDPOptionLabels.label(for: DropFolderCleanup.never) == "Never")
+        #expect(RDPOptionLabels.label(for: DropFolderCleanup.onDisconnect) == "On disconnect")
+        #expect(RDPOptionLabels.label(for: DropFolderCleanup.after7Days) == "After 7 days")
+    }
 }

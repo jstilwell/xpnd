@@ -43,6 +43,23 @@ private struct TwoAccountProvider: CredentialProvider {
 }
 
 @Suite struct MainWindowLogicTests {
+    @MainActor @Test func aSavedDisplayLandsInTheConnectionsRDPOptions() throws {
+        let (editing, _) = editing(TwoAccountProvider())
+        let folder = try #require(editing.addFolder(in: nil))
+        let id = try #require(editing.addConnection(in: folder))
+        let size = RDPOptions.Display.fixed(width: 1920, height: 1080)
+        #expect(editing.saveDisplay(id, size))
+        #expect(editing.library.connection(id)?.rdp?.display == size)
+    }
+
+    @MainActor @Test func savingADisplayForAGoneConnectionDoesNothing() {
+        let (editing, _) = editing(TwoAccountProvider())
+        let before = editing.library
+        #expect(!editing.saveDisplay(UUID(), .fit))
+        #expect(editing.library == before)
+        #expect(editing.saveProblem == nil)
+    }
+
     @MainActor @Test func accountIsTheSettingOrAsksForOne() async throws {
         #expect(try await editing(TwoAccountProvider(), account: "A2").0.account() == "A2")
         // With two accounts, no choice (or a stale one) never silently picks the first.

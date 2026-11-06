@@ -17,12 +17,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// Main thread: the general pasteboard's files as a text/uri-list (no NUL), or nil. Call only once the
 /// pasteboard passed `formatsToAnnounceForPasteboardTypes:`, as it reads the pasteboard itself.
 - (nullable NSData *)localFileURIList;
-/// Main thread: what the Mac clipboard now offers, nil for none. Announced at once if the channel is
-/// ready, otherwise when the server says it is (MonitorReady).
-- (void)offerText:(nullable NSString *)text fileURIList:(nullable NSData *)uriList;
-/// Main thread: the pasteboard's changeCount after it last wrote the server's text there, which the
-/// poll skips.
+/// Main thread: the pasteboard's changeCount the poll skips: after it wrote the server's text there, or
+/// when a file offer took over from what the pasteboard holds.
 @property (readonly) NSInteger writtenChangeCount;
+/// YES while the cliprdr channel is connected.
+@property (readonly) BOOL channelAttached;
 @end
 
 NS_ASSUME_NONNULL_END

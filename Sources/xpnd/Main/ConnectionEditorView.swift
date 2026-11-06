@@ -5,6 +5,9 @@ import SwiftUI
 struct ConnectionEditorView: View {
     let editing: ConnectionEditing
     let connection: Connection
+    /// The connection has a running session; Connect becomes Disconnect.
+    let live: Bool
+    let hasSession: Bool
     /// A field the sidebar asked to focus; consumed here.
     @Binding var focus: EditorFocus?
 
@@ -82,7 +85,12 @@ struct ConnectionEditorView: View {
             .disabled(editing.readOnly)
             HStack {
                 Spacer()
-                Button("Connect") { editing.connect(connection.id, false) }
+                if hasSession { Button("Show Session") { editing.showSession(connection.id) } }
+                if live {
+                    Button("Disconnect") { editing.disconnect(connection.id) }
+                } else {
+                    Button("Connect") { editing.connect(connection.id, false) }
+                }
             }
             .padding(8)
         }

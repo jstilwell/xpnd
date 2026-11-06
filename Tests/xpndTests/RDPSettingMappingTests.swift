@@ -23,6 +23,25 @@ import Testing
         #expect(value(c, "FreeRDP_DeviceScaleFactor") == "180")
     }
 
+    @Test func dropDriveDefaultsOnAndEmitsRedirection() {
+        let c = config { $0.dropFolder = "/x" }
+        #expect(value(c, "FreeRDP_DeviceRedirection") == "TRUE")
+        #expect(c.driveDevice()?.name == "xpnd")
+        #expect(c.driveDevice()?.path == "/x")
+    }
+
+    @Test func dropDriveOffEmitsNoDevice() {
+        let c = config { $0.dropFolder = "/x"; $0.dropDrive = false }
+        #expect(value(c, "FreeRDP_DeviceRedirection") == nil)
+        #expect(c.driveDevice() == nil)
+    }
+
+    @Test func displayControlIsAlwaysNegotiated() {
+        let c = config { $0.display = .fixed(width: 1280, height: 720) }
+        #expect(value(c, "FreeRDP_SupportDisplayControl") == "TRUE")
+        #expect(value(c, "FreeRDP_DynamicResolutionUpdate") == "FALSE")
+    }
+
     @Test func retinaOffHalvesTheViewSize() {
         let c = config { $0.retina = false }
         #expect(value(c, "FreeRDP_DesktopWidth") == "1440")

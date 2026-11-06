@@ -10,8 +10,18 @@ import xpndRDP
     var commandAsWindowsKey: Bool { get set }
     func start() -> Bool
     func stop()
-    func reconnect()
     func forgetPassword()
+    func reconnect(withSettings settings: [[String]])
+    func sendKeySequence(_ steps: [XPRDPKeyStep])
+    func sendLeftClick(atViewPoint point: NSPoint)
+    func setClipboardSyncEnabled(_ enabled: Bool)
+    var clipboardChannelLoaded: Bool { get }
+    func offerFiles(forPaste urls: [URL], completion: @escaping (Bool) -> Void)
+    var dropHandler: (([URL], NSPoint) -> Void)? { get set }
+    func requestDesktopFit() -> Bool
+    func requestDesktopWidth(_ width: Int, height: Int) -> Bool
+    var connectionInfo: XPRDPConnectionInfo { get }
+    func noteCommandUsed()
 }
 
 extension XPRDPSession: RDPSessionControlling {}
@@ -23,12 +33,24 @@ extension XPRDPSession: RDPSessionControlling {}
     /// Never called: a desktop ends through `onDisconnect`.
     var onExit: ((Int32?) -> Void)?
     var onDisconnect: ((String?) -> Void)?
+    var onReconnecting: (() -> Void)?
     var view: NSView { session.view }
+    /// The model's copy, which SwiftUI can observe.
+    var isEstablished: Bool { notch.isConnected }
 
-    private let config: RDPSessionConfig
+    /// This session's config: the notch's reconnects change it, never the connection or Settings.
+    private(set) var config: RDPSessionConfig
+    /// Set by the workspace: writes a display choice to the connection (the notch's "Set as default").
+    private(set) var onSaveDisplayDefault: ((RDPOptions.Display) -> Bool)?
+    /// A connect succeeded and the session has not ended since.
+    private(set) var isConnected = false {
+        didSet { notch?.isConnected = isConnected }
+    }
+    private(set) var notch: RDPNotchModel!
     private let presentIn: () -> NSWindow?
     private var session: (any RDPSessionControlling)!
     private let retryDelay: Duration
+    private let cleanup: @MainActor () -> DropFolderCleanup
     /// A connect succeeded since the last user start, so a transport failure is a drop worth retrying.
     private var hadConnected = false
     private var retries = 0
@@ -41,22 +63,21 @@ extension XPRDPSession: RDPSessionControlling {}
     private(set) var retry: Task<Void, Never>?
     private var sheet: NSWindow?
 
-    /// `makeSession` and `retryDelay` are for tests: a fake session, and no wait between retries.
+    /// `makeSession`, `retryDelay` and `cleanup` are for tests: a fake session, no wait between retries, a fixed policy.
     init(config: RDPSessionConfig, password: String, gatewayPassword: String?, presentIn: @escaping () -> NSWindow?,
          retryDelay: Duration = RDPReconnectPolicy.delay,
-         makeSession: @MainActor ([RDPSetting], String, String?, any XPRDPSessionDelegate) -> any RDPSessionControlling = RDPHost.makeSession) {
+         cleanup: @escaping @MainActor () -> DropFolderCleanup = { AppSettings.shared.remoteDesktop.dropFolderCleanup },
+         makeSession: @MainActor ([RDPSetting], String, String?, (name: String, path: String)?, any XPRDPSessionDelegate) -> any RDPSessionControlling = RDPHost.makeSession) {
         self.config = config
         self.presentIn = presentIn
         self.retryDelay = retryDelay
+        self.cleanup = cleanup
         super.init()
-        // The tab's size isn't known yet: start from the window's, and Display Control corrects it once laid out.
-        let window = presentIn()
-        let scale = window?.backingScaleFactor ?? 2
-        let size = window?.contentLayoutRect.size ?? NSSize(width: 1000, height: 640)
-        let settings = config.freerdpSettings(
-            configPath: Self.configPath, viewPixelSize: (Int(size.width * scale), Int(size.height * scale)))
-        session = makeSession(settings, password, gatewayPassword, self)
+        session = makeSession(freerdpSettings(), password, gatewayPassword, config.driveDevice(), self)
         session.commandAsWindowsKey = config.commandAsWindowsKey
+        notch = RDPNotchModel(actions: self)
+        session.dropHandler = { [weak self] urls, point in self?.notch.dropOnDesktop(urls, at: point) }
+        ensureDropFolder()
         if !session.start() {
             Task { [weak self] in self?.onDisconnect?(RDPErrorText.startFailed) } // after `onDisconnect` is set
         }
@@ -64,28 +85,57 @@ extension XPRDPSession: RDPSessionControlling {}
 
     /// The real session; FreeRDP's known-hosts directory is made first.
     static func makeSession(_ settings: [RDPSetting], password: String, gatewayPassword: String?,
-                            delegate: any XPRDPSessionDelegate) -> any RDPSessionControlling {
+                            drive: (name: String, path: String)?, delegate: any XPRDPSessionDelegate) -> any RDPSessionControlling {
         try? FileManager.default.createDirectory(atPath: configPath, withIntermediateDirectories: true)
         return XPRDPSession(settings: settings.map { [$0.name, $0.value] }, password: password,
-                            gatewayPassword: gatewayPassword, delegate: delegate)
+                            gatewayPassword: gatewayPassword, driveName: drive?.name, drivePath: drive?.path, delegate: delegate)
+    }
+
+    /// Takes the id, not the tab's session: that owns this host, and a cycle would keep the passwords alive.
+    func saveDisplay(to id: Connection.ID, with save: @escaping (Connection.ID, RDPOptions.Display) -> Bool) {
+        onSaveDisplayDefault = { save(id, $0) }
     }
 
     func terminate() {
+        isConnected = false
         retry?.cancel()
         dismissSheet()
         session.stop()
+        clearDropFolderPerPolicy()
     }
 
     func apply(_ settings: BuiltInTerminalSettings) {}
 
-    func reconnect() {
+    func noteCommandUsed() { session.noteCommandUsed() }
+
+    func reconnect() { reconnect(with: { _ in }) }
+
+    private func prepareReconnect() {
+        isConnected = false
         retry?.cancel()
         awaitingPrompt = false
         hadConnected = false
         retries = 0
         // FreeRDP asks (the password sheet) only when it has no password.
         if RDPErrorText.needsNewPassword(lastError) { session.forgetPassword() }
-        session.reconnect()
+        ensureDropFolder()
+    }
+
+    /// Every connect after the first uses settings rebuilt from `config`, so live changes survive a retry. The
+    /// clipboard's switch outlives a connection, so it's set to agree as well.
+    private func reconnectSession() {
+        session.setClipboardSyncEnabled(config.clipboard)
+        session.reconnect(withSettings: freerdpSettings().map { [$0.name, $0.value] })
+    }
+
+    /// The settings for `config`. The tab's size isn't known yet at first: start from the window's, and
+    /// Display Control corrects it once laid out.
+    private func freerdpSettings() -> [RDPSetting] {
+        let window = presentIn()
+        let scale = window?.backingScaleFactor ?? 2
+        let size = window?.contentLayoutRect.size ?? NSSize(width: 1000, height: 640)
+        return config.freerdpSettings(
+            configPath: Self.configPath, viewPixelSize: (Int(size.width * scale), Int(size.height * scale)))
     }
 
     // MARK: XPRDPSessionDelegate
@@ -109,6 +159,7 @@ extension XPRDPSession: RDPSessionControlling {}
     }
 
     func session(_ s: XPRDPSession, didDisconnectWithErrorName errorName: String?) {
+        isConnected = false
         // A rejected login asks again at once (the sheet); the password that failed is never resent.
         if RDPErrorText.needsNewPassword(errorName), !awaitingPrompt {
             lastError = errorName
@@ -123,11 +174,14 @@ extension XPRDPSession: RDPSessionControlling {}
         retry = Task { [weak self, retryDelay] in
             try? await Task.sleep(for: retryDelay)
             guard !Task.isCancelled else { return }
-            self?.session.reconnect() // a failure to start reports before it returns
+            self?.ensureDropFolder()
+            self?.reconnectSession() // a failure to start reports before it returns
         }
     }
 
     func sessionDidConnect(_ s: XPRDPSession) {
+        isConnected = true
+        lastError = nil // the password worked, so a later reconnect keeps it
         hadConnected = true
         retries = 0
     }
@@ -136,7 +190,22 @@ extension XPRDPSession: RDPSessionControlling {}
 
     private func ended(_ errorName: String?) {
         lastError = errorName
+        clearDropFolderPerPolicy()
         onDisconnect?(RDPErrorText.isClean(errorName) ? nil : RDPErrorText.reason(forErrorName: errorName, afterConnect: hadConnected))
+    }
+
+    private func ensureDropFolder() {
+        guard let drive = config.driveDevice() else { return }
+        RDPDropFolder.ensureExists(folder: URL(fileURLWithPath: drive.path))
+    }
+
+    /// Only a final end calls this, never a reconnect retry: the session that comes back still needs its files.
+    private func clearDropFolderPerPolicy() {
+        guard let folder = config.dropFolder,
+              RDPDropFolder.shouldClear(policy: cleanup(), lastUse: nil, now: Date(), disconnecting: true) else { return }
+        // shortcut: duplicate tabs of a connection share one folder, so one ending clears it for the other; track open tabs per connection to fix.
+        // shortcut: a copy still running or queued recreates the folder after this, and it stays until the connection next ends; clear on the copy queue if that bites.
+        try? RDPDropFolder.clear(folder: URL(fileURLWithPath: folder))
     }
 
     private func present(_ prompt: some View, orElse refuse: () -> Void) {
@@ -151,4 +220,88 @@ extension XPRDPSession: RDPSessionControlling {}
         self.sheet = nil
         sheet.sheetParent?.endSheet(sheet)
     }
+}
+
+extension RDPHost: RDPNotchActions {
+    var clipboardChannelLoaded: Bool { session.clipboardChannelLoaded }
+    var info: RDPConnectionInfo { RDPConnectionInfo(session.connectionInfo) }
+
+    func send(_ steps: [RDPKeyStep]) {
+        guard isConnected else { return }
+        session.sendKeySequence(steps.map(\.objc))
+    }
+
+    /// The offer only queues on the channel while input goes straight out, so nothing is clicked or typed
+    /// until the server has it: a Ctrl+V ahead of it would paste whatever Windows already held.
+    func pasteFiles(_ urls: [URL], at point: CGPoint, done: @escaping (Bool) -> Void) {
+        guard isConnected else { return done(false) }
+        session.offerFiles(forPaste: urls) { [weak self] accepted in
+            guard let self, accepted, isConnected else { return done(false) }
+            session.sendLeftClick(atViewPoint: point)
+            session.sendKeySequence(([.pause(ms: 100)] + RDPKeySequence.ctrlV).map(\.objc))
+            done(true)
+        }
+    }
+
+    func setClipboardSync(_ on: Bool) {
+        config.clipboard = on
+        session.setClipboardSyncEnabled(on)
+    }
+
+    /// Applies `changes` to this session's config, then reconnects with the settings rebuilt from it. The
+    /// password handling is `reconnect()`'s.
+    func reconnect(with changes: (inout RDPSessionConfig) -> Void) {
+        changes(&config)
+        prepareReconnect()
+        onReconnecting?() // first: a failure to start reports before `reconnectSession` returns
+        reconnectSession()
+    }
+
+    func requestDisplay(_ display: RDPOptions.Display) -> Bool {
+        guard isConnected else { return false }
+        let accepted = switch display {
+        case .fit: session.requestDesktopFit()
+        case let .fixed(width, height): session.requestDesktopWidth(width, height: height)
+        }
+        if accepted { config.display = display }
+        return accepted
+    }
+
+    /// The user ends the session as closing the tab does; `stop` reports nothing, so there is no retry.
+    func disconnect() {
+        terminate()
+        onDisconnect?(nil)
+    }
+
+    func toggleFullScreen() { view.window?.toggleFullScreen(nil) }
+
+    /// Every notch action ends here, so a ⌘-click on a button doesn't count as tapping ⌘.
+    func restoreFocus() {
+        noteCommandUsed()
+        _ = view.window?.makeFirstResponder(view)
+    }
+
+    func dropFolderCount() -> Int {
+        config.driveDevice().map { RDPDropFolder.count(folder: URL(fileURLWithPath: $0.path)) } ?? 0
+    }
+
+    func copyIntoDropFolder(_ urls: [URL]) async throws -> RDPDropFolder.CopyResult {
+        guard let folder = config.dropFolder else { throw CocoaError(.fileNoSuchFile) }
+        return try await RDPDropFolder.copyInTurn(urls, folder: URL(fileURLWithPath: folder))
+    }
+
+    /// The user's Clear, whatever the cleanup policy; the folder is made again while the drive is redirected.
+    func clearDropFolder() throws {
+        guard let folder = config.dropFolder else { return }
+        try RDPDropFolder.clear(folder: URL(fileURLWithPath: folder))
+        ensureDropFolder()
+    }
+
+    func revealDropFolder() {
+        guard let folder = config.dropFolder else { return }
+        ensureDropFolder()
+        NSWorkspace.shared.open(URL(fileURLWithPath: folder))
+    }
+
+    func saveDisplayAsDefault(_ display: RDPOptions.Display) -> Bool { onSaveDisplayDefault?(display) ?? false }
 }

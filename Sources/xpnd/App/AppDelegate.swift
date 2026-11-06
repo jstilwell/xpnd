@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connections.load()
         connections.seedIfFirstLaunch(defaults: .standard)
         connections.startWatching()
+        RDPDropFolder.applyLaunchCleanup(policy: AppSettings.shared.remoteDesktop.dropFolderCleanup, now: Date())
         let store = store, hud = hud
         let sender = CGEventKeystrokeSender(focusedSessionKind: { [weak self] in self?.mainWindow?.focusedSessionKind })
         service = makeConnectionService(sender: sender)

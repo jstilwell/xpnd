@@ -48,6 +48,9 @@ struct RDPFields: View {
             toggle("Share clipboard", \.clipboard, d?.clipboard)
             toggle("Share printers", \.printers, d?.printers)
         }
+        Section("Files") {
+            toggle("File drop drive", \.dropDrive, d?.dropDrive)
+        }
         Section("Security") {
             toggle("Network Level Authentication", \.nla, d?.nla)
         }
@@ -115,7 +118,7 @@ extension RDPSettings {
             RDPOptions(display: display, scaleToFit: scaleToFit, colorDepth: colorDepth, retina: retina, clipboard: clipboard,
                        audio: audio, printers: printers, commandAsWindowsKey: commandAsWindowsKey, nla: nla,
                        timeoutSeconds: timeoutSeconds, autoReconnect: autoReconnect, reconnectTries: reconnectTries,
-                       performance: performance, alternateShell: alternateShell, consoleSession: consoleSession)
+                       performance: performance, alternateShell: alternateShell, consoleSession: consoleSession, dropDrive: dropDrive)
         }
         set {
             display = newValue.display ?? display
@@ -133,6 +136,7 @@ extension RDPSettings {
             performance = newValue.performance ?? performance
             alternateShell = newValue.alternateShell ?? ""
             consoleSession = newValue.consoleSession ?? consoleSession
+            dropDrive = newValue.dropDrive ?? dropDrive
         }
     }
 }

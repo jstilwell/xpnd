@@ -1,5 +1,7 @@
 #import <AppKit/AppKit.h>
 
+#import "XPRDPKeyPlayer.h"
+
 NS_ASSUME_NONNULL_BEGIN
 
 @class XPRDPSession;
@@ -21,6 +23,23 @@ typedef NS_ENUM(NSInteger, XPRDPCertificateKind) {
 - (instancetype)initWithHost:(NSString *)host port:(NSInteger)port subject:(NSString *)subject issuer:(NSString *)issuer
            fingerprintSHA256:(NSString *)fingerprint kind:(XPRDPCertificateKind)kind NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
+@end
+
+/// What the session knows about its connection, as of the moment it was asked.
+@interface XPRDPConnectionInfo : NSObject
+/// 0 with no context.
+@property (readonly) NSInteger desktopWidth;
+@property (readonly) NSInteger desktopHeight;
+/// "RemoteFX", "progressive", "planar", "bitmap", or "—" before the first graphics-pipeline frame.
+@property (readonly, copy) NSString *codec;
+/// The server's measured round trip; nil if it reported none.
+@property (readonly, copy, nullable) NSNumber *latencyMs;
+@property (readonly, copy, nullable) NSDate *connectedSince;
+/// From FreeRDP's known hosts; "" for a certificate that isn't there (see `connectionInfo`).
+@property (readonly, copy) NSString *certificateSubject;
+/// Colon-separated hex SHA-256.
+@property (readonly, copy) NSString *certificateFingerprint;
+@property (readonly, copy, nullable) NSString *gatewayHost;
 @end
 
 /// Every call arrives on the main thread. While a certificate or password question is open,
@@ -48,10 +67,17 @@ NS_SWIFT_UI_ACTOR
 @interface XPRDPSession : NSObject
 /// `settings` are `[name, value]` pairs applied with `freerdp_settings_set_value_for_name`.
 /// The passwords are copied into memory this session zeroes on `stop` and when it is freed.
+/// With `driveName` and `drivePath`, that one folder is redirected into the session as a drive.
 - (instancetype)initWithSettings:(NSArray<NSArray<NSString *> *> *)settings
                         password:(NSString *)password
                  gatewayPassword:(NSString *_Nullable)gatewayPassword
+                       driveName:(NSString *_Nullable)driveName
+                       drivePath:(NSString *_Nullable)drivePath
                         delegate:(id<XPRDPSessionDelegate>)delegate NS_DESIGNATED_INITIALIZER;
+- (instancetype)initWithSettings:(NSArray<NSArray<NSString *> *> *)settings
+                        password:(NSString *)password
+                 gatewayPassword:(NSString *_Nullable)gatewayPassword
+                        delegate:(id<XPRDPSessionDelegate>)delegate;
 - (instancetype)init NS_UNAVAILABLE;
 
 /// The desktop; lives as long as the session, across reconnects.
@@ -70,10 +96,50 @@ NS_SWIFT_UI_ACTOR
 - (void)stop;
 /// Tears down the connection and starts again with the same settings and the latest password.
 - (void)reconnect;
+/// `reconnect` with `settings` (as at init) in place of the old ones; the passwords and drive stay.
+- (void)reconnectWithSettings:(NSArray<NSArray<NSString *> *> *)settings;
 /// Zeroes and drops the login and gateway passwords, so the next `start` / `reconnect` asks the delegate
-/// for them. Call it while disconnected.
+/// for them. Call it while disconnected. With a client thread, FreeRDP's copy goes at the following
+/// `reconnect` or `stop`.
 - (void)forgetPassword;
 
+/// Scancodes, text and pauses, in order, behind any sequence still pausing. Nothing unless connected; what is
+/// left when the session stops is dropped, its held keys released.
+- (void)sendKeySequence:(NSArray<XPRDPKeyStep *> *)steps;
+/// One left click, down then up, at `point` in `view`'s coordinates. Nothing unless connected.
+- (void)sendLeftClickAtViewPoint:(NSPoint)point;
+
+/// xpnd used the ⌘ being held (a shortcut, a ⌘-click on its own controls), so releasing it doesn't tap the Windows key.
+- (void)noteCommandUsed;
+
+/// NO stops the pasteboard poll, fails the server's requests for what was on offer and ignores its lists; it
+/// lasts across reconnects, until YES.
+- (void)setClipboardSyncEnabled:(BOOL)enabled;
+/// YES while the cliprdr channel is connected.
+@property (readonly) BOOL clipboardChannelLoaded;
+/// Offers `urls` (file URLs only) on the remote clipboard, and nothing else. `completion` runs once, on the main
+/// queue: YES when the server has accepted the offer, so a paste gets these files and not what Windows held.
+/// NO on a refusal, after 2 seconds, when the session ends or a newer offer replaces this one, and at once unless
+/// connected with the channel in sync and clipboard sync on.
+- (void)offerFilesForPaste:(NSArray<NSURL *> *)urls completion:(void (^)(BOOL accepted))completion;
+/// Set to take files dropped on `view`, with where they landed in its coordinates. Without it, or unless
+/// connected, `view` refuses them.
+@property (copy, nullable) void (^dropHandler)(NSArray<NSURL *> *urls, NSPoint viewPoint);
+
+/// Asks the server for the view's size, and to follow it from now on. NO without Display Control, for this
+/// connection only: `reconnect` goes back to the settings.
+- (BOOL)requestDesktopFit;
+/// Asks the server for a size in desktop pixels, letterboxed from now on. As `requestDesktopFit`.
+- (BOOL)requestDesktopWidth:(NSInteger)width height:(NSInteger)height;
+
+@property (readonly) XPRDPConnectionInfo *connectionInfo;
+
+/// Test hook: the redirected devices in the context; 0 without one.
+- (NSUInteger)deviceCount;
+/// Test hook: the folder behind a redirected drive.
+- (nullable NSString *)drivePathAtIndex:(NSUInteger)index;
+/// What the graphics pipeline's frame callback records, by RDPGFX_CODECID_*.
+- (void)noteGfxCodec:(uint16_t)codecId;
 /// Test hooks: a setting by its `FreeRDP_<Name>`; nil / NO for an unknown name, another type, or no context.
 - (nullable NSString *)stringSettingNamed:(NSString *)name;
 - (BOOL)boolSettingNamed:(NSString *)name;

@@ -6,6 +6,7 @@ import Testing
     let view = NSView()
     var onExit: ((Int32?) -> Void)?
     var onDisconnect: ((String?) -> Void)?
+    var onReconnecting: (() -> Void)?
     var terminated = false
     var reconnects = 0
     func terminate() { terminated = true }
@@ -15,6 +16,8 @@ import Testing
         reconnects += 1
         onReconnect()
     }
+    var commandUsed = 0
+    func noteCommandUsed() { commandUsed += 1 }
     func exit(_ status: Int32?) { onExit?(status) }
     func disconnect(_ reason: String?) { onDisconnect?(reason) }
 }
@@ -42,6 +45,91 @@ import Testing
         let config = RDPOptions().resolved(over: .standard, host: name, port: 3389, username: nil, domain: nil)
         return sessions.open(.remoteDesktop(config, password: "", gatewayPassword: nil),
                              for: Connection(name: name, type: .rdp, host: name), color: nil)
+    }
+
+    private let connectionX = Connection(name: "x", host: "x")
+    private let connectionY = Connection(name: "y", host: "y")
+
+    private func open(_ connection: Connection) -> TerminalSession.ID {
+        sessions.open(.terminal(SSHCommand(arguments: ["ssh", connection.host])), for: connection, color: nil)
+    }
+
+    @Test func aShortcutTellsTheSelectedHostFirst() {
+        open("x")
+        open("y")
+        var seen: [Int] = []
+        sessions.shortcut { seen = hosts.all.map(\.commandUsed) }
+        #expect(seen == [0, 1])
+    }
+
+    @Test func aShortcutWithNoTabsStillRuns() {
+        var ran = false
+        sessions.shortcut { ran = true }
+        #expect(ran)
+    }
+
+    @Test func anSSHTabIsEstablishedWhileItRuns() {
+        let x = sessions.open(.terminal(SSHCommand(arguments: ["ssh", "x"])), for: connectionX, color: nil)
+        #expect(sessions.establishedConnectionIDs == [connectionX.id])
+        hosts.all[0].exit(1)
+        #expect(sessions.establishedConnectionIDs.isEmpty)
+        sessions.close(x)
+    }
+
+    @Test func liveConnectionIDsFollowSessions() {
+        let a = open(connectionX)
+        open(connectionY)
+        #expect(sessions.liveConnectionIDs == [connectionX.id, connectionY.id])
+        hosts.all[1].exit(1)
+        #expect(sessions.liveConnectionIDs == [connectionX.id])
+        sessions.close(a)
+        #expect(sessions.liveConnectionIDs.isEmpty)
+    }
+
+    @Test func sessionForConnectionFindsTheLiveOne() {
+        let first = open(connectionX)
+        hosts.all[0].exit(1)
+        let second = open(connectionX)
+        #expect(sessions.session(for: connectionX.id)?.id == second)
+        #expect(sessions.session(for: connectionY.id) == nil)
+        sessions.close(second)
+        #expect(sessions.session(for: connectionX.id)?.id == first) // an ended tab can still be shown
+    }
+
+    @Test func sessionForConnectionPrefersTheSelectedTab() {
+        let first = open(connectionX)
+        let second = open(connectionX)
+        #expect(sessions.session(for: connectionX.id)?.id == second)
+        sessions.selected = first
+        #expect(sessions.session(for: connectionX.id)?.id == first)
+    }
+
+    @Test func aDesktopReconnectingByItselfShowsAsRunningAgain() {
+        let id = openDesktop("win")
+        hosts.all[0].disconnect("the network connection was lost")
+        hosts.all[0].onReconnecting?()
+        #expect(sessions.sessions.first { $0.id == id }?.state == .running)
+        // So closing it now ends the session it started.
+        sessions.close(id)
+        #expect(hosts.all[0].terminated)
+    }
+
+    @Test func closingADisconnectedDesktopTerminatesIt() {
+        let a = openDesktop("a")
+        openDesktop("b")
+        hosts.all[0].disconnect("the network connection was lost")
+        hosts.all[1].disconnect("the network connection was lost")
+        sessions.close(a) // its passwords live until terminate
+        #expect(hosts.all[0].terminated)
+        sessions.terminateAll()
+        #expect(hosts.all[1].terminated)
+    }
+
+    @Test func anEndedTerminalIsNotTerminatedAgain() {
+        let a = open("a")
+        hosts.all[0].exit(1)
+        sessions.close(a)
+        #expect(!hosts.all[0].terminated)
     }
 
     @Test func openSelectsAndCountsLive() {

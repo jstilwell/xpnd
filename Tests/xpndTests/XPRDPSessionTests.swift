@@ -19,6 +19,13 @@ import xpndRDP
 
 /// Nothing here connects: `prepare` builds the context and applies settings without a client thread.
 struct XPRDPSessionTests {
+    /// Unclipped, a view's dirty rect reaches the top of the window, and the black fill covers the tab bar.
+    @MainActor @Test func theDesktopNeverDrawsOutsideItsTab() {
+        let s = XPRDPSession(settings: [], password: "", gatewayPassword: nil, delegate: FakeDelegate())
+        #expect(s.view.clipsToBounds)
+        s.stop()
+    }
+
     @MainActor @Test func settingsAreAppliedByName() {
         let s = XPRDPSession(settings: [["FreeRDP_ServerHostname", "win.example"], ["FreeRDP_NlaSecurity", "FALSE"]],
                              password: "p", gatewayPassword: nil, delegate: FakeDelegate())
@@ -53,10 +60,11 @@ struct XPRDPSessionTests {
         #expect(s.stringSettingNamed("FreeRDP_GatewayPassword") == nil)
         s.stop()
         // A fresh context, as reconnect makes, gets no password either.
-        let fresh = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        let fresh = XPRDPSession(settings: [], password: "p", gatewayPassword: "g", delegate: FakeDelegate())
         fresh.forgetPassword()
         #expect(fresh.prepare())
         #expect(fresh.stringSettingNamed("FreeRDP_Password") == nil)
+        #expect(fresh.stringSettingNamed("FreeRDP_GatewayPassword") == nil)
         fresh.stop()
     }
 
@@ -76,6 +84,14 @@ struct XPRDPSessionTests {
         #expect(!s.prepare())
         let bad = XPRDPSession(settings: [["FreeRDP_NlaSecurity", "maybe"]], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
         #expect(!bad.prepare())
+    }
+
+    @MainActor @Test func reconnectWithSettingsReplacesThem() {
+        let delegate = FakeDelegate()
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: delegate)
+        s.reconnect(withSettings: [["FreeRDP_NoSuchSetting", "1"]]) // the new settings are what the restart applies, and it fails on them
+        #expect(delegate.calls == ["disconnect"])
+        s.stop()
     }
 
     @MainActor @Test func settingsReadBackOnlyForTheirType() {
@@ -198,6 +214,277 @@ struct XPRDPSessionTests {
         #expect(sizes.isEmpty)
         try await Task.sleep(for: .milliseconds(400))
         #expect(sizes == [CGSize(width: 300, height: 250)])
+    }
+
+    // MARK: The notch's additions
+
+    @MainActor @Test func driveDeviceIsAddedToSettings() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, driveName: "xpnd", drivePath: "/tmp/x", delegate: FakeDelegate())
+        #expect(s.prepare())
+        #expect(s.boolSettingNamed("FreeRDP_DeviceRedirection"))
+        #expect(s.deviceCount() == 1)
+        s.stop()
+    }
+
+    @MainActor @Test func noDriveMeansNoDevice() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        #expect(s.prepare())
+        #expect(!s.boolSettingNamed("FreeRDP_DeviceRedirection"))
+        #expect(s.deviceCount() == 0)
+        s.stop()
+    }
+
+    /// `reconnect` is `stop`'s teardown then `start`'s `prepare`: a new context each time, never a second device on one.
+    @MainActor @Test func theDriveIsAddedOncePerContext() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, driveName: "xpnd", drivePath: "/tmp/x", delegate: FakeDelegate())
+        #expect(s.prepare())
+        #expect(s.prepare())
+        #expect(s.deviceCount() == 1)
+        s.stop()
+        #expect(s.prepare())
+        #expect(s.deviceCount() == 1)
+        s.stop()
+    }
+
+    /// freerdp_client_add_drive skips a missing folder, or redirects `./xpnd` in its place if that exists.
+    @MainActor @Test func theDriveIsAlwaysTheFolderGiven() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, driveName: "xpnd", drivePath: "/nonexistent/drop", delegate: FakeDelegate())
+        #expect(s.prepare())
+        #expect(s.drivePath(at: 0) == "/nonexistent/drop")
+        s.stop()
+    }
+
+    @MainActor @Test func anOverlongFolderFailsRatherThanBeingCutShort() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, driveName: "xpnd",
+                             drivePath: "/" + String(repeating: "x", count: 300), delegate: FakeDelegate())
+        #expect(!s.prepare())
+    }
+
+    @MainActor @Test func clipboardDisabledIgnoresEverything() {
+        let c = XPRDPClipboard()
+        c.offerText("before", fileURIList: nil)
+        #expect(c.lastAnnouncedFormats == .text)
+        #expect(c.formatsToAnnounceNow(forPasteboardTypes: ["public.utf8-plain-text"]) == .text)
+        c.enabled = false
+        #expect(c.lastAnnouncedFormats.isEmpty)  // what was on offer goes too
+        #expect(c.formatsToAnnounceNow(forPasteboardTypes: ["public.utf8-plain-text"]).isEmpty)
+        c.offerText("after", fileURIList: Data("file:///a\r\n".utf8))
+        #expect(c.lastAnnouncedFormats.isEmpty)
+        c.enabled = true
+        c.offerText("again", fileURIList: nil)
+        #expect(c.lastAnnouncedFormats == .text)
+    }
+
+    @MainActor @Test func aFileOfferWithNoChannelIsRefused() async {
+        let c = XPRDPClipboard()
+        #expect(await !c.offerFileURLs([URL(fileURLWithPath: "/tmp/a.txt")]))  // no channel here
+        #expect(c.lastAnnouncedFormats.isEmpty)
+    }
+
+    @Test func aFileOfferIsTheURIListAFinderCopyGives() throws {
+        let list = try #require(XPRDPClipboard.fileURIList(for: [
+            URL(fileURLWithPath: "/tmp/a b.txt"), URL(string: "https://example.com/x")!, URL(fileURLWithPath: "/tmp/é.txt"),
+        ]))
+        #expect(String(decoding: list, as: UTF8.self) == "file:///tmp/a%20b.txt\r\nfile:///tmp/e%CC%81.txt\r\n")
+        #expect(XPRDPClipboard.fileURIList(for: [URL(string: "https://example.com/x")!]) == nil)
+        #expect(XPRDPClipboard.fileURIList(for: []) == nil)
+    }
+
+    @Test func keyStepBridging() {
+        let down = RDPKeyStep.scancode(0x014F, down: true).objc
+        #expect(down.kind == .scancode && down.scancode == 0x014F && down.down)
+        #expect(!RDPKeyStep.scancode(0x1D, down: false).objc.down)
+        let text = RDPKeyStep.text("a").objc
+        #expect(text.kind == .text && text.text == "a")
+        let pause = RDPKeyStep.pause(ms: 300).objc
+        #expect(pause.kind == .pause && pause.milliseconds == 300)
+    }
+
+    /// What a player sent, and a switch for "the session is connected".
+    @MainActor private final class KeyLog {
+        var sent: [String] = []
+        var connected = true
+        lazy var player = XPRDPKeyPlayer(
+            scancode: { [unowned self] code, down in sent.append("\(down ? "down" : "up") \(code)") },
+            text: { [unowned self] in sent.append("text \($0)") },
+            canSend: { [unowned self] in connected })
+    }
+
+    private func steps(_ steps: RDPKeyStep...) -> [XPRDPKeyStep] { steps.map(\.objc) }
+
+    @MainActor @Test func aSequenceRunsInOrderAndContinuesAfterAPause() async throws {
+        let log = KeyLog()
+        log.player.play(steps(.scancode(1, down: true), .scancode(1, down: false), .pause(ms: 20), .text("x")))
+        #expect(log.sent == ["down 1", "up 1"])  // main isn't blocked: the rest comes later
+        log.player.play(steps(.text("y")))  // queued behind the pause
+        #expect(log.sent == ["down 1", "up 1"])
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(log.sent == ["down 1", "up 1", "text x", "text y"])
+    }
+
+    @MainActor @Test func aSessionEndingDuringAPauseSendsNothingMore() async throws {
+        let log = KeyLog()
+        log.player.play(steps(.scancode(1, down: true), .pause(ms: 20), .scancode(2, down: true), .scancode(2, down: false), .scancode(1, down: false)))
+        log.connected = false
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(log.sent == ["down 1"])
+        log.connected = true
+        log.player.play(steps(.text("z")))  // the held key died with the connection; nothing stale comes back
+        #expect(log.sent == ["down 1", "text z"])
+    }
+
+    @MainActor @Test func cancelDuringAPauseReleasesHeldKeysAndDropsTheRest() async throws {
+        let log = KeyLog()
+        log.player.play(steps(.scancode(1, down: true), .scancode(2, down: true), .pause(ms: 20), .text("x")))
+        log.player.cancel()
+        #expect(log.sent == ["down 1", "down 2", "up 2", "up 1"])
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(log.sent.count == 4)
+    }
+
+    @MainActor @Test func aSequenceThatEndsHoldingAKeyLetsItGo() {
+        let log = KeyLog()
+        log.player.play(steps(.scancode(1, down: true)))
+        #expect(log.sent == ["down 1", "up 1"])
+    }
+
+    @MainActor @Test func aFreedPlayerNeverContinues() async throws {
+        let log = KeyLog()
+        var player: XPRDPKeyPlayer? = XPRDPKeyPlayer(
+            scancode: { _, _ in }, text: { log.sent.append($0) }, canSend: { true })
+        player?.play(steps(.pause(ms: 20), .text("x")))
+        player = nil
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(log.sent.isEmpty)
+    }
+
+    @MainActor @Test func nothingHappensOnASessionThatIsNotConnected() async {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        #expect(s.prepare())
+        s.sendKeySequence(steps(.scancode(0x1D, down: true), .pause(ms: 10), .text("x")))
+        s.sendLeftClick(atViewPoint: NSPoint(x: 10, y: 10))
+        #expect(await !s.offerFiles(forPaste: [URL(fileURLWithPath: "/tmp/a.txt")]))
+        #expect(!s.requestDesktopFit())
+        #expect(!s.requestDesktopWidth(1280, height: 720))
+        #expect(!s.clipboardChannelLoaded)
+        s.stop()
+    }
+
+    private final class FakeDrag: NSObject, NSDraggingInfo {
+        let draggingPasteboard: NSPasteboard
+        @MainActor init(_ pasteboard: NSPasteboard) { draggingPasteboard = pasteboard }
+        var draggingDestinationWindow: NSWindow? { nil }
+        var draggingSourceOperationMask: NSDragOperation { .copy }
+        var draggingLocation: NSPoint { .zero }
+        var draggedImageLocation: NSPoint { .zero }
+        var draggedImage: NSImage? { nil }
+        var draggingSource: Any? { nil }
+        var draggingSequenceNumber: Int { 1 }
+        func slideDraggedImage(to screenPoint: NSPoint) {}
+        var draggingFormation: NSDraggingFormation { get { .none } set {} }
+        var animatesToDestination: Bool { get { false } set {} }
+        var numberOfValidItemsForDrop: Int { get { 1 } set {} }
+        func enumerateDraggingItems(options enumOpts: NSDraggingItemEnumerationOptions, for view: NSView?, classes classArray: [AnyClass],
+                                    searchOptions: [NSPasteboard.ReadingOptionKey: Any], using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
+        var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+        func resetSpringLoading() {}
+    }
+
+    @MainActor @Test func theDesktopTakesFileDropsOnlyWhileConnected() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        #expect(s.view.registeredDraggedTypes.contains(.fileURL))
+        var dropped = false
+        s.dropHandler = { _, _ in dropped = true }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        pasteboard.writeObjects([URL(fileURLWithPath: "/tmp/a.txt") as NSURL])
+        let drag = FakeDrag(pasteboard)
+        #expect(s.view.draggingEntered(drag) == [])
+        #expect(s.view.draggingUpdated(drag) == [])
+        #expect(s.view.performDragOperation(drag) == false)
+        #expect(!dropped)
+    }
+
+    @MainActor @Test func aDropCarriesFileURLsOnly() {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        let file = URL(fileURLWithPath: "/tmp/a.txt")
+        pasteboard.writeObjects([URL(string: "https://example.com/x")! as NSURL, file as NSURL])
+        #expect(XPRDPClipboard.fileURLs(on: pasteboard) == [file])
+        pasteboard.clearContents()
+        pasteboard.writeObjects([URL(string: "https://example.com/x")! as NSURL])
+        #expect(XPRDPClipboard.fileURLs(on: pasteboard).isEmpty)
+    }
+
+    @MainActor @Test func connectionInfoReadsTheSettings() {
+        let s = XPRDPSession(settings: [["FreeRDP_DesktopWidth", "1280"], ["FreeRDP_DesktopHeight", "720"],
+                                        ["FreeRDP_GatewayEnabled", "TRUE"], ["FreeRDP_GatewayHostname", "gw.example"]],
+                             password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        #expect(s.prepare())
+        let info = s.connectionInfo
+        #expect(info.desktopWidth == 1280 && info.desktopHeight == 720)
+        #expect(info.codec == "—")
+        #expect(info.latencyMs == nil && info.connectedSince == nil)
+        #expect(info.certificateSubject == "" && info.certificateFingerprint == "")
+        #expect(info.gatewayHost == "gw.example")
+        s.stop()
+        #expect(s.connectionInfo.desktopWidth == 0)  // no context: nothing to read, nothing to crash on
+    }
+
+    @MainActor @Test func noGatewayIsNil() {
+        let s = XPRDPSession(settings: [["FreeRDP_GatewayHostname", "gw.example"]], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        #expect(s.prepare())
+        #expect(s.connectionInfo.gatewayHost == nil)
+        s.stop()
+    }
+
+    @MainActor @Test func theCodecIsTheLastNamedOneSeen() {
+        let s = XPRDPSession(settings: [], password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        // RDPGFX_CODECID_*: uncompressed, CAVIDEO, planar, CAPROGRESSIVE, CAPROGRESSIVE_V2, then ClearCodec.
+        for (id, name) in [(0x0000, "bitmap"), (0x0003, "RemoteFX"), (0x000A, "planar"), (0x0009, "progressive"), (0x000D, "progressive")] {
+            s.noteGfxCodec(UInt16(id))
+            #expect(s.connectionInfo.codec == name)
+        }
+        s.noteGfxCodec(0x0008)  // ClearCodec paints text between frames of the codec in use
+        #expect(s.connectionInfo.codec == "progressive")
+    }
+
+    /// A throwaway self-signed certificate, for FreeRDP's known-hosts file; its key was discarded.
+    private static let knownHostPEM = """
+        -----BEGIN CERTIFICATE-----
+        MIIBYjCCAQigAwIBAgIUDs4KosPCJldl7ij4wSwWss+5GqMwCgYIKoZIzj0EAwIw
+        FjEUMBIGA1UEAwwLd2luLmV4YW1wbGUwIBcNMjYxMTA1MTkwODQwWhgPMjEyNjEw
+        MTIxOTA4NDBaMBYxFDASBgNVBAMMC3dpbi5leGFtcGxlMFkwEwYHKoZIzj0CAQYI
+        KoZIzj0DAQcDQgAE/0ZjZPbddlpj8NEvaS2zr6tplIxFCzzyXz3HcsdcTlHDkC4a
+        moyJHHF2R+SRiluiBNVz+lkoMk+t61TR83MiS6MyMDAwHQYDVR0OBBYEFLgLWrW0
+        vv5DcAKdC6z3RD1lV1SGMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSAAw
+        RQIgKjPtXiXvTIhD95ul1fb3rfRekA1YyIDy6PIxZRqruowCIQCieptpv564Bn5a
+        p4JIYarRW15Fh1KuArVEQssQzWDRWg==
+        -----END CERTIFICATE-----
+
+        """
+
+    /// The usual case: FreeRDP asks about a certificate once, and later connects find it in known hosts.
+    @MainActor @Test func connectionInfoFindsAKnownHostsCertificate() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "xpnd-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir.appending(path: "server"), withIntermediateDirectories: true)
+        try Data(Self.knownHostPEM.utf8).write(to: dir.appending(path: "server/win.example_3389.pem"))
+        let s = XPRDPSession(settings: [["FreeRDP_ConfigPath", dir.path], ["FreeRDP_ServerHostname", "win.example"], ["FreeRDP_ServerPort", "3389"]],
+                             password: "p", gatewayPassword: nil, delegate: FakeDelegate())
+        #expect(s.prepare())
+        let info = s.connectionInfo
+        #expect(info.certificateSubject.contains("win.example"))
+        #expect(info.certificateFingerprint.lowercased() == "20:c0:f6:d2:cc:0c:da:6d:01:8b:1e:72:14:2b:ab:44:5c:a8:ff:5a:05:4d:92:3b:cf:8c:a4:d9:98:72:5c:bf")
+        // Read once per connect: gone from disk, it is still what this connect had; a new context reads again.
+        try FileManager.default.removeItem(at: dir.appending(path: "server/win.example_3389.pem"))
+        #expect(s.connectionInfo.certificateSubject == info.certificateSubject)
+        s.stop()
+        #expect(s.prepare())
+        #expect(s.connectionInfo.certificateSubject == "")
+        s.stop()
     }
 
     @MainActor @Test func stopBeforeStartReportsNothing() async throws {

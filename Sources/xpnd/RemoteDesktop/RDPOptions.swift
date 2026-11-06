@@ -28,6 +28,7 @@ struct RDPOptions: Codable, Hashable, Sendable {
     var gateway: Gateway?
     var alternateShell: String?
     var consoleSession: Bool?
+    var dropDrive: Bool?
 }
 
 /// In an extension to keep the memberwise init; `port` and `credential` may be omitted in hand-written YAML.
@@ -61,6 +62,8 @@ extension RDPOptions.Display: Codable {
     }
 }
 
+enum DropFolderCleanup: String, Codable, Sendable { case never, onDisconnect, after7Days }
+
 /// App-wide RDP defaults, which a connection's `RDPOptions` override.
 struct RDPSettings: Codable, Hashable, Sendable {
     var display = RDPOptions.Display.fit
@@ -78,8 +81,38 @@ struct RDPSettings: Codable, Hashable, Sendable {
     var performance = RDPOptions.Performance.auto
     var alternateShell = ""
     var consoleSession = false
+    var dropDrive = true
+    var dropFolderCleanup = DropFolderCleanup.never
 
     static let standard = RDPSettings()
+}
+
+extension RDPSettings {
+    /// A key the saved settings lack keeps its default, so a new field doesn't reset the rest.
+    init(from decoder: Decoder) throws {
+        self = .standard
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func read<T: Decodable>(_ field: inout T, _ key: CodingKeys) throws {
+            field = try c.decodeIfPresent(T.self, forKey: key) ?? field
+        }
+        try read(&display, .display)
+        try read(&scaleToFit, .scaleToFit)
+        try read(&colorDepth, .colorDepth)
+        try read(&retina, .retina)
+        try read(&clipboard, .clipboard)
+        try read(&audio, .audio)
+        try read(&printers, .printers)
+        try read(&commandAsWindowsKey, .commandAsWindowsKey)
+        try read(&nla, .nla)
+        try read(&timeoutSeconds, .timeoutSeconds)
+        try read(&autoReconnect, .autoReconnect)
+        try read(&reconnectTries, .reconnectTries)
+        try read(&performance, .performance)
+        try read(&alternateShell, .alternateShell)
+        try read(&consoleSession, .consoleSession)
+        try read(&dropDrive, .dropDrive)
+        try read(&dropFolderCleanup, .dropFolderCleanup)
+    }
 }
 
 /// Everything one RDP session needs, with defaults applied.
@@ -104,10 +137,19 @@ struct RDPSessionConfig: Equatable, Sendable {
     var gateway: RDPOptions.Gateway?
     var alternateShell: String
     var consoleSession: Bool
+    var dropDrive = true
+    /// The folder redirected as the `xpnd` drive; nil means no device.
+    var dropFolder: String?
+
+    func driveDevice() -> (name: String, path: String)? {
+        guard dropDrive, let dropFolder else { return nil }
+        return ("xpnd", dropFolder)
+    }
 }
 
 extension RDPOptions {
-    func resolved(over d: RDPSettings, host: String, port: Int, username: String?, domain: String?) -> RDPSessionConfig {
+    func resolved(over d: RDPSettings, host: String, port: Int, username: String?, domain: String?,
+                  dropFolder: String? = nil) -> RDPSessionConfig {
         RDPSessionConfig(
             host: host, port: port, username: username, domain: domain,
             display: display ?? d.display, scaleToFit: scaleToFit ?? d.scaleToFit,
@@ -117,6 +159,7 @@ extension RDPOptions {
             timeoutSeconds: timeoutSeconds ?? d.timeoutSeconds, autoReconnect: autoReconnect ?? d.autoReconnect,
             reconnectTries: reconnectTries ?? d.reconnectTries, performance: performance ?? d.performance,
             gateway: gateway, alternateShell: alternateShell ?? d.alternateShell,
-            consoleSession: consoleSession ?? d.consoleSession)
+            consoleSession: consoleSession ?? d.consoleSession,
+            dropDrive: dropDrive ?? d.dropDrive, dropFolder: dropFolder)
     }
 }

@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 0.2.0 - Unreleased
 
 ### Fixed
+- A Windows desktop tab no longer covers the tab bar, so you can switch tabs while it is showing.
 - The import preview lists the existing connections a Replace removes even when the file adds only folders.
 - The color picker's swatches show their colors in the open menu instead of white circles.
 - A folder string like `;dev` is now deleted when you pick a row from its menu, not before the menu opens, so none of it is left behind in the terminal; Esc keeps what you typed.
@@ -12,7 +13,12 @@ All notable changes to this project will be documented in this file.
 - Settings → Password Manager has a "Use the login for sudo" switch; turn it off to stop sudo falling back to the login password, so you can have no global sudo password without clearing the login.
 
 ### Added
+- A small green dot at the right of a sidebar row shows a connection that is connected in a tab.
+- A connection open in a tab can be disconnected from its sidebar menu or its Details (Disconnect, after the usual confirmation), even while it is still connecting, and Show Session jumps to its tab.
 - RDP connections: Windows desktops open as tabs beside SSH, with the domain login (`DOMAIN\user` or a separate domain) and password from 1Password, an RD Gateway, dynamic resize or a fixed size letterboxed in the tab, certificate and login prompts (asked again at once when the server rejects the login), and auto-reconnect after a lost connection. Settings → Remote Desktop and each connection's RDP options set the display, clipboard and sound. FreeRDP (Apache 2.0) is bundled.
+- A Windows desktop tab shares a per-connection drop folder as drive `xpnd`; Settings → Remote Desktop and each connection's RDP options turn it on or off, and Settings → Remote Desktop clears the folders never, on disconnect or after 7 days, or right away.
+- A toolbar at the top of a Windows desktop tab (point at the top edge, or ⌘⇧N) has Ctrl+Alt+Del, Win+R, full screen, display size (with "Set as this connection's default"), audio, clipboard sync, the drop folder, Reconnect, Disconnect and connection details.
+- Files dropped from Finder onto a Windows desktop are pasted into the window under the pointer; dropped on the toolbar they are copied into the `xpnd` drive.
 - Files and folders copied in Finder can be pasted into a Windows desktop tab.
 - Snippets are typed into a Windows desktop tab as keystrokes.
 - Snippets typed in Screen Sharing, VNC and RDP clients, and VMs are typed as keystrokes on the remote machine instead of pasted; Settings → General can type them everywhere.

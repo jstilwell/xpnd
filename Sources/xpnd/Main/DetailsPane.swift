@@ -5,6 +5,7 @@ import SwiftUI
 struct DetailsPane: View {
     let connections: ConnectionEditing
     let editing: SnippetEditing
+    let sessions: TerminalSessions
     @Binding var selection: SidebarItem?
     @Binding var focus: EditorFocus?
 
@@ -24,7 +25,7 @@ struct DetailsPane: View {
             } else { nothingSelected }
         case .connection(let id):
             if let connection = connections.library.connection(id) {
-                connectionChrome { ConnectionEditorView(editing: connections, connection: connection, focus: $focus).id(id) }
+                connectionChrome { ConnectionEditorView(editing: connections, connection: connection, live: sessions.liveConnectionIDs.contains(id), hasSession: sessions.session(for: id) != nil, focus: $focus).id(id) }
             } else { nothingSelected }
         case .snippetGroup(let id):
             if let group = editing.group(id) {

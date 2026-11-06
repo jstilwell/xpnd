@@ -7,6 +7,8 @@ struct TerminalWorkspace: View {
     let duplicate: (Connection.ID) -> Void
     /// Re-applied to every host on change.
     let settings: BuiltInTerminalSettings
+    /// Writes a desktop's display choice to its connection (the notch's "Set as default").
+    let saveDisplay: (Connection.ID, RDPOptions.Display) -> Bool
     /// A `.system` scheme is read when `apply` runs, so an appearance change re-applies too.
     @Environment(\.colorScheme) private var colorScheme
 
@@ -17,8 +19,10 @@ struct TerminalWorkspace: View {
             if let session = sessions.selectedSession {
                 // Per-session ids, so switching tabs swaps the view and the new one takes the keyboard.
                 // A little room around the text; the margin matches the terminal's own background. A
-                // desktop fills the tab.
-                TerminalHostView(view: session.host.view).id(session.id)
+                // desktop fills the tab, with its notch: inside the id, so a tab switch resets the hover.
+                TerminalHostView(view: session.host.view)
+                    .overlay(alignment: .top) { notch(session) }
+                    .id(session.id)
                     .padding(session.kind == .remoteDesktop ? 0 : 8)
                     .background(Color(nsColor: settings.colors.background))
                 switch session.state {
@@ -33,6 +37,12 @@ struct TerminalWorkspace: View {
         .background { shortcuts }
         .onChange(of: settings) { applySettings() }
         .onChange(of: colorScheme) { applySettings() }
+    }
+
+    @ViewBuilder private func notch(_ session: TerminalSession) -> some View {
+        if let host = session.host as? RDPHost {
+            RDPNotch(model: host.notch).onAppear { host.saveDisplay(to: session.connectionID, with: saveDisplay) }
+        }
     }
 
     private var tabBar: some View {
@@ -86,16 +96,22 @@ struct TerminalWorkspace: View {
     /// SwiftUI shortcut in the key window is offered before the main menu).
     private var shortcuts: some View {
         Group {
-            Button("Close Tab") { if let session = sessions.selectedSession { close(session) } }
+            Button("Close Tab") { sessions.shortcut { if let session = sessions.selectedSession { close(session) } } }
                 .keyboardShortcut("w", modifiers: .command)
             // ⌘⇧] arrives as "}": SwiftUI never matches "]" with .shift.
-            Button("Next Tab") { cycle(1) }.keyboardShortcut("}", modifiers: .command)
-            Button("Previous Tab") { cycle(-1) }.keyboardShortcut("{", modifiers: .command)
+            Button("Next Tab") { sessions.shortcut { cycle(1) } }.keyboardShortcut("}", modifiers: .command)
+            Button("Previous Tab") { sessions.shortcut { cycle(-1) } }.keyboardShortcut("{", modifiers: .command)
             ForEach(1...9, id: \.self) { number in
                 Button("Tab \(number)") {
-                    if sessions.sessions.indices.contains(number - 1) { sessions.selected = sessions.sessions[number - 1].id }
+                    sessions.shortcut {
+                        if sessions.sessions.indices.contains(number - 1) { sessions.selected = sessions.sessions[number - 1].id }
+                    }
                 }
                 .keyboardShortcut(KeyEquivalent(Character(String(number))), modifiers: .command)
+            }
+            // Only on a desktop tab, so a terminal still receives ⌘⇧N. A real ⌘⇧N matches "n" with .shift, not "N".
+            if let notch = (sessions.selectedSession?.host as? RDPHost)?.notch {
+                Button("Toggle Notch") { sessions.shortcut { notch.isExpanded.toggle() } }.keyboardShortcut("n", modifiers: [.command, .shift])
             }
         }
         .opacity(0)
@@ -120,6 +136,13 @@ struct TerminalWorkspace: View {
 
 extension TerminalSessions {
     var selectedSession: TerminalSession? { sessions.first { $0.id == selected } }
+
+    /// What every hidden shortcut runs through. It fires before the desktop's `performKeyEquivalent:`, so the
+    /// selected tab must hear that ⌘ was used, or releasing it taps the Windows key.
+    func shortcut(_ action: () -> Void) {
+        selectedSession?.host.noteCommandUsed()
+        action()
+    }
 
     /// Gives the selected tab's terminal the keyboard.
     func focusSelected() {

@@ -29,6 +29,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     NSTrackingArea *_tracking;
     XPCommandState _command;
     NSTimer *_clipboardPoll;  // main thread
+    BOOL _dragHasFiles;       // main thread: the drag in progress is one to take
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -36,6 +37,8 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
         _drawLock = [NSRecursiveLock new];
         _clipboard = [XPRDPClipboard new];
         _commandAsWindowsKey = YES;
+        self.clipsToBounds = YES;  // otherwise drawRect:'s rect reaches the top of the window, over the tab bar
+        [self registerForDraggedTypes:@[ NSPasteboardTypeFileURL ]];
         __weak XPRDPView *weakSelf = self;
         _coalescer = [[XPRDPResizeCoalescer alloc] initWithIdleInterval:0.2 handler:^(CGSize size) {
             [weakSelf.session viewSizeSettled:size];
@@ -45,6 +48,11 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 }
 
 #pragma mark Drawing
+
+- (void)setLetterbox:(BOOL)letterbox {
+    _letterbox = letterbox;
+    self.needsDisplay = YES;
+}
 
 - (void)lockDrawing {
     [_drawLock lock];
@@ -189,7 +197,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 
 /// MRDPView takes `locationInWindow` as view coordinates and the view's points as desktop pixels;
 /// in a tab neither holds. Map proportionally within the drawn image; the letterbox clamps to its edge.
-- (BOOL)desktopPointForEvent:(NSEvent *)event x:(UINT16 *)x y:(UINT16 *)y {
+- (BOOL)desktopPointForViewPoint:(NSPoint)p x:(UINT16 *)x y:(UINT16 *)y {
     if (!self.is_connected || !context)
         return NO;
     const UINT32 dw = freerdp_settings_get_uint32(context->settings, FreeRDP_DesktopWidth);
@@ -197,11 +205,14 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     const NSRect b = [self desktopRectForSize:NSMakeSize(dw, dh)];
     if (b.size.width < 1 || b.size.height < 1 || dw == 0 || dh == 0)
         return NO;
-    const NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
     const double fx = (p.x - b.origin.x) / b.size.width * dw, fy = (1.0 - (p.y - b.origin.y) / b.size.height) * dh;
     *x = (UINT16)MIN(MAX(fx, 0.0), (double)(dw - 1));
     *y = (UINT16)MIN(MAX(fy, 0.0), (double)(dh - 1));
     return YES;
+}
+
+- (BOOL)desktopPointForEvent:(NSEvent *)event x:(UINT16 *)x y:(UINT16 *)y {
+    return [self desktopPointForViewPoint:[self convertPoint:event.locationInWindow fromView:nil] x:x y:y];
 }
 
 - (void)sendMouse:(NSEvent *)event flags:(UINT16)flags {
@@ -224,13 +235,20 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     }
 }
 
+- (void)sendLeftClickAtViewPoint:(NSPoint)point {
+    UINT16 x = 0, y = 0;
+    if (![self desktopPointForViewPoint:point x:&x y:&y])
+        return;
+    (void)freerdp_client_send_button_event(&mfc->common, NO, PTR_FLAGS_BUTTON1 | PTR_FLAGS_DOWN, x, y);
+    (void)freerdp_client_send_button_event(&mfc->common, NO, PTR_FLAGS_BUTTON1, x, y);
+}
+
 - (void)mouseMoved:(NSEvent *)event { [self sendMouse:event flags:PTR_FLAGS_MOVE]; }
 - (void)mouseDragged:(NSEvent *)event { [self sendMouse:event flags:PTR_FLAGS_MOVE]; }
 - (void)rightMouseDragged:(NSEvent *)event { [self sendMouse:event flags:PTR_FLAGS_MOVE]; }
 - (void)otherMouseDragged:(NSEvent *)event { [self sendMouse:event flags:PTR_FLAGS_MOVE]; }
 - (void)mouseDown:(NSEvent *)event {
-    if (_command == XPCommandPending)
-        _command = XPCommandUsed;  // ⌘-click
+    [self noteCommandUsed];  // ⌘-click
     [self sendButton:0 event:event down:YES];
 }
 - (void)mouseUp:(NSEvent *)event { [self sendButton:0 event:event down:NO]; }
@@ -266,6 +284,19 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     (void)freerdp_input_send_keyboard_event(instance->context->input, flags, (UINT8)(scancode & 0xFF));
 }
 
+// shortcut: a server without Unicode input drops the text (FreeRDP only warns); Windows has it, so upgrade with
+// KeyMap-style scancodes only if xrdp and the like need `\\tsclient\xpnd` typed.
+- (void)sendText:(NSString *)text {
+    if (!instance || !instance->context)
+        return;
+    rdpInput *input = instance->context->input;
+    for (NSUInteger i = 0; i < text.length; i++) {
+        const unichar unit = [text characterAtIndex:i];
+        (void)freerdp_input_send_unicode_keyboard_event(input, 0, unit);
+        (void)freerdp_input_send_unicode_keyboard_event(input, KBD_FLAGS_RELEASE, unit);
+    }
+}
+
 - (void)setCommandState:(XPCommandState)next {
     if (_command == next)
         return;
@@ -274,6 +305,11 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     if (next == XPCommandWindows) [self sendScancode:XPScancodeLeftWindows down:YES];
     if (next == XPCommandControl) [self sendScancode:XPScancodeLeftControl down:YES];
     _command = next;
+}
+
+- (void)noteCommandUsed {
+    if (_command == XPCommandPending)
+        _command = XPCommandUsed;
 }
 
 - (void)flagsChanged:(NSEvent *)event {
@@ -313,9 +349,10 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
         [self keyDown:event];
         return YES;
     }
-    // Another ⌘ shortcut is xpnd's (⌘1, ⌘⇧]...); if nothing takes it, keyDown: sends it on as before.
-    if (focused && _command == XPCommandPending)
-        _command = XPCommandUsed;
+    // Another ⌘ shortcut may be a menu's; if nothing takes it, keyDown: sends it on as before. The tab shortcuts
+    // (⌘1, ⌘⇧]...) never get here: a hidden SwiftUI button fires first, and marks ⌘ through `noteCommandUsed`.
+    if (focused)
+        [self noteCommandUsed];
     return [super performKeyEquivalent:event];
 }
 
@@ -353,7 +390,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 - (void)onPasteboardTimerFired:(NSTimer *)timer {
     NSPasteboard *pasteboard = pasteboard_rd;
     const NSInteger changeCount = pasteboard.changeCount;
-    if (!mfc || !pasteboard || changeCount == pasteboard_changecount)
+    if (!mfc || !pasteboard || changeCount == pasteboard_changecount || !_clipboard.enabled)
         return;
     if (changeCount == _clipboard.writtenChangeCount) {
         pasteboard_changecount = (int)changeCount;  // the server's own text: Windows keeps its richer copy
@@ -363,13 +400,57 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     NSMutableArray<NSString *> *types = [NSMutableArray array];
     for (NSPasteboardItem *item in items)
         [types addObjectsFromArray:item.types];
-    const XPRDPClipboardFormats formats = [XPRDPClipboard formatsToAnnounceForPasteboardTypes:types];
+    const XPRDPClipboardFormats formats = [_clipboard formatsToAnnounceNowForPasteboardTypes:types];
     NSString *text = (formats & XPRDPClipboardFormatsText) ? [items.firstObject stringForType:NSPasteboardTypeString] : nil;
     NSData *files = (formats & XPRDPClipboardFormatsFiles) ? [_clipboard localFileURIList] : nil;
     if (pasteboard.changeCount != changeCount)
         return;  // the next tick reads the newer contents
     pasteboard_changecount = (int)changeCount;
     [_clipboard offerText:text fileURIList:files];
+}
+
+- (void)setClipboardSyncEnabled:(BOOL)enabled {
+    if (enabled == _clipboard.enabled)
+        return;  // on again would replace a live file offer with the pasteboard
+    _clipboard.enabled = enabled;
+    if (enabled)
+        pasteboard_changecount = -1;
+}
+
+#pragma mark Dropped files
+
+/// The file URLs being dragged, or none when the session has no use for them.
+- (NSArray<NSURL *> *)dropURLs:(id<NSDraggingInfo>)info {
+    XPRDPSession *session = self.session;
+    if (!session.dropHandler || !session.live)
+        return @[];
+    return [XPRDPClipboard fileURLsOnPasteboard:info.draggingPasteboard];
+}
+
+/// On the desktop as drawn, not a letterbox bar, where a click would clamp to the edge and land on something else.
+/// The image's size: main may not read the settings while a client thread runs (see `idleSettings`).
+- (BOOL)dragIsOverDesktop:(id<NSDraggingInfo>)info {
+    [_drawLock lock];
+    const NSSize desktop = bitmap_context ? NSMakeSize(CGBitmapContextGetWidth(bitmap_context), CGBitmapContextGetHeight(bitmap_context)) : NSZeroSize;
+    [_drawLock unlock];
+    return NSPointInRect([self convertPoint:info.draggingLocation fromView:nil], [self desktopRectForSize:desktop]);
+}
+
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    _dragHasFiles = [self dropURLs:sender].count > 0;
+    return [self draggingUpdated:sender];
+}
+
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+    return _dragHasFiles && [self dragIsOverDesktop:sender] ? NSDragOperationCopy : NSDragOperationNone;
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    NSArray<NSURL *> *urls = [self dropURLs:sender];
+    if (!urls.count || ![self dragIsOverDesktop:sender])
+        return NO;  // the session may have ended since draggingEntered:
+    self.session.dropHandler(urls, [self convertPoint:sender.draggingLocation fromView:nil]);
+    return YES;
 }
 
 @end

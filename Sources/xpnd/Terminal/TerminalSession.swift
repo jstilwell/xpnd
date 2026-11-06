@@ -20,10 +20,16 @@ enum TabRequest: Equatable {
     /// A remote desktop's end, on the main actor: nil when clean, else the reason to show. May come
     /// again after `reconnect`.
     var onDisconnect: ((String?) -> Void)? { get set }
+    /// A remote desktop is connecting again, whoever asked: the tab's Reconnect or the notch.
+    var onReconnecting: (() -> Void)? { get set }
     func terminate()
     func apply(_ settings: BuiltInTerminalSettings)
     /// Connects again after a disconnect.
     func reconnect()
+    /// A shortcut of xpnd's used the ⌘ held down: a remote desktop mustn't take its release as a tap.
+    func noteCommandUsed()
+    /// The session is up, not just trying: a terminal's shell runs at once, a desktop has to connect.
+    var isEstablished: Bool { get }
 }
 
 extension TerminalHost {
@@ -32,7 +38,14 @@ extension TerminalHost {
         set {}
     }
 
+    var onReconnecting: (() -> Void)? {
+        get { nil }
+        set {}
+    }
+
     func reconnect() {}
+    func noteCommandUsed() {}
+    var isEstablished: Bool { true }
 }
 
 @MainActor @Observable final class TerminalSession: Identifiable {
@@ -48,6 +61,10 @@ extension TerminalHost {
     fileprivate(set) var state = State.running
 
     var isLive: Bool { state == .running }
+    /// A disconnected desktop is over but still holds its session and passwords until it's terminated.
+    var needsTerminating: Bool {
+        if case .ended = state { false } else { true }
+    }
 
     init(connection: Connection, kind: Kind, color: ItemColor?, host: any TerminalHost) {
         self.kind = kind
@@ -64,6 +81,18 @@ extension TerminalHost {
     var selected: TerminalSession.ID?
 
     var liveCount: Int { sessions.filter(\.isLive).count }
+    /// Connections with a running session; one read per list lets SwiftUI track every session's state.
+    var liveConnectionIDs: Set<Connection.ID> { Set(sessions.filter(\.isLive).map(\.connectionID)) }
+    /// The ones actually connected, for the sidebar's dot; a connecting tab is only live, so it can be cancelled.
+    var establishedConnectionIDs: Set<Connection.ID> {
+        Set(sessions.filter { $0.isLive && $0.host.isEstablished }.map(\.connectionID))
+    }
+
+    /// The connection's running session (the selected tab if it qualifies), else any tab it still has.
+    func session(for connectionID: Connection.ID) -> TerminalSession? {
+        let mine = sessions.filter { $0.connectionID == connectionID }
+        return mine.first { $0.isLive && $0.id == selected } ?? mine.first(where: \.isLive) ?? mine.first
+    }
 
     init(makeHost: @escaping @MainActor (TabRequest) -> any TerminalHost) {
         self.makeHost = makeHost
@@ -75,6 +104,7 @@ extension TerminalHost {
         let id = session.id
         session.host.onExit = { [weak self] status in self?.ended(id, status) }
         session.host.onDisconnect = { [weak self] reason in self?.disconnected(id, reason) }
+        session.host.onReconnecting = { [weak self] in self?.reconnecting(id) }
         sessions.append(session)
         selected = id
         return id
@@ -82,7 +112,7 @@ extension TerminalHost {
 
     func close(_ id: TerminalSession.ID) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
-        if session.isLive { session.host.terminate() }
+        if session.needsTerminating { session.host.terminate() }
         remove(id)
     }
 
@@ -94,7 +124,7 @@ extension TerminalHost {
     }
 
     func terminateAll() {
-        for session in sessions where session.isLive { session.host.terminate() }
+        for session in sessions where session.needsTerminating { session.host.terminate() }
         sessions = []
         selected = nil
     }
@@ -111,6 +141,11 @@ extension TerminalHost {
     private func disconnected(_ id: TerminalSession.ID, _ reason: String?) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
         if let reason { session.state = .disconnected(reason) } else { remove(id) }
+    }
+
+    private func reconnecting(_ id: TerminalSession.ID) {
+        guard let session = sessions.first(where: { $0.id == id }), case .disconnected = session.state else { return }
+        session.state = .running
     }
 
     /// Removes a tab; if it was selected, the tab after it (else before it) takes over.
