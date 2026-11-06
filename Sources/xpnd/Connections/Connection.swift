@@ -94,6 +94,8 @@ struct ConnectionLibrary: Hashable, Sendable {
     var credential: CredentialRef?
     var sudoCredential: CredentialRef?
     var folders: [ConnectionFolder]
+    /// False: sudo no longer falls back to the login credential.
+    var sudoUsesLogin = true
 
     static let empty = ConnectionLibrary(folders: [])
 

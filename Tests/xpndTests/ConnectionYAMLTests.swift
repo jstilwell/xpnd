@@ -8,6 +8,16 @@ import Testing
     static let bastionID = "91bd0000-0000-4000-8000-000000000003"
     static let devID = "0c440000-0000-4000-8000-000000000004"
 
+    @Test func sudoUsesLoginRoundTrips() throws {
+        var library = ConnectionLibrary(folders: [])
+        #expect(!ConnectionYAML.encode(library).contains("sudoUsesLogin"))
+        #expect(try ConnectionYAML.decode("version: 1\n").sudoUsesLogin)
+        library.sudoUsesLogin = false
+        let yaml = ConnectionYAML.encode(library)
+        #expect(yaml.contains("sudoUsesLogin: false"))
+        #expect(try ConnectionYAML.decode(yaml).sudoUsesLogin == false)
+    }
+
     static let spec = """
     version: 1
     credential:

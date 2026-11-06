@@ -14,6 +14,7 @@ enum ConnectionYAML {
         var version: Int?
         var credential: CredentialRef?
         var sudoCredential: CredentialRef?
+        var sudoUsesLogin: Bool?
         var folders: [Folder]?
     }
 
@@ -66,7 +67,8 @@ enum ConnectionYAML {
         let version = file.version ?? currentVersion
         guard version == currentVersion else { throw .unsupportedVersion(version) }
         let library = ConnectionLibrary(credential: file.credential, sudoCredential: file.sudoCredential,
-                                        folders: (file.folders ?? []).map(model))
+                                        folders: (file.folders ?? []).map(model),
+                                        sudoUsesLogin: file.sudoUsesLogin ?? true)
         var seen = Set<UUID>()
         var dupes: [String] = []
         func visit(_ f: ConnectionFolder) {
@@ -123,6 +125,7 @@ enum ConnectionYAML {
     static func encode(_ library: ConnectionLibrary) -> String {
         let file = File(version: currentVersion, credential: library.credential,
                         sudoCredential: library.sudoCredential,
+                        sudoUsesLogin: library.sudoUsesLogin ? nil : false,
                         folders: library.folders.isEmpty ? nil : library.folders.map(dto))
         let encoder = YAMLEncoder()
         encoder.options.newLineScalarStyle = .literal
