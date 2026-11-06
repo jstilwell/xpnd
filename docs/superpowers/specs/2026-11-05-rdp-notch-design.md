@@ -80,7 +80,8 @@ handle and have it land on the Windows side.
   ordered list of (scancode, down/up) pairs; Ctrl+Alt+Del uses real Ctrl+Alt+Delete.
 - Live display changes reuse the Display Control path (`viewSizeSettled` / monitor layout) for
   fit, and a desktop-resize request for fixed sizes; audio and clipboard toggles flip the session's
-  runtime state (clipboard: stop/start the poll and send an empty format list; audio: FreeRDP has
+  runtime state (clipboard: stop/start the poll and fail the server's data requests, as FreeRDP drops an
+  empty format list after the first; audio: FreeRDP has
   no runtime audio switch — the toggle reconnects with the changed setting, which the tooltip says).
 - SwiftUI overlay on the RDP tab (`TerminalWorkspace` already overlays the ended bar); the notch
   is an `.overlay(alignment: .top)` that only hit-tests its own frame, so mouse events elsewhere
@@ -109,8 +110,8 @@ handle and have it land on the Windows side.
 - **Live toggles vs channels:** Display Control is always negotiated (`SupportDisplayControl`
   TRUE for every connection; `DynamicResolutionUpdate` only for fit), so Display switches live
   on servers that allow it and the Info popover says "fixed by the server" when the request is
-  refused. Clipboard: on → off is live in both directions (the pasteboard poll stops, an empty
-  format list is sent, and server format lists are ignored); off → on works live only if the
+  refused. Clipboard: on → off is live in both directions (the pasteboard poll stops, the server's
+  data requests fail, and server format lists are ignored); off → on works live only if the
   channel was loaded at connect, otherwise the button says "Reconnect to enable" and reconnects
   with clipboard on for this session. Audio toggles reconnect, as already stated.
 - **Drop-folder names:** `copyIn` copies each file under a *safe name* — ASCII letters, digits,

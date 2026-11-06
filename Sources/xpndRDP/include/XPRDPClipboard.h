@@ -18,8 +18,9 @@ typedef NS_OPTIONS(NSUInteger, XPRDPClipboardFormats) {
 /// The file URLs on `pasteboard`, and no others.
 + (NSArray<NSURL *> *)fileURLsOnPasteboard:(NSPasteboard *)pasteboard;
 
-/// YES by default. NO clears what is on offer (the server gets an empty format list), and from then on
-/// nothing is offered and the server's lists are answered but not fetched, until set back to YES.
+/// YES by default. NO withdraws what is on offer, so the server's requests for it fail, and from then on
+/// nothing is offered and the server's lists are answered but not fetched, until set back to YES. Windows
+/// keeps showing the old list: see `sendFormatList`.
 @property BOOL enabled;
 /// The class method's answer, or nothing while disabled.
 - (XPRDPClipboardFormats)formatsToAnnounceNowForPasteboardTypes:(NSArray<NSString *> *)types;

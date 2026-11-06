@@ -112,8 +112,8 @@ NS_SWIFT_UI_ACTOR
 /// xpnd used the ⌘ being held (a shortcut, a ⌘-click on its own controls), so releasing it doesn't tap the Windows key.
 - (void)noteCommandUsed;
 
-/// NO stops the pasteboard poll, sends an empty format list and ignores the server's lists; it lasts across
-/// reconnects, until YES.
+/// NO stops the pasteboard poll, fails the server's requests for what was on offer and ignores its lists; it
+/// lasts across reconnects, until YES.
 - (void)setClipboardSyncEnabled:(BOOL)enabled;
 /// YES while the cliprdr channel is connected.
 @property (readonly) BOOL clipboardChannelLoaded;

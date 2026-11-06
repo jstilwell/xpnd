@@ -204,6 +204,7 @@ extension XPRDPSession: RDPSessionControlling {}
         guard let folder = config.dropFolder,
               RDPDropFolder.shouldClear(policy: cleanup(), lastUse: nil, now: Date(), disconnecting: true) else { return }
         // shortcut: duplicate tabs of a connection share one folder, so one ending clears it for the other; track open tabs per connection to fix.
+        // shortcut: a copy still running or queued recreates the folder after this, and it stays until the connection next ends; clear on the copy queue if that bites.
         try? RDPDropFolder.clear(folder: URL(fileURLWithPath: folder))
     }
 

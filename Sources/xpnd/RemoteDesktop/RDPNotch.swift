@@ -78,7 +78,7 @@ struct RDPNotch: View {
 
     private var handle: some View {
         // VoiceOver can't hover, so the handle is a button too.
-        Button { model.isExpanded = true } label: {
+        Button { model.isExpanded = true; model.restoreFocus() } label: {
             Capsule()
                 .fill(.regularMaterial)
                 .overlay(Capsule().strokeBorder(.separator))
@@ -99,7 +99,7 @@ struct RDPNotch: View {
             item("terminal", "Win+R", help: "Win+R: open the Run box", action: model.winR)
                 .disabled(!model.isConnected)
             item("arrow.up.left.and.arrow.down.right", "Full screen", help: "Enter or leave full screen", action: model.fullScreen)
-            item("display", "Display", help: "Change the desktop size for this session") { panel = .display }
+            item("display", "Display", help: "Change the desktop size for this session") { model.restoreFocus(); panel = .display }
                 .disabled(!model.isConnected)
                 .popover(isPresented: shows(.display), arrowEdge: .bottom) { displayPanel }
             item(audioSymbol, "Audio", help: "Audio: \(RDPOptionLabels.label(for: model.audio)). Changing it reconnects.", action: model.cycleAudio)
@@ -111,6 +111,7 @@ struct RDPNotch: View {
             item("arrow.clockwise", "Reconnect", help: "Reconnect this session", action: model.reconnect)
             item("xmark.circle", "Disconnect", help: "Disconnect and end this session", action: model.disconnect)
             item("info.circle", "Info", help: "Connection details") {
+                model.restoreFocus()
                 info = model.info
                 panel = .info
             }
@@ -129,6 +130,7 @@ struct RDPNotch: View {
 
     private var files: some View {
         item("folder.badge.plus", "Files", help: model.dropHelp) {
+            model.restoreFocus()
             model.refreshDropCount()
             panel = .files
         }

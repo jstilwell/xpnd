@@ -174,6 +174,8 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     if (rc == CHANNEL_RC_OK)
         rc = _cliprdr->ClientFormatList(_cliprdr, &list);
     // cliprdr_client_format_list says OK but drops an empty list after the first: no response will come for it.
+    // shortcut: so Windows keeps its old list and offers a Paste that fails, with nothing sent; try a one-format
+    // placeholder list if a stale Paste bothers anyone.
     if (rc == CHANNEL_RC_OK && (n || _firstList))
         _listsInFlight++;
     _firstList = NO;
@@ -403,7 +405,7 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     }
     [_lock unlock];
     if (changed && enabled)
-        _writtenChangeCount = -1;  // Windows lost its offer: the poll announces even the server's own text
+        _writtenChangeCount = -1;  // announce even the server's own text, as a richer Windows copy can't be told apart
 }
 
 - (XPRDPClipboardFormats)formatsToAnnounceNowForPasteboardTypes:(NSArray<NSString *> *)types {

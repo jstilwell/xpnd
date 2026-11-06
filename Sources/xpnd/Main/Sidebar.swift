@@ -374,7 +374,7 @@ private struct FolderRows: View {
     let drops: SidebarDrops
     /// The nearest ancestor's colour, for anything in here without its own.
     let inherited: ItemColor?
-    /// Connections with a running session.
+    /// Connections with an established session.
     let established: Set<Connection.ID>
     /// Every open folder in the tree, shared by all levels so the sidebar can toggle one on double-click.
     @Binding var expanded: Set<ConnectionFolder.ID>
