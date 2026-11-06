@@ -159,7 +159,7 @@ extension ConnectionLibrary {
     /// As `sudoCredential(for:)`, for a folder.
     func folderSudoCredential(for id: ConnectionFolder.ID) -> ResolvedCredential? {
         if let sudo = resolveFolder(id, \.sudoCredential, global: sudoCredential) { return sudo }
-        guard let login = folderLoginCredential(for: id), login.ref.hasPassword else { return nil }
+        guard sudoUsesLogin, let login = folderLoginCredential(for: id), login.ref.hasPassword else { return nil }
         return ResolvedCredential(ref: login.ref, source: .login)
     }
 

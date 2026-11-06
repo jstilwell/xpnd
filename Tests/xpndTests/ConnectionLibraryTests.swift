@@ -51,6 +51,23 @@ private func server(_ name: String, credential: CredentialRef? = nil, sudo: Cred
         #expect(library.loginCredential(for: Connection.ID()) == nil)
     }
 
+    @Test func sudoStopsFallingBackToLoginWhenOff() {
+        let own = server("own", sudo: ref("CS", .password))
+        let plain = server("plain")
+        let team = ConnectionFolder(name: "team", sudoCredential: ref("TS", .password), connections: [plain])
+        let bare = server("bare")
+        var library = ConnectionLibrary(credential: ref("pw", .login), folders: [team, ConnectionFolder(name: "o", connections: [own, bare])])
+
+        #expect(library.sudoUsesLogin)
+        #expect(library.sudoCredential(for: bare.id) == ResolvedCredential(ref: ref("pw", .login), source: .login))
+        library.sudoUsesLogin = false
+        #expect(library.sudoCredential(for: bare.id) == nil)
+        #expect(library.sudoCredential(for: own.id) == ResolvedCredential(ref: ref("CS", .password), source: .connection))
+        #expect(library.sudoCredential(for: plain.id) == ResolvedCredential(ref: ref("TS", .password), source: .folder(name: "team")))
+        library.sudoCredential = ref("GS", .password)
+        #expect(library.sudoCredential(for: bare.id) == ResolvedCredential(ref: ref("GS", .password), source: .global))
+    }
+
     @Test func sudoCascade() {
         let own = server("own", sudo: ref("CS", .password))
         let shared = server("shared")

@@ -275,6 +275,20 @@ private struct TwoAccountProvider: CredentialProvider {
         #expect(library.namePath(of: .folder(UUID())) == nil)
     }
 
+    @Test func folderSudoFallbackFollowsSetting() {
+        let inner = ConnectionFolder(name: "inner")
+        let team = ConnectionFolder(name: "team", sudoCredential: ref("T"), folders: [ConnectionFolder(name: "sub")])
+        var library = ConnectionLibrary(credential: ref("pw"), folders: [inner, team])
+
+        #expect(library.folderSudoCredential(for: inner.id) == ResolvedCredential(ref: ref("pw"), source: .login))
+        library.sudoUsesLogin = false
+        #expect(library.folderSudoCredential(for: inner.id) == nil)
+        #expect(library.folderSudoCredential(for: team.id) == ResolvedCredential(ref: ref("T"), source: .connection))
+        #expect(library.folderSudoCredential(for: team.folders[0].id) == ResolvedCredential(ref: ref("T"), source: .folder(name: "team")))
+        library.sudoCredential = ref("S")
+        #expect(library.folderSudoCredential(for: inner.id) == ResolvedCredential(ref: ref("S"), source: .global))
+    }
+
     @Test func folderCredentialsCascade() {
         let inner = ConnectionFolder(name: "inner")
         let prod = ConnectionFolder(name: "prod", credential: ref("P", .sshKey), folders: [inner])

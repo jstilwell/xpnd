@@ -52,7 +52,7 @@ extension ConnectionLibrary {
 
     func sudoCredential(for id: Connection.ID) -> ResolvedCredential? {
         if let sudo = resolve(id, \.sudoCredential, \.sudoCredential, global: sudoCredential) { return sudo }
-        guard let login = loginCredential(for: id), login.ref.hasPassword else { return nil }
+        guard sudoUsesLogin, let login = loginCredential(for: id), login.ref.hasPassword else { return nil }
         return ResolvedCredential(ref: login.ref, source: .login)
     }
 

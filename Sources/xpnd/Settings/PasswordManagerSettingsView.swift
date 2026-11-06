@@ -57,6 +57,11 @@ struct PasswordManagerSettingsView: View {
                               own: library.credential) { ref in editing.save { $0.credential = ref; return true } }
                 CredentialRow(title: "Sudo", editing: editing, resolved: Self.globalSudo(library),
                               own: library.sudoCredential) { ref in editing.save { $0.sudoCredential = ref; return true } }
+                Toggle("Use the login for sudo", isOn: Binding(
+                    get: { library.sudoUsesLogin },
+                    set: { on in editing.save { $0.sudoUsesLogin = on; return true } }))
+                Text("Off, sudo is only filled in where a folder or connection sets its own.")
+                    .font(.callout).foregroundStyle(.secondary)
                 if let problem = editing.saveProblem ?? (editing.readOnly ? "Fix connections.yaml to change these." : nil) {
                     Text(problem).font(.callout).foregroundStyle(.red)
                 }
@@ -104,6 +109,7 @@ struct PasswordManagerSettingsView: View {
     /// The sudo slot falls back to the global login credential when that has a password.
     private static func globalSudo(_ library: ConnectionLibrary) -> ResolvedCredential? {
         if let sudo = library.sudoCredential { return ResolvedCredential(ref: sudo, source: .connection) }
+        guard library.sudoUsesLogin else { return nil }
         return library.credential.flatMap { $0.hasPassword ? ResolvedCredential(ref: $0, source: .login) : nil }
     }
 
