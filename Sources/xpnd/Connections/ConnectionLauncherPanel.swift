@@ -122,7 +122,7 @@ private struct ConnectionLauncherView: View {
             switch row.kind {
             case .folder(let open):
                 Image(systemName: open ? "chevron.down" : "chevron.right").frame(width: 14).accessibilityHidden(true)
-                Image(systemName: "folder").accessibilityHidden(true)
+                Image(systemName: row.icon.symbol).accessibilityHidden(true)
             case .connection(let c):
                 Image(systemName: c.type.symbol).frame(width: 14).accessibilityHidden(true)
             }

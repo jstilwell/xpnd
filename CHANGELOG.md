@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Settings → Password Manager has a "Use the login for sudo" switch; turn it off to stop sudo falling back to the login password, so you can have no global sudo password without clearing the login.
 
 ### Added
+- A folder can have an icon (terminal, PC, desktop, server rack, network, cloud, shield, home or building) in its Details, to tell Linux and Windows folders apart at a glance. It shows in the sidebar, the folder menu and the launcher; subfolders don't inherit it.
 - A small green dot at the right of a sidebar row shows a connection that is connected in a tab.
 - A connection open in a tab can be disconnected from its sidebar menu or its Details (Disconnect, after the usual confirmation), even while it is still connecting, and Show Session jumps to its tab.
 - RDP connections: Windows desktops open as tabs beside SSH, with the domain login (`DOMAIN\user` or a separate domain) and password from 1Password, an RD Gateway, dynamic resize or a fixed size letterboxed in the tab, certificate and login prompts (asked again at once when the server rejects the login), and auto-reconnect after a lost connection. Settings → Remote Desktop and each connection's RDP options set the display, clipboard and sound. FreeRDP (Apache 2.0) is bundled.

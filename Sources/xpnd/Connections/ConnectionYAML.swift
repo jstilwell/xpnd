@@ -25,6 +25,8 @@ enum ConnectionYAML {
         var credential: CredentialRef?
         var sudoCredential: CredentialRef?
         var color: ItemColor?
+        /// A raw string so a value from a newer version loads as no icon instead of failing the file.
+        var icon: String?
         var connections: [Item]?
         var folders: [Folder]?
     }
@@ -97,13 +99,14 @@ enum ConnectionYAML {
                     sshOptions: c.advanced?.sshOptions ?? "", autoSudo: c.advanced?.autoSudo ?? false,
                     rdp: c.rdp, color: c.color)
             },
-            folders: (f.folders ?? []).map(model), color: f.color)
+            folders: (f.folders ?? []).map(model), color: f.color,
+            icon: f.icon.flatMap(FolderIcon.init(rawValue:)))
     }
 
     private static func dto(_ f: ConnectionFolder) -> Folder {
         Folder(
             id: f.id, name: f.name, activation: f.activation,
-            credential: f.credential, sudoCredential: f.sudoCredential, color: f.color,
+            credential: f.credential, sudoCredential: f.sudoCredential, color: f.color, icon: f.icon?.rawValue,
             connections: f.connections.isEmpty ? nil : f.connections.map { c in
                 let jump: Jump? = switch c.jumpHost {
                 case .connection(let id): Jump(connection: id)
