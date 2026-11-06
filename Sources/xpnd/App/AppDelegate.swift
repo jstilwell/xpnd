@@ -40,9 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        let image = NSImage(systemSymbolName: "text.cursor", accessibilityDescription: "xpnd")
-        image?.isTemplate = true
-        statusItem.button?.image = image
+        statusItem.button?.image = MenuBarIcon.image()
         statusItem.menu = menu
         installMainMenu()
 
