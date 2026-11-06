@@ -57,4 +57,19 @@ struct XPRDPCursorTests {
         #expect(copy.pixelsWide == side)
         #expect(copy.colorAt(x: 3, y: 3)?.alphaComponent == 1)
     }
+
+    /// MRDPView is built without ARC, so `currentCursor` doesn't retain. AppKit reads it at the next cursor-rect pass,
+    /// and a freed cursor crashes there. Read raw and measured with `malloc_size`, as retaining a freed object is the crash.
+    @MainActor @Test func theViewKeepsItsCursorAlive() async throws {
+        let viewClass = try #require(NSClassFromString("XPRDPView") as? NSView.Type)
+        let view = viewClass.init(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        let image = NSImage(size: NSSize(width: 8, height: 8))
+        image.addRepresentation(try bitmap(8))
+        _ = view.perform(NSSelectorFromString("setCursor:"), with: NSCursor(image: image, hotSpot: .zero))
+        await withCheckedContinuation { done in DispatchQueue.main.async { done.resume() } }  // after setCursor:'s block
+
+        let ivar = try #require(class_getInstanceVariable(viewClass, "currentCursor"))
+        let current = Unmanaged.passUnretained(view).toOpaque().load(fromByteOffset: ivar_getOffset(ivar), as: UnsafeRawPointer?.self)
+        #expect(malloc_size(try #require(current)) > 0)
+    }
 }
