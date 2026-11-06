@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## 0.2.1 - Unreleased
 
+### Fixed
+- xpnd no longer crashes while connected to a Windows desktop when that desktop shows its own mouse pointer.
+
 ### Changed
 - The copyright holder is Jesse Stilwell, and the app no longer says "All rights reserved", which didn't fit the MIT license.
 

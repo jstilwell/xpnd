@@ -32,6 +32,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     NSTimer *_clipboardPoll;  // main thread
     NSBitmapImageRep *_cursorBitmap;  // main thread: the server's pointer, nil for the system arrow
     NSPoint _cursorHotSpot;
+    NSCursor *_shownCursor;   // main thread: keeps MRDPView's `currentCursor` alive
     BOOL _dragHasFiles;       // main thread: the drag in progress is one to take
 }
 
@@ -188,8 +189,14 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
         if (bitmap)
             [self applyCursorScale];
         else
-            [super setCursor:cursor];
+            [self showCursor:cursor];
     });
+}
+
+/// MRDPView is built without ARC, so its `currentCursor` doesn't retain, and AppKit reads it at the next cursor-rect pass.
+- (void)showCursor:(NSCursor *)cursor {
+    _shownCursor = cursor;
+    [super setCursor:cursor];
 }
 
 - (void)applyCursorScale {
@@ -197,7 +204,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
         return;
     const NSSize desktop = self.desktopPixelSize;
     const CGFloat scale = XPRDPCursorScale(desktop, [self desktopRectForSize:desktop]);
-    [super setCursor:XPRDPScaledCursor(_cursorBitmap, _cursorHotSpot, scale)];
+    [self showCursor:XPRDPScaledCursor(_cursorBitmap, _cursorHotSpot, scale)];
 }
 
 - (void)viewDidChangeBackingProperties {
