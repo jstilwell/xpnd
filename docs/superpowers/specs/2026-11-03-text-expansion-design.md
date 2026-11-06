@@ -229,7 +229,7 @@ groups:
 - macOS 14 minimum, matching HoverEnhance.
 - **Released publicly as free, open source software** by the user, who is an
   Apple developer. Build, signing, and release follow the user's existing app
-  `/Users/jesse/code/apps/HoverEnhance` (read its `Makefile`,
+  the HoverEnhance repository (read its `Makefile`,
   `bin/build-release.sh`, `bin/run.sh`, `docs/DEVELOPMENT.md`, and
   `CLAUDE.md`). In short:
   - A SwiftPM executable target, bundled into `build/xpnd.app` by a
@@ -258,7 +258,7 @@ groups:
 - Pin every dependency to an exact version and check the package name for
   typosquats. Expected: Sparkle (as in HoverEnhance) and a YAML library
   (Yams, `github.com/jpsim/Yams`).
-- The project folder `/Users/jesse/code/apps/xpnd` is empty and not yet a git
+- The project folder `xpnd` is empty and not yet a git
   repo. Xcode 27.2 and Swift 6.4 are installed.
 
 ## Tests the builder should include
