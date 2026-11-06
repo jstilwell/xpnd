@@ -1,8 +1,5 @@
 #import "XPRDPView.h"  // FreeRDP's headers first; see XPRDPView.h
 
-#import <freerdp/client/Mac/Clipboard.h>
-
-#import "XPRDPClipboardFilter.h"
 #import "XPRDPFitRect.h"
 #import "XPRDPResizeCoalescer.h"
 
@@ -37,6 +34,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 - (instancetype)initWithFrame:(NSRect)frame {
     if ((self = [super initWithFrame:frame])) {
         _drawLock = [NSRecursiveLock new];
+        _clipboard = [XPRDPClipboard new];
         _commandAsWindowsKey = YES;
         __weak XPRDPView *weakSelf = self;
         _coalescer = [[XPRDPResizeCoalescer alloc] initWithIdleInterval:0.2 handler:^(CGSize size) {
@@ -351,34 +349,27 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 #pragma mark Clipboard
 
 /// Replaces MRDPView's poll: never offers a concealed or xpnd-secret item, reads every item's types,
-/// and drops a read the pasteboard changed under.
+/// offers text and Finder's files, and drops a read the pasteboard changed under.
 - (void)onPasteboardTimerFired:(NSTimer *)timer {
-    mfContext *m = mfc;
-    if (!m)
-        return;
     NSPasteboard *pasteboard = pasteboard_rd;
     const NSInteger changeCount = pasteboard.changeCount;
-    if (!pasteboard || changeCount == pasteboard_changecount)
+    if (!mfc || !pasteboard || changeCount == pasteboard_changecount)
         return;
+    if (changeCount == _clipboard.writtenChangeCount) {
+        pasteboard_changecount = (int)changeCount;  // the server's own text: Windows keeps its richer copy
+        return;
+    }
     NSArray<NSPasteboardItem *> *items = pasteboard.pasteboardItems;
     NSMutableArray<NSString *> *types = [NSMutableArray array];
     for (NSPasteboardItem *item in items)
         [types addObjectsFromArray:item.types];
-    NSString *text = [XPRDPClipboardFilter shouldOfferPasteboardTypes:types] ? [items.firstObject stringForType:NSPasteboardTypeString] : nil;
+    const XPRDPClipboardFormats formats = [XPRDPClipboard formatsToAnnounceForPasteboardTypes:types];
+    NSString *text = (formats & XPRDPClipboardFormatsText) ? [items.firstObject stringForType:NSPasteboardTypeString] : nil;
+    NSData *files = (formats & XPRDPClipboardFormatsFiles) ? [_clipboard localFileURIList] : nil;
     if (pasteboard.changeCount != changeCount)
         return;  // the next tick reads the newer contents
     pasteboard_changecount = (int)changeCount;
-    if (!m->clipboard)
-        return;
-    if (text) {
-        const char *utf8 = text.UTF8String;
-        const UINT32 format = ClipboardRegisterFormat(m->clipboard, "text/plain;charset=utf-8");
-        (void)ClipboardSetData(m->clipboard, format, utf8, (UINT32)strlen(utf8) + 1);
-    } else {
-        ClipboardEmpty(m->clipboard);
-    }
-    if (m->clipboardSync)
-        (void)mac_cliprdr_send_client_format_list(m->cliprdr);
+    [_clipboard offerText:text fileURIList:files];
 }
 
 @end

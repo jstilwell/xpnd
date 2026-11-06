@@ -1,5 +1,6 @@
 #import "XPRDPView.h"  // FreeRDP's headers first; see XPRDPView.h
 
+#include <os/log.h>
 #include <stdatomic.h>
 #include <freerdp/client/disp.h>
 #include <freerdp/crypto/certificate.h>
@@ -76,6 +77,11 @@ NSString *const XPRDPErrorCertificateRejected = @"XPRDP_CERTIFICATE_REJECTED";
 
 /// MRDPView's desktop resize (a static function there), captured in PreConnect; the same for every session.
 static _Atomic(pDesktopResize) XPMacDesktopResize;
+/// MRDPView's channel handlers (static there too), taken out of the pubsub in PreConnect so that its
+/// mac_cliprdr_init never claims the clipboard channel; XPChannelConnected passes them the other channels.
+/// NULL while they couldn't be found, and so are still subscribed (see XPPreConnect).
+static _Atomic(pChannelConnectedEventHandler) XPMacChannelConnected;
+static _Atomic(pChannelDisconnectedEventHandler) XPMacChannelDisconnected;
 
 static DWORD XPVerifyCertificate(freerdp *, const char *, UINT16, const char *, const char *, const char *, const char *, DWORD);
 static DWORD XPVerifyChangedCertificate(freerdp *, const char *, UINT16, const char *, const char *, const char *,
@@ -490,14 +496,44 @@ static int XPLogonErrorInfo(freerdp *instance, UINT32 data, UINT32 type) {
     return 1;
 }
 
+static XPRDPView *XPViewFor(void *context) {
+    return (__bridge XPRDPView *)((mfContext *)context)->view;
+}
+
 static void XPChannelConnected(void *context, const ChannelConnectedEventArgs *e) {
+    if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
+        (void)[XPViewFor(context).clipboard attachChannel:(CliprdrClientContext *)e->pInterface];
+        return;
+    }
+    const pChannelConnectedEventHandler mac = atomic_load(&XPMacChannelConnected);
+    if (mac)
+        mac(context, e);
     if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
         [XPSessionFor(context) setDisp:(DispClientContext *)e->pInterface];
 }
 
 static void XPChannelDisconnected(void *context, const ChannelDisconnectedEventArgs *e) {
+    if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
+        [XPViewFor(context).clipboard detachChannel:(CliprdrClientContext *)e->pInterface];
+        return;
+    }
+    const pChannelDisconnectedEventHandler mac = atomic_load(&XPMacChannelDisconnected);
+    if (mac)
+        mac(context, e);
     if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
         [XPSessionFor(context) setDisp:NULL];
+}
+
+/// Pre-connect, before any channel runs: nothing else touches the pubsub.
+static size_t XPHandlerCount(wPubSub *pubSub, const char *event) {
+    const wEventType *type = PubSub_FindEventType(pubSub, event);
+    return type ? type->EventHandlerCount : 0;
+}
+
+/// The one handler subscribed to `event` since it had `before`; NULL when there isn't exactly one.
+static pEventHandler XPHandlerAdded(wPubSub *pubSub, const char *event, size_t before) {
+    const wEventType *type = PubSub_FindEventType(pubSub, event);
+    return type && type->EventHandlerCount == before + 1 ? type->EventHandlers[before] : NULL;
 }
 
 /// MRDPView's EndPaint waits on the main queue (dispatch_sync) for every frame, which deadlocks a
@@ -529,9 +565,26 @@ static BOOL XPDesktopResize(rdpContext *context) {
 }
 
 static BOOL XPPreConnect(freerdp *instance) {
+    rdpContext *context = instance->context;
+    wPubSub *pubSub = context->pubSub;
+    const size_t connected = XPHandlerCount(pubSub, "ChannelConnected");
+    const size_t disconnected = XPHandlerCount(pubSub, "ChannelDisconnected");
     if (!mac_pre_connect(instance))
         return NO;
-    rdpContext *context = instance->context;
+    // Both or neither, so mac_cliprdr_init and mac_cliprdr_uninit stay paired. Should a FreeRDP update
+    // change what mac_pre_connect subscribes, its handlers stay and run first: mac_cliprdr_init still runs,
+    // and XPRDPClipboard's attach, after it, replaces every callback it set.
+    pEventHandler mac = XPHandlerAdded(pubSub, "ChannelConnected", connected);
+    pEventHandler macDisconnected = XPHandlerAdded(pubSub, "ChannelDisconnected", disconnected);
+    if (mac && macDisconnected) {
+        (void)PubSub_Unsubscribe(pubSub, "ChannelConnected", mac);
+        (void)PubSub_Unsubscribe(pubSub, "ChannelDisconnected", macDisconnected);
+    } else {
+        os_log_error(os_log_create("com.jessestilwell.xpnd", "rdp"), "MRDPView's channel handlers not found; FreeRDP's Mac clipboard runs first");
+        mac = macDisconnected = NULL;
+    }
+    atomic_store(&XPMacChannelConnected, (pChannelConnectedEventHandler)mac);
+    atomic_store(&XPMacChannelDisconnected, (pChannelDisconnectedEventHandler)macDisconnected);
     rdpUpdate *update = context->update;
     atomic_store(&XPMacDesktopResize, update->DesktopResize);
     update->DesktopResize = XPDesktopResize;

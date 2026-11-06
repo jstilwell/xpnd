@@ -2,6 +2,7 @@
 // the classes below and nothing of FreeRDP.
 #import "XPRDPVersion.h"
 #import "XPRDPSession.h"
+#import "XPRDPClipboard.h"
 #import "XPRDPClipboardFilter.h"
 #import "XPRDPResizeCoalescer.h"
 #import "XPRDPFitRect.h"

@@ -174,6 +174,19 @@ struct XPRDPSessionTests {
         #expect(!XPRDPClipboardFilter.shouldOfferPasteboardTypes((pasteboard.types ?? []).map(\.rawValue)))
     }
 
+    @MainActor @Test func clipboardAnnouncesTextFilesOrNothing() {
+        let formats = XPRDPClipboard.formatsToAnnounce(forPasteboardTypes:)
+        #expect(formats(["public.utf8-plain-text"]) == .text)
+        #expect(formats(["public.file-url", "public.utf8-plain-text"]) == [.text, .files])  // a Finder copy
+        #expect(formats(["public.file-url"]) == .files)
+        #expect(formats(["NSFilenamesPboardType"]) == .files)
+        #expect(formats(["public.png"]).isEmpty)
+        #expect(formats([]).isEmpty)
+        // Concealed or xpnd-secret: never offered, files or not.
+        #expect(formats(["public.file-url", "org.nspasteboard.ConcealedType"]).isEmpty)
+        #expect(formats(["public.utf8-plain-text", "\(SecretClipboard.secretTypePrefix).\(UUID().uuidString)"]).isEmpty)
+    }
+
     @MainActor @Test func resizeCoalescerFiresOnceWithLastSize() async throws {
         var sizes: [CGSize] = []
         let c = XPRDPResizeCoalescer(idleInterval: 0.1) { sizes.append($0) }

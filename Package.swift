@@ -34,6 +34,8 @@ let package = Package(
                 .linkedFramework("VideoToolbox"),
                 // Pulled in with the Mac client: rdpsnd's AVAudioEngine output and zlib.
                 .linkedFramework("AVFoundation"), .linkedLibrary("z"),
+                // The common client's macOS file clipboard (client_cliprdr_file_apple.m) uses UTType.
+                .linkedFramework("UniformTypeIdentifiers"),
             ]
         ),
         .testTarget(name: "xpndTests", dependencies: ["xpnd", "xpndRDP"]),

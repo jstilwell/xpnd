@@ -67,9 +67,12 @@ struct ConnectionEditorView: View {
                     CredentialRow(title: "Login", editing: editing, resolved: login, own: connection.credential) { ref in
                         editing.edit(connection: connection.id) { $0.credential = ref }
                     }
-                    CredentialRow(title: "Sudo", editing: editing, resolved: library.sudoCredential(for: connection.id),
-                                  own: connection.sudoCredential) { ref in
-                        editing.edit(connection: connection.id) { $0.sudoCredential = ref }
+                    // sudo is an SSH thing; a Windows or VNC host has nowhere to use it.
+                    if connection.type == .ssh {
+                        CredentialRow(title: "Sudo", editing: editing, resolved: library.sudoCredential(for: connection.id),
+                                      own: connection.sudoCredential) { ref in
+                            editing.edit(connection: connection.id) { $0.sudoCredential = ref }
+                        }
                     }
                 }
                 if connection.type == .ssh { advanced(library) }
