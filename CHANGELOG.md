@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.2.0 - Unreleased
+## 0.2.0 - 11-06-2026
 
 ### Fixed
 - The mouse pointer in a Windows desktop tab is the right size with Retina on, instead of twice as big.
