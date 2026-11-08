@@ -12,6 +12,12 @@ import Testing
         return (url.path, dir)
     }
 
+    /// The first run of a new executable can take 150 ms or more while security software scans it,
+    /// which a short timeout would count. Scripts given `warm` exit at once.
+    private func warmUp(_ path: String) async throws {
+        _ = try await ProcessRunner.run(URL(fileURLWithPath: path), arguments: ["warm"], timeoutMs: 10_000)
+    }
+
     @Test func scriptOutput() async throws {
         let (path, dir) = try script("echo hi")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -30,8 +36,9 @@ import Testing
         let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
         defer { try? FileManager.default.removeItem(atPath: pidFile) }
         // Background grandchild (not exec'd) so only a group kill can stop it.
-        let (path, dir) = try script("sleep 30 &\necho $! > '\(pidFile)'\nwait")
+        let (path, dir) = try script("[ \"$1\" = warm ] && exit 0\nsleep 30 &\necho $! > '\(pidFile)'\nwait")
         defer { try? FileManager.default.removeItem(at: dir) }
+        try await warmUp(path)
         let start = ContinuousClock.now
         await #expect(throws: ExpansionError.scriptTimedOut(path: path)) {
             try await ScriptRunner.run(path: path, timeoutMs: 300)
@@ -46,6 +53,22 @@ import Testing
         }
         if !gone { kill(pid, SIGKILL) }
         #expect(gone)
+    }
+
+    @Test func cancellingStopsAScriptWithNoTimeout() async throws {
+        let ready = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+        defer { try? FileManager.default.removeItem(atPath: ready) }
+        let (path, dir) = try script("trap '' TERM\ntouch '\(ready)'\nsleep 30 &\nwait")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let task = Task { try await ScriptRunner.run(path: path, timeoutMs: 0) }
+        for _ in 0..<500 where !FileManager.default.fileExists(atPath: ready) { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(FileManager.default.fileExists(atPath: ready))
+        let cancelled = ContinuousClock.now
+        task.cancel()
+        await #expect(throws: ExpansionError.targetAppChanged) { try await task.value }
+        // It ignores SIGTERM, so this is the SIGKILL a second later.
+        let took = ContinuousClock.now - cancelled
+        #expect(took > .milliseconds(900) && took < .seconds(3))
     }
 
     @Test func largeOutputDoesNotDeadlock() async throws {
