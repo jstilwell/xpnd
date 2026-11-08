@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- **Use the macOS Keychain instead of 1Password** in Settings → Password Manager, with **New Password** in the credential picker.
+- A warning when a terminal's Secure Keyboard Entry hides keywords from xpnd.
+- Built-in terminal tabs show when a login or sudo password is on the clipboard, with a countdown and **Clear**.
+- **Passwords** setting for built-in tabs: **Copy to clipboard**, **Send on click** (⌘⇧P), or **Send automatically** at the password prompt.
+
+### Fixed
+- Passwords and expanded snippets no longer reach your other devices through Universal Clipboard.
+- Switching apps or turning expansion off stops a snippet's running script, so a stuck script no longer blocks every keyword.
+- Saving no longer replaces a symlinked `snippets.yaml` or `connections.yaml` with a plain file.
+- A VNC username containing `:` is no longer split into a username and password.
+
 ## 0.2.1 - 11-06-2026
 
 ### Fixed

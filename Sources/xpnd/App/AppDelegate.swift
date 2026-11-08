@@ -18,13 +18,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let hud = HUD()
     var engine: ExpansionEngine!
     var service: ConnectionService!
-    /// The 1Password provider for connecting, the main window and Settings. It keeps no state, so
+    /// The credential provider for connecting, the main window and Settings. It keeps no state, so
     /// building it from the current op path at each use means no holder keeps a stale path.
-    var provider: OnePasswordProvider { OnePasswordProvider(opPath: settings.onePasswordPath) }
+    var provider: CredentialRouter { CredentialRouter(onePassword: OnePasswordProvider(opPath: settings.onePasswordPath)) }
     let quickMenu = QuickMenuPanel()
     var mainWindow: MainWindowController?
     /// The cross-file duplicates the HUD last flagged, so it says so once per change.
     var flaggedDuplicates: Set<String> = []
+    /// The HUD said Secure Keyboard Entry is hiding typing; cleared on each app switch, so once per visit.
+    private var warnedSecureInput = false
     private var tap: KeyEventTap!
     private var picker: PickerPanel!
     private let pickerHotKey = GlobalShortcut()
@@ -82,12 +84,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let focused = self?.mainWindow?.terminalHasFocus ?? false
                 self?.engine.handle(key, targetsXpnd: ExpansionTargeting.targetsXpnd(keyTargetsProcess: keyTargetsProcess, terminalFocused: focused))
             },
-            onMouseDown: { [weak self] in self?.engine.resetBuffer() }
+            onMouseDown: { [weak self] in self?.engine.resetBuffer() },
+            onSecureInput: { [weak self] in self?.warnSecureInput() }
         )
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.engine.resetBuffer() }
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            let pid = app?.processIdentifier
+            MainActor.assumeIsolated {
+                self?.engine.resetBuffer()
+                self?.warnedSecureInput = false
+                // xpnd itself comes forward for a snippet's form; any other app ends the expansion.
+                if pid != ProcessInfo.processInfo.processIdentifier { self?.engine.cancelEvaluation() }
+            }
         }
 
         // Updates don't depend on Accessibility, so a release that needs fixing can still be replaced.
@@ -134,6 +144,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static func launchedAsLoginItem() -> Bool {
         guard let event = NSAppleEventManager.shared().currentAppleEvent, event.eventID == kAEOpenApplication else { return false }
         return event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+    }
+
+    /// Only in terminals: a password field elsewhere turns secure input on too, and that's expected.
+    private func warnSecureInput() {
+        guard !warnedSecureInput, let id = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+              settings.terminal.terminalBundleIDs.contains(id) else { return }
+        warnedSecureInput = true
+        hud.flash("Secure input is on in this terminal, so xpnd can't see keywords here. Turn off Secure Keyboard Entry in its menu to use them.")
     }
 
     /// The tap runs only while both permissions are on.
@@ -309,7 +327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 settings: settings, store: store,
                 connections: ConnectionEditing(
                     store: connections, snippets: store, provider: { [unowned self] in self.provider },
-                    preferredAccount: { AppSettings.shared.onePasswordAccount }, keysDirectory: keysDirectory,
+                    preferredAccount: { AppSettings.shared.credentialAccount }, keysDirectory: keysDirectory,
                     connect: { _, _ in }))
         }
         settingsWindow?.show()

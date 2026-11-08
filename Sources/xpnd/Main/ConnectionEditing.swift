@@ -57,7 +57,11 @@ enum EditorRules {
     /// "From folder prod: prod-ssh (1Password)", or "Not set".
     static func summary(_ resolved: ResolvedCredential?) -> String {
         guard let resolved else { return "Not set" }
-        let provider = resolved.ref.provider == "1password" ? "1Password" : resolved.ref.provider
+        let provider = switch resolved.ref.provider {
+        case "1password": "1Password"
+        case KeychainProvider.id: "Keychain"
+        default: resolved.ref.provider
+        }
         let item = "\(resolved.ref.title) (\(provider))"
         return switch resolved.source {
         case .connection: item
@@ -316,6 +320,8 @@ final class ConnectionEditing {
     }
 
     var provider: any CredentialProvider { currentProvider() }
+    /// Settings picked the macOS Keychain for new credentials.
+    var usesKeychain: Bool { preferredAccount() == KeychainProvider.id }
 
     var library: ConnectionLibrary { store.library }
     var readOnly: Bool { store.loadError != nil }

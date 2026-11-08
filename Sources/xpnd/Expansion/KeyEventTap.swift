@@ -8,12 +8,15 @@ import Carbon.HIToolbox
     /// The Bool is whether the key goes to xpnd itself.
     private let onKey: (KeyInput, Bool) -> Void
     private let onMouseDown: () -> Void
+    /// A key went unread because secure input is on (a password field, or a terminal's Secure Keyboard Entry).
+    private let onSecureInput: () -> Void
     private var port: CFMachPort?
     private var source: CFRunLoopSource?
 
-    init(onKey: @escaping (KeyInput, Bool) -> Void, onMouseDown: @escaping () -> Void) {
+    init(onKey: @escaping (KeyInput, Bool) -> Void, onMouseDown: @escaping () -> Void, onSecureInput: @escaping () -> Void = {}) {
         self.onKey = onKey
         self.onMouseDown = onMouseDown
+        self.onSecureInput = onSecureInput
     }
 
     /// False when macOS refused the tap, as it does without Input Monitoring.
@@ -60,7 +63,10 @@ import Carbon.HIToolbox
         case .keyDown:
             guard event.getIntegerValueField(.eventSourceUserData) != SyntheticEvent.marker else { return }
             // A password field: don't read the key, and don't let earlier keys combine with later ones.
-            guard !IsSecureEventInputEnabled() else { return onKey(.reset, false) }
+            guard !IsSecureEventInputEnabled() else {
+                onSecureInput()
+                return onKey(.reset, false)
+            }
             var chars = [UniChar](repeating: 0, count: 8)
             var length = 0
             event.keyboardGetUnicodeString(maxStringLength: chars.count, actualStringLength: &length, unicodeString: &chars)

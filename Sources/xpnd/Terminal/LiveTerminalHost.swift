@@ -36,6 +36,26 @@ import SwiftTerm
 
     func terminate() { terminal.terminate() }
 
+    /// The absolute row of the prompt a password last went to, so one prompt never gets two.
+    private var lastPasswordRow: Int?
+
+    func sendPassword(_ password: String) -> Bool {
+        guard let screen = terminal.terminalContentSnapshot(region: .history(maximumScrollbackRows: -1)),
+              screen.cursorRow != lastPasswordRow,
+              let line = screen.rows.first(where: { $0.absoluteRow == screen.cursorRow })?.text,
+              Self.isPasswordPrompt(line) else { return false }
+        lastPasswordRow = screen.cursorRow
+        terminal.send(data: ArraySlice(Array((password + "\r").utf8)))
+        return true
+    }
+
+    /// "[sudo] password for jesse:", "jesse@host's password:", "Password:". Anything else (a shell
+    /// prompt above all) would run the password as a command and keep it in the shell's history.
+    static func isPasswordPrompt(_ line: String) -> Bool {
+        let line = line.trimmingCharacters(in: .whitespaces).lowercased()
+        return line.hasSuffix(":") && line.contains("password")
+    }
+
     func apply(_ settings: BuiltInTerminalSettings) {
         terminal.font = settings.nsFont
         let colors = settings.colors

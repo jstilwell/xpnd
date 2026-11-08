@@ -123,6 +123,9 @@ private let sudo = ref("sudo", .password)
     var onCopy: () -> Void = {}
     var rdpSettings = RDPSettings.standard
     var opened: [(TabRequest, Connection)] = []
+    var tabPasswords = TabPasswordMode.clipboard
+    /// What a tab's offer answers: true as if the password went in.
+    var offerAccepted = true
 
     init(library: ConnectionLibrary) throws {
         provider = FakeProvider(log: log)
@@ -152,6 +155,12 @@ private let sudo = ref("sudo", .password)
             remoteDesktop: { [unowned self] in rdpSettings },
             frontmost: { [unowned self] in front },
             notify: { [log] in log.events.append("notify \($0)") },
+            showCopied: { [log] text, _ in log.events.append("banner \(text)") },
+            tabPasswords: { [unowned self] in tabPasswords },
+            offerInTab: { [unowned self] label, password, _, automatic in
+                log.events.append("offer \(label) \(password)\(automatic ? " auto" : "")")
+                return offerAccepted
+            },
             copySecret: { [unowned self] secret in
                 onCopy()
                 log.events.append("copy \(secret)")
@@ -503,7 +512,7 @@ struct ConnectionServiceTests {
             let h = try Harness(aws)
             if item == "../x" { try h.writeKey(bad) } // inside the temp directory: being on disk mustn't count
             await h.connect(aws)
-            #expect(h.log.events == ["notify This credential link isn't valid. Choose it again from 1Password."])
+            #expect(h.log.events == ["notify This credential link isn't valid. Choose it again."])
         }
     }
 
@@ -512,7 +521,7 @@ struct ConnectionServiceTests {
         let aws = Connection(name: "aws", host: "54.1.2.3", credential: login, jumpHost: .connection(jump.id))
         let h = try Harness(aws, jump)
         await h.connect(aws)
-        #expect(h.log.events == ["notify This credential link isn't valid. Choose it again from 1Password."])
+        #expect(h.log.events == ["notify This credential link isn't valid. Choose it again."])
     }
 
     @Test func connectReturnsBeforePasswords() async throws {
@@ -611,7 +620,46 @@ struct ConnectionServiceTests {
         await h.connect(aws, typedInto: nil, preferBuiltIn: true)
         #expect(try h.opened.count == 1 && h.opened[0].1.id == aws.id && h.opened[0].0 == .terminal(h.command(aws)))
         #expect(h.executor.plans.isEmpty)
-        #expect(h.log.events == ["tab aws (terminal)", "password login", "copy secret-login", "notify Password copied for aws"])
+        #expect(h.log.events == ["tab aws (terminal)", "password login", "copy secret-login", "notify Password copied for aws",
+                                 "banner Password copied"])
+    }
+
+    /// The tab says so too; a password copied for an external terminal only gets the HUD (see loginThenSudo).
+    @Test func builtInTabShowsTheSudoCopyInTheTab() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login, sudoCredential: sudo, autoSudo: true)
+        let h = try Harness(aws)
+        await h.connect(aws, typedInto: nil, preferBuiltIn: true)
+        #expect(h.log.events == [
+            "tab aws (terminal)", "password login", "copy secret-login", "notify Password copied for aws", "banner Password copied",
+            "offerSudo aws", "password sudo", "copy secret-sudo", "notify Sudo password copied", "banner Sudo password copied",
+        ])
+    }
+
+    @Test func sendModeOffersLoginThenSudoInTheTabAndCopiesNothing() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login, sudoCredential: sudo, autoSudo: true)
+        let h = try Harness(aws)
+        h.tabPasswords = .sendOnClick
+        await h.connect(aws, typedInto: nil, preferBuiltIn: true)
+        #expect(h.log.events == ["tab aws (terminal)", "password login", "offer Password secret-login",
+                                 "password sudo", "offer Sudo password secret-sudo"])
+    }
+
+    @Test func automaticModeAndAnUnsentLoginSkipsSudo() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login, sudoCredential: sudo, autoSudo: true)
+        let h = try Harness(aws)
+        h.tabPasswords = .sendAutomatically
+        h.offerAccepted = false
+        await h.connect(aws, typedInto: nil, preferBuiltIn: true)
+        #expect(h.log.events == ["tab aws (terminal)", "password login", "offer Password secret-login auto"])
+    }
+
+    /// The setting is for built-in tabs only: an external terminal still gets the clipboard.
+    @Test func sendModeStillCopiesForAnExternalTerminal() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3", credential: login)
+        let h = try Harness(aws)
+        h.tabPasswords = .sendAutomatically
+        await h.connect(aws)
+        #expect(h.log.events == (try h.typed(aws)) + ["password login", "copy secret-login", "notify Password copied for aws"])
     }
 
     @Test func missingConnectionOpensNoTab() async throws {

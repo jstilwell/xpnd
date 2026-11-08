@@ -10,11 +10,14 @@ import Foundation
     /// target app does, land there before the backspaces that delete it.
     static let typedKeywordSettle: Duration = .milliseconds(20)
 
-    var isEnabled = true
+    var isEnabled = true { didSet { if !isEnabled { cancelEvaluation() } } }
     private(set) var isExpanding = false
     private(set) var buffer = TypingBuffer()
     /// The expansion a typed keyword started, so tests can await it.
     private(set) var pendingExpansion: Task<Void, Never>?
+    /// The snippet being evaluated, so leaving its app can stop its scripts. Playing isn't
+    /// cancelled: a paste cut short would restore the clipboard before the app read it.
+    private var evaluation: Task<Result<[PlayStep], ExpansionError>, Never>?
 
     private let store: SnippetStore
     private let connections: ConnectionStore
@@ -107,6 +110,11 @@ import Foundation
         buffer.apply(.reset)
     }
 
+    /// Stops the running evaluation's scripts; the expansion then ends without changing anything.
+    func cancelEvaluation() {
+        evaluation?.cancel()
+    }
+
     /// Does nothing while another expansion is in flight: its paste would capture this one's text as
     /// the clipboard to restore. Inserts into the app in front when called.
     func expand(_ snippet: Snippet, deletingCharacters: Int) async {
@@ -121,8 +129,16 @@ import Foundation
         defer { isExpanding = false }
         do throws(ExpansionError) {
             // Evaluation fails before anything on screen changes, so the keyword stays.
-            let steps = try await Evaluator.evaluate(snippet, context: makeContext())
-            guard frontmostPID() == target else { throw .targetAppChanged }
+            let context = makeContext()
+            let evaluation = Task { () -> Result<[PlayStep], ExpansionError> in
+                do throws(ExpansionError) { return .success(try await Evaluator.evaluate(snippet, context: context)) }
+                catch { return .failure(error) }
+            }
+            self.evaluation = evaluation
+            let result = await evaluation.value
+            self.evaluation = nil
+            guard !evaluation.isCancelled, frontmostPID() == target else { throw .targetAppChanged }
+            let steps = try result.get()
             try await player.play(steps, deletingCharacters: deletingCharacters)
         } catch {
             notify(error.message)

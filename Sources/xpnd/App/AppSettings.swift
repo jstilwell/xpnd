@@ -15,6 +15,8 @@ final class AppSettings {
         static let remoteDesktop = "remoteDesktop"
         static let onePasswordPath = "onePasswordPath"
         static let onePasswordAccount = "onePasswordAccount"
+        static let usesKeychain = "usesKeychain"
+        static let tabPasswords = "tabPasswords"
         static let typesKeystrokes = "typesKeystrokes"
     }
 
@@ -54,6 +56,15 @@ final class AppSettings {
     /// The 1Password account id to search; nil uses the first signed-in one.
     var onePasswordAccount: String? { didSet { defaults.set(onePasswordAccount, forKey: Key.onePasswordAccount) } }
 
+    /// New credentials come from the macOS Keychain instead of 1Password. Existing refs keep their own provider.
+    var usesKeychain: Bool { didSet { defaults.set(usesKeychain, forKey: Key.usesKeychain) } }
+
+    /// The account the credential picker searches: the Keychain's, or the chosen 1Password one.
+    var credentialAccount: String? { usesKeychain ? KeychainProvider.id : onePasswordAccount }
+
+    /// How a built-in tab gets its login and sudo passwords.
+    var tabPasswords: TabPasswordMode { didSet { defaults.set(tabPasswords.rawValue, forKey: Key.tabPasswords) } }
+
     /// Type every snippet as keystrokes instead of pasting; off, only remote-desktop apps get typed.
     var typesKeystrokes: Bool { didSet { defaults.set(typesKeystrokes, forKey: Key.typesKeystrokes) } }
 
@@ -77,5 +88,7 @@ final class AppSettings {
         onePasswordPath = defaults.string(forKey: Key.onePasswordPath)
         onePasswordAccount = defaults.string(forKey: Key.onePasswordAccount)
         typesKeystrokes = defaults.bool(forKey: Key.typesKeystrokes)
+        usesKeychain = defaults.bool(forKey: Key.usesKeychain)
+        tabPasswords = defaults.string(forKey: Key.tabPasswords).flatMap(TabPasswordMode.init) ?? .clipboard
     }
 }

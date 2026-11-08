@@ -20,6 +20,15 @@ import Testing
     func noteCommandUsed() { commandUsed += 1 }
     func exit(_ status: Int32?) { onExit?(status) }
     func disconnect(_ reason: String?) { onDisconnect?(reason) }
+    /// Whether a password prompt is at the cursor.
+    var atPrompt = false
+    var sent: [String] = []
+    func sendPassword(_ password: String) -> Bool {
+        guard atPrompt else { return false }
+        atPrompt = false
+        sent.append(password)
+        return true
+    }
 }
 
 @MainActor private final class HostLog { var all: [FakeHost] = [] }
@@ -263,4 +272,51 @@ import Testing
         #expect(TerminalSessions.terminateQuestion(count: 1) == "Terminate 1 session?")
         #expect(TerminalSessions.terminateQuestion(count: 3) == "Terminate 3 sessions?")
     }
+
+    @Test func automaticOfferSendsOnceThePromptShows() async throws {
+        open("a")
+        let host = hosts.all[0]
+        let offer = Task { await sessions.offer("Password", password: "pw", for: sessions.sessions[0].connectionID, automatic: true) }
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(host.sent.isEmpty)
+        host.atPrompt = true
+        #expect(await offer.value)
+        #expect(host.sent == ["pw"])
+        #expect(sessions.sessions[0].passwordOffer == nil)
+    }
+
+    @Test func clickOfferWaitsForTheClickAndCancelSendsNothing() async throws {
+        open("a")
+        let host = hosts.all[0]
+        host.atPrompt = true
+        let offer = Task { await sessions.offer("Password", password: "pw", for: sessions.sessions[0].connectionID, automatic: false) }
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(host.sent.isEmpty)
+        sessions.sessions[0].passwordOffer?.finish(sent: false)
+        #expect(await offer.value == false)
+        #expect(host.sent.isEmpty)
+    }
+
+    @Test func clickSendsOnlyAtAPrompt() async throws {
+        open("a")
+        let host = hosts.all[0]
+        let offer = Task { await sessions.offer("Password", password: "pw", for: sessions.sessions[0].connectionID, automatic: false) }
+        try await Task.sleep(for: .milliseconds(50))
+        let pending = try #require(sessions.sessions[0].passwordOffer)
+        #expect(!pending.send(through: host))
+        host.atPrompt = true
+        #expect(pending.send(through: host))
+        #expect(await offer.value)
+        #expect(host.sent == ["pw"])
+    }
+
+    @Test func passwordPrompts() {
+        for line in ["[sudo] password for jesse:", "jesse@web1's password: ", "Password:", "Enter password:"] {
+            #expect(LiveTerminalHost.isPasswordPrompt(line), "\(line)")
+        }
+        for line in ["jesse@web1:~$ ", "Enter passphrase for key '/id':", "password", "$ cat password.txt"] {
+            #expect(!LiveTerminalHost.isPasswordPrompt(line), "\(line)")
+        }
+    }
+
 }

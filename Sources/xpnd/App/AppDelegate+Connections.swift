@@ -11,6 +11,11 @@ extension AppDelegate {
             terminal: { AppSettings.shared.terminal }, remoteDesktop: { AppSettings.shared.remoteDesktop },
             frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.bundleIdentifier) } },
             notify: { hud.flash($0) },
+            showCopied: { [weak self] text, id in self?.mainWindow?.sessions.showCopied(text, for: id) },
+            tabPasswords: { AppSettings.shared.tabPasswords },
+            offerInTab: { [weak self] label, password, id, automatic in
+                await self?.mainWindow?.sessions.offer(label, password: password, for: id, automatic: automatic) ?? false
+            },
             copySecret: { [weak self] secret in await self?.engine.whenIdle { SecretClipboard.copy(secret) } },
             prompt: PasswordPrompt(),
             keysDirectory: keysDirectory
@@ -53,7 +58,7 @@ extension AppDelegate {
         if mainWindow == nil {
             mainWindow = MainWindowController(
                 store: store, connections: connections,
-                provider: { [unowned self] in self.provider }, preferredAccount: { AppSettings.shared.onePasswordAccount },
+                provider: { [unowned self] in self.provider }, preferredAccount: { AppSettings.shared.credentialAccount },
                 keysDirectory: keysDirectory,
                 connect: { [weak self] id, sudo in
                     // Clicked in xpnd itself, so there's no other app to guard.

@@ -45,7 +45,8 @@ enum LaunchPlanner {
         guard !host.isEmpty, (1...65535).contains(port), isIPv6 || bare == host else { throw invalid }
         var components = URLComponents()
         components.scheme = "vnc"
-        components.user = user?.isEmpty == false ? user : nil
+        // Encoded by hand: since the macOS 27 SDK, `user =` leaves ":" bare, which splits the name into user:password.
+        components.percentEncodedUser = user?.isEmpty == false ? user?.addingPercentEncoding(withAllowedCharacters: .urlUserAllowed) : nil
         components.host = isIPv6 ? "[\(bare)]" : host
         components.port = port
         guard let url = components.url else { throw invalid }
