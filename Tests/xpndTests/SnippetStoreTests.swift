@@ -73,6 +73,21 @@ struct SnippetStoreTests {
         }
     }
 
+    @Test func saveKeepsASymlinkedFile() async throws {
+        try await withTempDir { dir in
+            let real = dir.appending(path: "dotfiles/snippets.yaml")
+            try FileManager.default.createDirectory(at: real.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try "version: 1\ngroups: []\n".write(to: real, atomically: true, encoding: .utf8)
+            let link = dir.appending(path: "snippets.yaml")
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+            let store = SnippetStore(fileURL: link)
+            store.load()
+            try store.update { $0.groups.append(group(";a")) }
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == real.path)
+            #expect(try String(contentsOf: real, encoding: .utf8).contains(";a"))
+        }
+    }
+
     @Test func malformedFileIsNeverOverwritten() async throws {
         try await withTempDir { dir in
             let url = dir.appending(path: "snippets.yaml")

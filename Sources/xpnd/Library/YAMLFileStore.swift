@@ -82,10 +82,12 @@ final class YAMLFileStore<Value: Sendable & Equatable> {
         if let dup = duplicate(next) { throw .duplicateKeyword(dup) }
         let text = encode(next)
         if text.isEmpty && next != empty { throw .encodingFailed }
+        // The atomic write renames over the path, which would replace a symlink (dotfiles, Dropbox) with a file.
+        let target = fileURL.resolvingSymlinksInPath()
         do {
             try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data(text.utf8).write(to: fileURL, options: .atomic)
+                at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(text.utf8).write(to: target, options: .atomic)
         } catch {
             throw .fileUnreadable
         }
