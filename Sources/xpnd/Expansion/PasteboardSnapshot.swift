@@ -11,7 +11,8 @@ struct PasteboardSnapshot {
     }
 
     func restore(to pasteboard: NSPasteboard) {
-        pasteboard.clearContents()
+        // A restore isn't new content, so Universal Clipboard needn't send it out again.
+        pasteboard.prepareForNewContents(with: .currentHostOnly)
         let fresh = items.map { pairs in
             let item = NSPasteboardItem()
             for (type, data) in pairs { item.setData(data, forType: type) }

@@ -92,7 +92,8 @@ enum SyntheticEvent {
     /// Puts `text` on `pasteboard`, runs `postCommandV`, waits `settle`, then restores the previous contents.
     static func paste(_ text: String, on pasteboard: NSPasteboard, settle: Duration, postCommandV: () -> Void) async {
         let snapshot = PasteboardSnapshot.capture(pasteboard)
-        pasteboard.clearContents()
+        // This Mac only: Universal Clipboard would otherwise send every expansion to the user's other devices.
+        pasteboard.prepareForNewContents(with: .currentHostOnly)
         let item = NSPasteboardItem()
         item.setString(text, forType: .string)
         // nspasteboard.org markers so clipboard managers don't record the expansion.
