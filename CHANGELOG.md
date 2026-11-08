@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 0.3.0 - 11-07-2026
 
 ### Added
 - **Use the macOS Keychain instead of 1Password** in Settings → Password Manager, with **New Password** in the credential picker.
