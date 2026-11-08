@@ -20,16 +20,17 @@ struct CredentialItem: Hashable, Sendable {
     let title: String
     let category: CredentialCategory
     let username: String?
+    var provider = "1password"
 
     func ref(account: String) -> CredentialRef {
-        CredentialRef(account: account, vault: vaultID, item: id, title: title, category: category, username: username)
+        CredentialRef(provider: provider, account: account, vault: vaultID, item: id, title: title, category: category, username: username)
     }
 }
 
 enum CredentialError: Error, Equatable, Sendable {
     case notInstalled, locked, notFound(String), noPassword(String), failed(String)
 
-    static let invalidRef = CredentialError.failed("This credential link isn't valid. Choose it again from 1Password.")
+    static let invalidRef = CredentialError.failed("This credential link isn't valid. Choose it again.")
 
     /// One line, never contains secret material.
     var message: String {
@@ -49,4 +50,29 @@ protocol CredentialProvider: Sendable {
     func search(_ query: String, account: String) async throws(CredentialError) -> [CredentialItem]
     func password(for ref: CredentialRef) async throws(CredentialError) -> String
     func publicKey(for ref: CredentialRef) async throws(CredentialError) -> String
+}
+
+/// Sends each call to the provider that owns the account or ref, so 1Password and Keychain refs
+/// keep working side by side whichever one Settings picks for new credentials.
+struct CredentialRouter: CredentialProvider {
+    let onePassword: any CredentialProvider
+    var keychain: any CredentialProvider = KeychainProvider()
+
+    private func owner(_ account: String?) -> any CredentialProvider {
+        account == KeychainProvider.id ? keychain : onePassword
+    }
+
+    func status(account: String?) async -> ProviderStatus { await owner(account).status(account: account) }
+
+    func search(_ query: String, account: String) async throws(CredentialError) -> [CredentialItem] {
+        try await owner(account).search(query, account: account)
+    }
+
+    func password(for ref: CredentialRef) async throws(CredentialError) -> String {
+        try await owner(ref.provider).password(for: ref)
+    }
+
+    func publicKey(for ref: CredentialRef) async throws(CredentialError) -> String {
+        try await owner(ref.provider).publicKey(for: ref)
+    }
 }

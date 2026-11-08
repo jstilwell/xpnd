@@ -21,7 +21,7 @@ struct CredentialRow: View {
                     if own != nil { Button("Clear") { set(nil) } }
                     if let ref = resolved?.ref {
                         Button("Refresh") { refresh(ref) }.disabled(refreshing)
-                            .help("Re-read the title, username and any public key from 1Password")
+                            .help("Re-read the title, username and any public key from the password manager")
                     }
                 }
                 .controlSize(.small)
@@ -50,8 +50,8 @@ struct CredentialRow: View {
     }
 }
 
-/// "Choose from 1Password…": a debounced search over the provider's items. Picking an SSH Key
-/// item also saves its public key, so connecting needs no 1Password call for it.
+/// "Choose from 1Password…" (or the Keychain): a debounced search over the provider's items. Picking
+/// an SSH Key item also saves its public key, so connecting needs no 1Password call for it.
 struct CredentialPickerSheet: View {
     let editing: ConnectionEditing
     let pick: (CredentialRef) -> Void
@@ -63,11 +63,31 @@ struct CredentialPickerSheet: View {
     @State private var problem: String?
     /// The running pick (it can wait on Touch ID); cancelled when the sheet closes.
     @State private var picking: Task<Void, Never>?
+    /// Keychain only: the New Password form is showing.
+    @State private var adding = false
 
     var body: some View {
+        if adding {
+            NewKeychainPasswordForm(cancel: { adding = false }) { title, username, password in
+                do throws(CredentialError) {
+                    let item = try KeychainProvider().add(title: title, username: username, password: password)
+                    guard let ref = try await editing.pick(item, account: KeychainProvider.id) else { return nil }
+                    pick(ref)
+                    dismiss()
+                    return nil
+                } catch {
+                    return error.message
+                }
+            }
+        } else {
+            chooser
+        }
+    }
+
+    private var chooser: some View {
         VStack(alignment: .leading) {
-            Text("Choose from 1Password").font(.headline)
-            TextField("Search", text: $query, prompt: Text("Title, vault or username"))
+            Text(editing.usesKeychain ? "Choose from the Keychain" : "Choose from 1Password").font(.headline)
+            TextField("Search", text: $query, prompt: Text(editing.usesKeychain ? "Title or username" : "Title, vault or username"))
                 .textFieldStyle(.roundedBorder)
             if let problem {
                 Text(problem).font(.callout).foregroundStyle(.red).textSelection(.enabled)
@@ -89,6 +109,7 @@ struct CredentialPickerSheet: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack {
                 if picking != nil { ProgressView().controlSize(.small) }
+                if editing.usesKeychain { Button("New Password…") { adding = true } }
                 Spacer()
                 Button("Cancel", role: .cancel) {
                     picking?.cancel()
@@ -160,5 +181,48 @@ struct CredentialPickerSheet: View {
                 if !Task.isCancelled { problem = error.message }
             }
         }
+    }
+}
+
+/// A new login-keychain password: a title, an optional username, and the password.
+private struct NewKeychainPasswordForm: View {
+    let cancel: () -> Void
+    /// Saves and picks it; returns a problem to show, or nil.
+    let save: @MainActor (_ title: String, _ username: String, _ password: String) async -> String?
+    @State private var title = ""
+    @State private var username = ""
+    @State private var password = ""
+    @State private var problem: String?
+    @State private var saving = false
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text("New Keychain Password").font(.headline)
+            Form {
+                TextField("Title", text: $title)
+                TextField("Username", text: $username, prompt: Text("Optional"))
+                SecureField("Password", text: $password)
+            }
+            Text("Saved in your login keychain. Change or delete it later in Keychain Access.")
+                .font(.callout).foregroundStyle(.secondary)
+            if let problem { Text(problem).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
+            Spacer()
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel, action: cancel).keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    saving = true
+                    Task {
+                        problem = await save(title.trimmingCharacters(in: .whitespaces),
+                                             username.trimmingCharacters(in: .whitespaces), password)
+                        saving = false
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(saving || title.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+            }
+        }
+        .padding()
+        .frame(width: 480, height: 420)
     }
 }

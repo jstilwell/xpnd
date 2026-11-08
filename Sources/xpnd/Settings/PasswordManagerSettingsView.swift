@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 1Password's status, the account to search, an `op` path override, and the global credentials.
+/// Keychain or 1Password for new credentials; 1Password's status, account and `op` path; the global credentials.
 struct PasswordManagerSettingsView: View {
     @Bindable var settings: AppSettings
     let editing: ConnectionEditing
@@ -13,44 +13,14 @@ struct PasswordManagerSettingsView: View {
     var body: some View {
         let library = editing.library
         Form {
-            Section("1Password") {
-                LabeledContent("Status") {
-                    HStack {
-                        statusText
-                        Button(status == nil ? "Checking…" : "Refresh") { Task { await check() } }
-                            .controlSize(.small).disabled(status == nil)
-                    }
-                }
-                switch status {
-                case .notInstalled?:
-                    Text("Install the 1Password CLI (op), or enter where it is below.")
-                        .font(.callout).foregroundStyle(.secondary)
-                case .notSignedIn(let message)?:
-                    Text(message).font(.callout).textSelection(.enabled)
-                    Text("In 1Password → Settings → Developer, turn on “Integrate with 1Password CLI”. If it's already on, unlock 1Password and press Refresh.")
-                        .font(.callout).foregroundStyle(.secondary)
-                case .chooseAccount(let accounts)?:
-                    Text("You have more than one 1Password account. Choose yours; xpnd never guesses.")
-                        .font(.callout).foregroundStyle(.secondary)
-                    accountPicker(accounts, selected: "")
-                case .ready(let accounts)?:
-                    accountPicker(accounts, selected: accounts.first { $0.id == settings.onePasswordAccount }?.id ?? accounts.first?.id ?? "")
-                case nil:
-                    EmptyView()
-                }
-                LabeledContent("op path") {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        TextField("op path", text: $path, prompt: Text("/opt/homebrew/bin/op"))
-                            .labelsHidden()
-                            .focused($editingPath)
-                            .onSubmit(savePath)
-                            .onChange(of: editingPath) { if !editingPath { savePath() } }
-                        if let pathProblem { Text(pathProblem).font(.callout).foregroundStyle(.red) }
-                    }
-                }
-                Text("Leave empty to look in /opt/homebrew/bin and /usr/local/bin. It saves when you press Return or leave the field.")
+            Section {
+                Toggle("Use the macOS Keychain instead of 1Password", isOn: $settings.usesKeychain)
+                Text(settings.usesKeychain
+                     ? "New passwords are saved in your login keychain from Choose… → New Password. Credentials already picked from 1Password keep using it. SSH keys stay in ~/.ssh."
+                     : "For when you don't use 1Password. Credentials you've already picked keep working.")
                     .font(.callout).foregroundStyle(.secondary)
             }
+            if !settings.usesKeychain { onePasswordSection }
             Section {
                 CredentialRow(title: "Login", editing: editing,
                               resolved: library.credential.map { ResolvedCredential(ref: $0, source: .connection) },
@@ -72,16 +42,54 @@ struct PasswordManagerSettingsView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             .disabled(editing.readOnly)
-            Section("Other password managers") {
-                LabeledContent("Bitwarden", value: "Coming later").disabled(true)
-            }
         }
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear { path = settings.onePasswordPath ?? "" }
         .onDisappear(perform: savePath)
-        .task { await check() }
+        .task(id: settings.usesKeychain) { if !settings.usesKeychain { await check() } }
+    }
+
+    private var onePasswordSection: some View {
+        Section("1Password") {
+            LabeledContent("Status") {
+                HStack {
+                    statusText
+                    Button(status == nil ? "Checking…" : "Refresh") { Task { await check() } }
+                        .controlSize(.small).disabled(status == nil)
+                }
+            }
+            switch status {
+            case .notInstalled?:
+                Text("Install the 1Password CLI (op), enter where it is below, or turn on the Keychain above.")
+                    .font(.callout).foregroundStyle(.secondary)
+            case .notSignedIn(let message)?:
+                Text(message).font(.callout).textSelection(.enabled)
+                Text("In 1Password → Settings → Developer, turn on “Integrate with 1Password CLI”. If it's already on, unlock 1Password and press Refresh.")
+                    .font(.callout).foregroundStyle(.secondary)
+            case .chooseAccount(let accounts)?:
+                Text("You have more than one 1Password account. Choose yours; xpnd never guesses.")
+                    .font(.callout).foregroundStyle(.secondary)
+                accountPicker(accounts, selected: "")
+            case .ready(let accounts)?:
+                accountPicker(accounts, selected: accounts.first { $0.id == settings.onePasswordAccount }?.id ?? accounts.first?.id ?? "")
+            case nil:
+                EmptyView()
+            }
+            LabeledContent("op path") {
+                VStack(alignment: .trailing, spacing: 4) {
+                    TextField("op path", text: $path, prompt: Text("/opt/homebrew/bin/op"))
+                        .labelsHidden()
+                        .focused($editingPath)
+                        .onSubmit(savePath)
+                        .onChange(of: editingPath) { if !editingPath { savePath() } }
+                    if let pathProblem { Text(pathProblem).font(.callout).foregroundStyle(.red) }
+                }
+            }
+            Text("Leave empty to look in /opt/homebrew/bin and /usr/local/bin. It saves when you press Return or leave the field.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder private var statusText: some View {

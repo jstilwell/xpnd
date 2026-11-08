@@ -22,6 +22,9 @@ struct TerminalWorkspace: View {
                 // desktop fills the tab, with its notch: inside the id, so a tab switch resets the hover.
                 TerminalHostView(view: session.host.view)
                     .overlay(alignment: .top) { notch(session) }
+                    .overlay(alignment: .top) {
+                        if let offer = session.passwordOffer { offerBanner(offer, session) } else { copiedBanner(session) }
+                    }
                     .id(session.id)
                     .padding(session.kind == .remoteDesktop ? 0 : 8)
                     .background(Color(nsColor: settings.colors.background))
@@ -42,6 +45,59 @@ struct TerminalWorkspace: View {
     @ViewBuilder private func notch(_ session: TerminalSession) -> some View {
         if let host = session.host as? RDPHost {
             RDPNotch(model: host.notch).onAppear { host.saveDisplay(to: session.connectionID, with: saveDisplay) }
+        }
+    }
+
+    /// Ticks each second: the countdown, and it hides once the clipboard is cleared or copied over.
+    @ViewBuilder private func copiedBanner(_ session: TerminalSession) -> some View {
+        if let notice = session.copiedNotice {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let left = Int(notice.until.timeIntervalSince(context.date).rounded(.up))
+                if left > 0, SecretClipboard.holdsSecret() {
+                    HStack(spacing: 8) {
+                        Image(systemName: "key.fill").foregroundStyle(.tint)
+                        Text("\(notice.text) · ⌘V at the prompt · clears in \(left) s")
+                        Button("Clear") {
+                            SecretClipboard.clearIfOwned()
+                            session.copiedNotice = nil
+                        }
+                        .controlSize(.small)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.regularMaterial, in: Capsule())
+                    .shadow(radius: 2)
+                    .padding(.top, 6)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+    }
+
+    /// Send Password (⌘⇧P), or for an automatic offer a note that it goes in at the prompt.
+    private func offerBanner(_ offer: PasswordOffer, _ session: TerminalSession) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let left = max(0, Int(offer.until.timeIntervalSince(context.date).rounded(.up)))
+            VStack(spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: "key.fill").foregroundStyle(.tint)
+                    Text(offer.automatic
+                         ? "\(offer.label) goes in at the next password prompt · \(left) s"
+                         : "\(offer.label) ready · \(left) s")
+                    Button(offer.automatic ? "Send Now" : "Send Password") {
+                        offer.problem = offer.send(through: session.host) ? nil : "There's no password prompt at the cursor."
+                    }
+                    .keyboardShortcut("p", modifiers: [.command, .shift])
+                    Button("Cancel") { offer.finish(sent: false) }
+                }
+                .controlSize(.small)
+                if let problem = offer.problem { Text(problem).font(.callout).foregroundStyle(.red) }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .shadow(radius: 2)
+            .padding(.top, 6)
         }
     }
 

@@ -86,6 +86,14 @@ struct TerminalSettingsView: View {
                 }
                 Toggle("Blink", isOn: $settings.builtInTerminal.cursorBlinks)
                 VStack(alignment: .leading) {
+                    Picker("Passwords", selection: $settings.tabPasswords) {
+                        Text("Copy to clipboard").tag(TabPasswordMode.clipboard)
+                        Text("Send on click").tag(TabPasswordMode.sendOnClick)
+                        Text("Send automatically").tag(TabPasswordMode.sendAutomatically)
+                    }
+                    Text(Self.tabPasswordsHelp(settings.tabPasswords)).font(.callout).foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading) {
                     Stepper("Scrollback lines: \(settings.builtInTerminal.scrollback.formatted())",
                             value: $settings.builtInTerminal.scrollback, in: 1_000...100_000, step: 1_000)
                     Text("Applies to new sessions.").font(.callout).foregroundStyle(.secondary)
@@ -160,6 +168,16 @@ struct TerminalSettingsView: View {
                 continue
             }
             if !settings.terminal.terminalBundleIDs.contains(id) { settings.terminal.terminalBundleIDs.append(id) }
+        }
+    }
+}
+
+extension TerminalSettingsView {
+    static func tabPasswordsHelp(_ mode: TabPasswordMode) -> String {
+        switch mode {
+        case .clipboard: "The login and sudo passwords are copied for you to paste, and cleared after 30 seconds."
+        case .sendOnClick: "The tab offers Send Password (⌘⇧P), which types it at a password prompt. Nothing is copied."
+        case .sendAutomatically: "Typed in as soon as a password prompt shows, for up to a minute after connecting. Anything that prints a password prompt in that minute gets it."
         }
     }
 }

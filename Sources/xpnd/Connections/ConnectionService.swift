@@ -19,6 +19,11 @@ import Foundation
     private let remoteDesktop: @MainActor () -> RDPSettings
     private let frontmost: @MainActor () -> (pid: pid_t, bundleID: String?)?
     private let notify: @MainActor (String) -> Void
+    /// A password was copied for a connection that opened in a built-in tab, so the tab can say so too.
+    private let showCopied: @MainActor (String, Connection.ID) -> Void
+    private let tabPasswords: @MainActor () -> TabPasswordMode
+    /// Offers a password over a built-in tab; true once it went in.
+    private let offerInTab: @MainActor (_ label: String, _ password: String, Connection.ID, _ automatic: Bool) async -> Bool
     private let copySecret: @MainActor (String) async -> Void
     private let prompt: any PasswordPrompting
     private let keysDirectory: URL
@@ -29,8 +34,10 @@ import Foundation
         connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider, executor: any LaunchExecuting,
         openTab: @escaping @MainActor (TabRequest, Connection) -> Void, sender: any KeystrokeSending, terminal: @escaping @MainActor () -> TerminalSettings,
         remoteDesktop: @escaping @MainActor () -> RDPSettings, frontmost: @escaping @MainActor () -> (pid: pid_t, bundleID: String?)?,
-        notify: @escaping @MainActor (String) -> Void, copySecret: @escaping @MainActor (String) async -> Void,
-        prompt: any PasswordPrompting, keysDirectory: URL
+        notify: @escaping @MainActor (String) -> Void, showCopied: @escaping @MainActor (String, Connection.ID) -> Void = { _, _ in },
+        tabPasswords: @escaping @MainActor () -> TabPasswordMode = { .clipboard },
+        offerInTab: @escaping @MainActor (String, String, Connection.ID, Bool) async -> Bool = { _, _, _, _ in false },
+        copySecret: @escaping @MainActor (String) async -> Void, prompt: any PasswordPrompting, keysDirectory: URL
     ) {
         self.connections = connections
         self.provider = provider
@@ -41,6 +48,9 @@ import Foundation
         self.remoteDesktop = remoteDesktop
         self.frontmost = frontmost
         self.notify = notify
+        self.showCopied = showCopied
+        self.tabPasswords = tabPasswords
+        self.offerInTab = offerInTab
         self.copySecret = copySecret
         self.prompt = prompt
         self.keysDirectory = keysDirectory
@@ -68,7 +78,8 @@ import Foundation
             return await openRemoteDesktop(config, for: connection, in: library, into: target, deletingCharacters: deletingCharacters)
         }
         guard await launch(plan, for: connection, into: target, deletingCharacters: deletingCharacters) else { return }
-        passwordPhase = Task { await copyPasswords(for: connection, in: library) }
+        let inTab = if case .builtInTab = plan { true } else { false }
+        passwordPhase = Task { await copyPasswords(for: connection, in: library, inTab: inTab) }
     }
 
     /// The passwords are fetched before the tab exists, so Touch ID comes first, and go into the
@@ -183,13 +194,17 @@ import Foundation
         return false
     }
 
-    private func copyPasswords(for connection: Connection, in library: ConnectionLibrary) async {
+    private func copyPasswords(for connection: Connection, in library: ConnectionLibrary, inTab: Bool) async {
+        if inTab, tabPasswords() != .clipboard {
+            return await offerPasswords(for: connection, in: library, automatic: tabPasswords() == .sendAutomatically)
+        }
         let name = connection.name
         let login = library.loginCredential(for: connection.id)?.ref
         let needsLogin = login?.hasPassword == true
         if needsLogin, let login {
             guard await copyPassword(login) else { return }
             notify("Password copied for \(name)")
+            if inTab { showCopied("Password copied", connection.id) }
         }
         // Screen Sharing always asks for a password; an SSH login may well need none.
         if connection.type == .vnc, !needsLogin { return notify("No password set for \(name)") }
@@ -199,20 +214,43 @@ import Foundation
         }
         // A copy now would replace the login password before it's been pasted.
         if needsLogin, !(await prompt.offerSudo(for: name)) { return }
-        if await copyPassword(sudo) { notify("Sudo password copied") }
+        if await copyPassword(sudo) {
+            notify("Sudo password copied")
+            if inTab { showCopied("Sudo password copied", connection.id) }
+        }
+    }
+
+    /// Into the tab instead of the clipboard: the login password, then (once it went in) the sudo one.
+    /// Nothing is copied, so the sudo password needs no "copy it now?" question.
+    private func offerPasswords(for connection: Connection, in library: ConnectionLibrary, automatic: Bool) async {
+        if let login = library.loginCredential(for: connection.id)?.ref, login.hasPassword {
+            guard let password = await fetchPassword(login),
+                  await offerInTab("Password", password, connection.id, automatic) else { return }
+        }
+        guard connection.autoSudo else { return }
+        guard let sudo = library.sudoCredential(for: connection.id)?.ref, sudo.hasPassword else {
+            return notify("No sudo password set for \(connection.name)")
+        }
+        guard let password = await fetchPassword(sudo) else { return }
+        _ = await offerInTab("Sudo password", password, connection.id, automatic)
+    }
+
+    /// nil after telling the user why, or silently once cancelled.
+    private func fetchPassword(_ ref: CredentialRef) async -> String? {
+        do throws(CredentialError) {
+            let password = try await provider().password(for: ref)
+            return Task.isCancelled ? nil : password
+        } catch {
+            if !Task.isCancelled { notify(error.message) }
+            return nil
+        }
     }
 
     /// False if there's nothing more to do. Once cancelled, a newer connection owns the clipboard
     /// and the HUD, so this one stays silent.
     private func copyPassword(_ ref: CredentialRef) async -> Bool {
-        do throws(CredentialError) {
-            let password = try await provider().password(for: ref)
-            guard !Task.isCancelled else { return false }
-            await copySecret(password)
-            return !Task.isCancelled
-        } catch {
-            if !Task.isCancelled { notify(error.message) }
-            return false
-        }
+        guard let password = await fetchPassword(ref) else { return false }
+        await copySecret(password)
+        return !Task.isCancelled
     }
 }

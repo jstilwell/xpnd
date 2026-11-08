@@ -16,7 +16,8 @@ import AppKit
     @discardableResult
     static func copy(_ secret: String, to pasteboard: NSPasteboard = .general, clearAfter: Duration = clearAfter) -> Task<Void, Never> {
         let tag = NSPasteboard.PasteboardType("\(secretTypePrefix).\(UUID().uuidString)")
-        pasteboard.clearContents()
+        // Not clearContents(): that lets Universal Clipboard send the secret to the user's other devices.
+        pasteboard.prepareForNewContents(with: .currentHostOnly)
         let item = NSPasteboardItem()
         item.setString(secret, forType: .string)
         item.setData(Data(), forType: .init("org.nspasteboard.ConcealedType"))
@@ -33,6 +34,12 @@ import AppKit
                 return
             }
         }
+    }
+
+    /// The clipboard still holds the last secret xpnd copied: not yet cleared or copied over.
+    static func holdsSecret(_ pasteboard: NSPasteboard = .general) -> Bool {
+        guard let lastTag else { return false }
+        return pasteboard.types?.contains(lastTag) == true
     }
 
     /// Clears the clipboard if it still holds the last secret xpnd copied, as when quitting.
