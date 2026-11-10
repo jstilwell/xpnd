@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Messages in the corner of the screen stay up longer the longer they are, and VoiceOver reads them.
 
 ### Fixed
+- A snippet's input form closes when you switch to another app, which cancels the expansion: it used to stay open, take an answer and throw it away, and stop every other keyword until it was closed.
 - Deleting a snippet or a connection asks first, like deleting a group or a folder that holds something: a delete can't be undone.
 - A new connection now shows in the sidebar: its folder opens, as does every folder above anything you select.
 - Recording a shortcut in Settings no longer swallows keys typed in other xpnd windows, such as a terminal tab.
