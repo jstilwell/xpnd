@@ -22,9 +22,8 @@ struct KeychainProvider: CredentialProvider {
         ] as CFDictionary, &result)
         if status == errSecItemNotFound { return [] }
         guard status == errSecSuccess, let rows = result as? [[String: Any]] else { throw Self.error(status) }
-        let q = query.lowercased()
         return rows.compactMap(Self.item)
-            .filter { q.isEmpty || [$0.title, $0.username ?? ""].contains { $0.lowercased().contains(q) } }
+            .filter { $0.matches(query) }
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 

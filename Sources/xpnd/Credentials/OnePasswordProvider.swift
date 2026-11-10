@@ -58,10 +58,7 @@ struct OnePasswordProvider: CredentialProvider {
         let out = try await check(Self.listArguments(account: account), title: "")
         guard let data = out.stdout.data(using: .utf8),
               let rows = try? JSONDecoder().decode([Row].self, from: data) else { throw .failed("1Password returned an unexpected response.") }
-        let q = query.lowercased()
-        return rows.compactMap { $0.item }.filter {
-            q.isEmpty || [$0.title, $0.vaultName, $0.username ?? ""].contains { $0.lowercased().contains(q) }
-        }
+        return rows.compactMap { $0.item }.filter { $0.matches(query) }
     }
 
     func password(for ref: CredentialRef) async throws(CredentialError) -> String {

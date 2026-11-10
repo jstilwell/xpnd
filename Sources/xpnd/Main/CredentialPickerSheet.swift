@@ -50,7 +50,7 @@ struct CredentialRow: View {
     }
 }
 
-/// "Choose from 1Password…" (or the Keychain): a debounced search over the provider's items. Picking
+/// "Choose from 1Password…" (or the Keychain): the provider's items, listed once and filtered here. Picking
 /// an SSH Key item also saves its public key, so connecting needs no 1Password call for it.
 struct CredentialPickerSheet: View {
     let editing: ConnectionEditing
@@ -58,7 +58,9 @@ struct CredentialPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var account: String?
-    @State private var items: [CredentialItem]?
+    /// Every item of the account, fetched once: each fetch is a whole `op item list`.
+    @State private var all: [CredentialItem]?
+    private var items: [CredentialItem]? { all?.filter { $0.matches(query) } }
     @State private var selection: String?
     @State private var problem: String?
     /// The running pick (it can wait on Touch ID); cancelled when the sheet closes.
@@ -90,7 +92,11 @@ struct CredentialPickerSheet: View {
             TextField("Search", text: $query, prompt: Text(editing.usesKeychain ? "Title or username" : "Title, vault or username"))
                 .textFieldStyle(.roundedBorder)
             if let problem {
-                Text(problem).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+                HStack {
+                    Text(problem).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+                    Spacer()
+                    Button("Try Again") { Task { await load() } }
+                }
             }
             Group {
                 if let items {
@@ -121,7 +127,7 @@ struct CredentialPickerSheet: View {
         }
         .padding()
         .frame(width: 480, height: 420)
-        .task(id: query) { await search() }
+        .task { await load() }
         // Cancel, Esc, or the sheet closing any other way.
         .onDisappear { picking?.cancel() }
     }
@@ -147,9 +153,8 @@ struct CredentialPickerSheet: View {
         }
     }
 
-    /// `.task(id:)` cancels the previous search on each keystroke, so the sleep is the debounce.
-    private func search() async {
-        do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+    private func load() async {
+        problem = nil
         do throws(CredentialError) {
             let account: String
             if let known = self.account {
@@ -158,13 +163,12 @@ struct CredentialPickerSheet: View {
                 account = try await editing.account()
                 self.account = account
             }
-            let found = try await editing.provider.search(query, account: account)
+            let found = try await editing.provider.search("", account: account)
             guard !Task.isCancelled else { return }
-            items = found
-            problem = nil
+            all = found
         } catch {
             guard !Task.isCancelled else { return }
-            items = nil
+            all = nil
             problem = error.message
         }
     }

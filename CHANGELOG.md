@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - **Importing snippets always shows what will be added** before anything is imported, and lists snippets that press keys along with those that run scripts, open apps, run Shortcuts or send shortcuts.
 - A Windows desktop with **Network Level Authentication** on now connects with it or not at all, and the old "RDP security" mode is never used. For a server without Network Level Authentication, turn the option off for that connection.
 - **Delete** (⌫) deletes the item selected in the sidebar, snippets and groups have a right-click **Delete…**, and a connection's Details has **Delete Connection…**.
+- The snippet picker, the connection launcher, the sidebar and the 1Password chooser do less work per key press, which shows with large libraries. The 1Password chooser lists an account once and filters as you type, and has **Try Again** after an error.
 - A snippet's text is saved when typing pauses, not on every key, which kept large libraries and synced folders busy.
 
 - A connection's extra SSH options now come before the ones xpnd adds for its credential, so yours win (ssh keeps the first value it is given): `-o PubkeyAuthentication=yes` reaches a server that wants a key and a password.

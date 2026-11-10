@@ -13,12 +13,13 @@ struct ConnectionEntry: Hashable {
 enum ConnectionFilter {
     /// Every connection in tree order.
     static func entries(_ library: ConnectionLibrary) -> [ConnectionEntry] {
-        func walk(_ folder: ConnectionFolder, _ parents: [String]) -> [ConnectionEntry] {
-            let path = parents + [folder.name]
-            return folder.connections.map { ConnectionEntry(connection: $0, path: path, color: library.color(for: .connection($0.id))?.color) }
-                + folder.folders.flatMap { walk($0, path) }
+        // `inherited` is the nearest coloured ancestor's, as `library.color(for:)` finds it.
+        func walk(_ folder: ConnectionFolder, _ parents: [String], _ inherited: ItemColor?) -> [ConnectionEntry] {
+            let path = parents + [folder.name], color = folder.color ?? inherited
+            return folder.connections.map { ConnectionEntry(connection: $0, path: path, color: $0.color ?? color) }
+                + folder.folders.flatMap { walk($0, path, color) }
         }
-        return library.folders.flatMap { walk($0, []) }
+        return library.folders.flatMap { walk($0, [], nil) }
     }
 
     /// Empty query: tree order. Otherwise 0: name starts with it; 1: name, activation string or host
@@ -54,18 +55,18 @@ struct ConnectionTreeRow: Identifiable, Hashable {
 
     /// Folders and connections in tree order; a folder's contents show only while it is in `expanded`.
     static func rows(_ library: ConnectionLibrary, expanded: Set<ConnectionFolder.ID>) -> [ConnectionTreeRow] {
-        func walk(_ folder: ConnectionFolder, _ depth: Int) -> [ConnectionTreeRow] {
-            let open = expanded.contains(folder.id)
+        func walk(_ folder: ConnectionFolder, _ depth: Int, _ inherited: ItemColor?) -> [ConnectionTreeRow] {
+            let open = expanded.contains(folder.id), color = folder.color ?? inherited
             let head = ConnectionTreeRow(id: folder.id, title: folder.name, depth: depth, kind: .folder(expanded: open),
-                                         color: library.color(for: .folder(folder.id))?.color, icon: folder.icon)
+                                         color: color, icon: folder.icon)
             guard open else { return [head] }
             return [head]
                 + folder.connections.map {
-                    ConnectionTreeRow(id: $0.id, title: $0.name, depth: depth + 1, kind: .connection($0), color: library.color(for: .connection($0.id))?.color)
+                    ConnectionTreeRow(id: $0.id, title: $0.name, depth: depth + 1, kind: .connection($0), color: $0.color ?? color)
                 }
-                + folder.folders.flatMap { walk($0, depth + 1) }
+                + folder.folders.flatMap { walk($0, depth + 1, color) }
         }
-        return library.folders.flatMap { walk($0, 0) }
+        return library.folders.flatMap { walk($0, 0, nil) }
     }
 
     /// The index of the nearest folder row above `index` that is shallower.

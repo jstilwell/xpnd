@@ -85,6 +85,7 @@ private struct PickerView: View {
     private var current: Snippet? { results.first { $0.id == selected } ?? results.first }
 
     private func move(_ delta: Int) {
+        let results = results // each read filters and sorts the whole library
         guard !results.isEmpty else { return }
         let index = results.firstIndex { $0.id == selected } ?? (delta > 0 ? -1 : results.count)
         selected = results[min(max(index + delta, 0), results.count - 1)].id

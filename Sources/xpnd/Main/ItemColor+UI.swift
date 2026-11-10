@@ -47,7 +47,12 @@ extension ItemColor {
     /// A filled circle with the colour drawn in. A menu-style Picker turns its rows into NSMenuItems,
     /// which paint a template image (such as a styled SF Symbol) in the menu's own tint; a
     /// non-template bitmap keeps its colour.
-    var swatch: NSImage {
+    @MainActor var swatch: NSImage { Self.swatches[self]! }
+
+    /// Drawn once: a colour menu asks for all of them on every pass.
+    @MainActor private static let swatches = Dictionary(uniqueKeysWithValues: allCases.map { ($0, $0.drawSwatch()) })
+
+    private func drawSwatch() -> NSImage {
         // A fixed NSColor, not NSColor(ui): the menu rasterizes the image without an appearance to
         // resolve a dynamic colour against, and the dot came out white.
         let fill: NSColor = switch self {
