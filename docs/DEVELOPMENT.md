@@ -177,7 +177,7 @@ and on the GitHub release, which is what xpnd.dev links to.
    entry in `CHANGELOG.md` (its bullets become the release notes).
 2. Commit, then run `./bin/build-release.sh --upload`.
 
-The script builds a universal app signed with Developer ID and the hardened runtime, puts it in a
+The script runs the tests first and stops if any fails. It then builds a universal app signed with Developer ID and the hardened runtime, puts it in a
 signed DMG, notarizes and staples it, and signs the update and the appcast. It then uploads the DMG to
 R2, publishes the GitHub release (a draft first), and uploads the appcast last, since that is what offers
 the update. Without `--upload` it stops before publishing.
