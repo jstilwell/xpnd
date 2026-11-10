@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - A Windows password could be sent to a server that skipped Network Level Authentication, without a certificate question.
 - Expanding a snippet on the Mac no longer offers it to connected Windows desktops, or replaces what you copied in Windows.
+- Recording a shortcut in Settings no longer swallows keys typed in other xpnd windows, such as a terminal tab.
 - A refused Windows login says why in the password sheet, and cancelling it ends the tab with that reason instead of "cancelled". "Access denied" no longer looks like a wrong password.
 - A Windows desktop on a non-Retina screen is no longer drawn at double size.
 - Taking a screenshot (⌘⇧4) or using another ⌘ shortcut of macOS's in a Windows desktop no longer opens the Start menu; nor does ⌘ with a scroll.
