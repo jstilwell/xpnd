@@ -13,7 +13,8 @@ import Foundation
     /// Asked at each use, so a changed op path in Settings applies at once.
     private let provider: @MainActor () -> any CredentialProvider
     private let executor: any LaunchExecuting
-    private let openTab: @MainActor (TabRequest, Connection) -> Void
+    /// The tab it opened, for the password offer that follows; nil if none could be.
+    private let openTab: @MainActor (TabRequest, Connection) -> TerminalSession.ID?
     private let sender: any KeystrokeSending
     private let terminal: @MainActor () -> TerminalSettings
     private let remoteDesktop: @MainActor () -> RDPSettings
@@ -23,7 +24,7 @@ import Foundation
     private let showCopied: @MainActor (String, Connection.ID) -> Void
     private let tabPasswords: @MainActor () -> TabPasswordMode
     /// Offers a password over a built-in tab; true once it went in.
-    private let offerInTab: @MainActor (_ label: String, _ password: String, Connection.ID, _ automatic: Bool) async -> Bool
+    private let offerInTab: @MainActor (_ label: String, _ password: String, TerminalSession.ID, _ automatic: Bool) async -> Bool
     private let copySecret: @MainActor (String) async -> Void
     private let prompt: any PasswordPrompting
     private let keysDirectory: URL
@@ -32,11 +33,11 @@ import Foundation
 
     init(
         connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider, executor: any LaunchExecuting,
-        openTab: @escaping @MainActor (TabRequest, Connection) -> Void, sender: any KeystrokeSending, terminal: @escaping @MainActor () -> TerminalSettings,
+        openTab: @escaping @MainActor (TabRequest, Connection) -> TerminalSession.ID?, sender: any KeystrokeSending, terminal: @escaping @MainActor () -> TerminalSettings,
         remoteDesktop: @escaping @MainActor () -> RDPSettings, frontmost: @escaping @MainActor () -> (pid: pid_t, bundleID: String?)?,
         notify: @escaping @MainActor (String) -> Void, showCopied: @escaping @MainActor (String, Connection.ID) -> Void = { _, _ in },
         tabPasswords: @escaping @MainActor () -> TabPasswordMode = { .clipboard },
-        offerInTab: @escaping @MainActor (String, String, Connection.ID, Bool) async -> Bool = { _, _, _, _ in false },
+        offerInTab: @escaping @MainActor (String, String, TerminalSession.ID, Bool) async -> Bool = { _, _, _, _ in false },
         copySecret: @escaping @MainActor (String) async -> Void, prompt: any PasswordPrompting, keysDirectory: URL
     ) {
         self.connections = connections
@@ -55,6 +56,9 @@ import Foundation
         self.prompt = prompt
         self.keysDirectory = keysDirectory
     }
+
+    /// Where a connect went: a built-in tab (which its passwords can be sent into), or another app.
+    private enum Launched { case tab(TerminalSession.ID), elsewhere }
 
     func cancelPasswordPhase() {
         passwordPhase?.cancel()
@@ -77,9 +81,9 @@ import Foundation
         if case .rdpTab(let config) = plan {
             return await openRemoteDesktop(config, for: connection, in: library, into: target, deletingCharacters: deletingCharacters)
         }
-        guard await launch(plan, for: connection, into: target, deletingCharacters: deletingCharacters) else { return }
-        let inTab = if case .builtInTab = plan { true } else { false }
-        passwordPhase = Task { await copyPasswords(for: connection, in: library, inTab: inTab) }
+        guard let launched = await launch(plan, for: connection, into: target, deletingCharacters: deletingCharacters) else { return }
+        let tab: TerminalSession.ID? = if case .tab(let id) = launched { id } else { nil }
+        passwordPhase = Task { await copyPasswords(for: connection, in: library, tab: tab) }
     }
 
     /// The passwords are fetched before the tab exists, so Touch ID comes first, and go into the
@@ -99,7 +103,7 @@ import Foundation
             return notify(error.message)
         }
         guard await prepareToAct(into: target, deletingCharacters: deletingCharacters) else { return }
-        openTab(.remoteDesktop(config, password: password, gatewayPassword: gatewayPassword), connection)
+        _ = openTab(.remoteDesktop(config, password: password, gatewayPassword: gatewayPassword), connection)
     }
 
     /// Runs first, before any provider call: a connection that can't be built shouldn't ask for Touch ID.
@@ -161,24 +165,24 @@ import Foundation
     }
 
     /// Checks the front app here, after any Touch ID prompt for a key has had its chance to move focus.
-    private func launch(_ plan: LaunchPlan, for connection: Connection, into target: pid_t?, deletingCharacters: Int) async -> Bool {
-        guard await prepareToAct(into: target, deletingCharacters: deletingCharacters) else { return false }
+    /// nil when nothing was launched.
+    private func launch(_ plan: LaunchPlan, for connection: Connection, into target: pid_t?, deletingCharacters: Int) async -> Launched? {
+        guard await prepareToAct(into: target, deletingCharacters: deletingCharacters) else { return nil }
         if case .builtInTab(let command) = plan {
-            openTab(.terminal(command), connection)
-            return true
+            return openTab(.terminal(command), connection).map(Launched.tab)
         }
         if case .typeIntoFrontTerminal(let line) = plan {
             await sender.paste(line)
-            guard stillInFront(target) else { return false } // paste takes ~150 ms, and Return would go to whatever is in front
+            guard stillInFront(target) else { return nil } // paste takes ~150 ms, and Return would go to whatever is in front
             await sender.press(.enter, times: 1)
-            return true
+            return .elsewhere
         }
         do throws(LaunchError) {
             try await executor.execute(plan)
-            return true
+            return .elsewhere
         } catch {
             notify(error.message)
-            return false
+            return nil
         }
     }
 
@@ -194,9 +198,10 @@ import Foundation
         return false
     }
 
-    private func copyPasswords(for connection: Connection, in library: ConnectionLibrary, inTab: Bool) async {
-        if inTab, tabPasswords() != .clipboard {
-            return await offerPasswords(for: connection, in: library, automatic: tabPasswords() == .sendAutomatically)
+    private func copyPasswords(for connection: Connection, in library: ConnectionLibrary, tab: TerminalSession.ID?) async {
+        let inTab = tab != nil
+        if let tab, tabPasswords() != .clipboard {
+            return await offerPasswords(for: connection, in: library, tab: tab, automatic: tabPasswords() == .sendAutomatically)
         }
         let name = connection.name
         let login = library.loginCredential(for: connection.id)?.ref
@@ -222,17 +227,17 @@ import Foundation
 
     /// Into the tab instead of the clipboard: the login password, then (once it went in) the sudo one.
     /// Nothing is copied, so the sudo password needs no "copy it now?" question.
-    private func offerPasswords(for connection: Connection, in library: ConnectionLibrary, automatic: Bool) async {
+    private func offerPasswords(for connection: Connection, in library: ConnectionLibrary, tab: TerminalSession.ID, automatic: Bool) async {
         if let login = library.loginCredential(for: connection.id)?.ref, login.hasPassword {
             guard let password = await fetchPassword(login),
-                  await offerInTab("Password", password, connection.id, automatic) else { return }
+                  await offerInTab("Password", password, tab, automatic) else { return }
         }
         guard connection.autoSudo else { return }
         guard let sudo = library.sudoCredential(for: connection.id)?.ref, sudo.hasPassword else {
             return notify("No sudo password set for \(connection.name)")
         }
         guard let password = await fetchPassword(sudo) else { return }
-        _ = await offerInTab("Sudo password", password, connection.id, automatic)
+        _ = await offerInTab("Sudo password", password, tab, automatic)
     }
 
     /// nil after telling the user why, or silently once cancelled.

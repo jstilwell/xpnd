@@ -80,10 +80,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// Opens a session's tab over any editor card, and shows the window.
-    func openTab(_ request: TabRequest, for connection: Connection, color: ItemColor?) {
+    func openTab(_ request: TabRequest, for connection: Connection, color: ItemColor?) -> TerminalSession.ID {
         model.hideEditor()
         show(selecting: nil)
-        sessions.open(request, for: connection, color: color)
+        return sessions.open(request, for: connection, color: color)
     }
 
     /// Whether the keyboard is in a session's terminal. Requires the main window to be key: a window

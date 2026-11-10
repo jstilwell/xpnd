@@ -214,14 +214,15 @@ struct XPRDPSessionTests {
 
     @MainActor @Test func resizeCoalescerFiresOnceWithLastSize() async throws {
         var sizes: [CGSize] = []
-        let c = XPRDPResizeCoalescer(idleInterval: 0.1) { sizes.append($0) }
+        // An idle interval well past any moment another suite holds the main thread between two notes.
+        let c = XPRDPResizeCoalescer(idleInterval: 0.5) { sizes.append($0) }
         c.noteSize(CGSize(width: 100, height: 100))
         try await Task.sleep(for: .milliseconds(20))
         c.noteSize(CGSize(width: 200, height: 150))
         try await Task.sleep(for: .milliseconds(20))
         c.noteSize(CGSize(width: 300, height: 250))
         #expect(sizes.isEmpty)
-        try await Task.sleep(for: .milliseconds(400))
+        try await Task.sleep(for: .milliseconds(1200))
         #expect(sizes == [CGSize(width: 300, height: 250)])
     }
 

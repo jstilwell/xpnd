@@ -172,10 +172,11 @@ extension TerminalHost {
         session.copiedNotice = (text, .now + TimeInterval(SecretClipboard.clearAfter.components.seconds))
     }
 
-    /// Offers `password` over the connection's running tab and returns whether it went in. Automatic
-    /// offers send as soon as a password prompt shows; either kind ends after `PasswordOffer.lifetime`.
-    func offer(_ label: String, password: String, for connectionID: Connection.ID, automatic: Bool) async -> Bool {
-        guard let session = session(for: connectionID), session.isLive else { return false }
+    /// Offers `password` over the tab `id` and returns whether it went in: the tab the connect opened, since a
+    /// connection can have several. Automatic offers send as soon as a password prompt shows; either kind ends
+    /// after `PasswordOffer.lifetime`, or with its tab.
+    func offer(_ label: String, password: String, in id: TerminalSession.ID, automatic: Bool) async -> Bool {
+        guard let session = sessions.first(where: { $0.id == id }), session.isLive else { return false }
         session.passwordOffer?.finish(sent: false)
         let offer = PasswordOffer(label: label, password: password, automatic: automatic)
         session.passwordOffer = offer
@@ -212,7 +213,10 @@ extension TerminalHost {
     }
 
     func terminateAll() {
-        for session in sessions where session.needsTerminating { session.host.terminate() }
+        for session in sessions {
+            session.passwordOffer?.finish(sent: false)
+            if session.needsTerminating { session.host.terminate() }
+        }
         sessions = []
         selected = nil
     }
@@ -239,6 +243,8 @@ extension TerminalHost {
     /// Removes a tab; if it was selected, the tab after it (else before it) takes over.
     private func remove(_ id: TerminalSession.ID) {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        // A tab that is gone takes no password: the offer would keep it, and keep trying, for a minute.
+        sessions[index].passwordOffer?.finish(sent: false)
         sessions.remove(at: index)
         guard selected == id else { return }
         selected = sessions.indices.contains(index) ? sessions[index].id : sessions.last?.id

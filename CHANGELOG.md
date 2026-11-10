@@ -7,14 +7,15 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - **Importing snippets always shows what will be added** before anything is imported, and lists snippets that press keys along with those that run scripts, open apps, run Shortcuts or send shortcuts.
 - A Windows desktop with **Network Level Authentication** on now connects with it or not at all, and the old "RDP security" mode is never used. For a server without Network Level Authentication, turn the option off for that connection.
-
 - **Delete** (⌫) deletes the item selected in the sidebar, snippets and groups have a right-click **Delete…**, and a connection's Details has **Delete Connection…**.
 - A snippet's text is saved when typing pauses, not on every key, which kept large libraries and synced folders busy.
+
 - A connection's extra SSH options now come before the ones xpnd adds for its credential, so yours win (ssh keeps the first value it is given): `-o PubkeyAuthentication=yes` reaches a server that wants a key and a password.
 - Messages in the corner of the screen stay up longer the longer they are, and VoiceOver reads them.
 
 ### Fixed
 - A snippet's input form closes when you switch to another app, which cancels the expansion: it used to stay open, take an answer and throw it away, and stop every other keyword until it was closed.
+- **Send Password** goes to the tab that just opened, not to another tab of the same connection, and ends when its tab closes.
 - Deleting a snippet or a connection asks first, like deleting a group or a folder that holds something: a delete can't be undone.
 - A new connection now shows in the sidebar: its folder opens, as does every folder above anything you select.
 - Recording a shortcut in Settings no longer swallows keys typed in other xpnd windows, such as a terminal tab.
