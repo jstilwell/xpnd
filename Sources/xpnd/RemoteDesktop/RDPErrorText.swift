@@ -22,6 +22,7 @@ enum RDPErrorText {
         "ERRCONNECT_CONNECT_TRANSPORT_FAILED": "the connection timed out",
         "ERRCONNECT_CONNECT_FAILED": "the server refused the connection",
         "ERRCONNECT_TLS_CONNECT_FAILED": "the secure connection failed",
+        "ERRCONNECT_SECURITY_NEGO_CONNECT_FAILED": "the server doesn't accept this connection's security (check its Network Level Authentication option)",
         XPRDPErrorCertificateRejected: "the certificate was rejected",
         "ERRCONNECT_CONNECT_CANCELLED": "cancelled",
         "ERRCONNECT_DNS_NAME_NOT_FOUND": "the host name could not be resolved",

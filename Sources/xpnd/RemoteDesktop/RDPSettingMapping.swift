@@ -58,7 +58,9 @@ extension RDPSessionConfig {
             s("RedirectClipboard", clipboard),
             s("AudioPlayback", audio == .local), s("RemoteConsoleAudio", audio == .remote),
             s("RedirectPrinters", printers),
-            s("NlaSecurity", nla),
+            // FreeRDP's defaults also offer TLS-only and legacy RDP security, so a server (or whoever answers for
+            // it) could skip NLA and still be sent the password. Legacy has no certificate check: never offered.
+            s("NlaSecurity", nla), s("TlsSecurity", !nla), s("RdpSecurity", false),
             s("TcpConnectTimeout", timeoutSeconds * 1000),
             s("AutoReconnectionEnabled", autoReconnect), s("AutoReconnectMaxRetries", reconnectTries),
             s("ConnectionType", connectionType),

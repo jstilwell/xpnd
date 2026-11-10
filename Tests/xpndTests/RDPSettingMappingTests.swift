@@ -136,6 +136,14 @@ import Testing
     @Test func securityAndMisc() {
         let c = config { $0.alternateShell = "cmd.exe"; $0.consoleSession = true }
         #expect(value(c, "FreeRDP_NlaSecurity") == "TRUE")
+        // FreeRDP leaves TLS-only and legacy RDP security on by default: NLA on must mean NLA only, and the
+        // legacy mode (no certificate check at all) is never offered.
+        #expect(value(c, "FreeRDP_TlsSecurity") == "FALSE")
+        #expect(value(c, "FreeRDP_RdpSecurity") == "FALSE")
+        let noNLA = config { $0.nla = false }
+        #expect(value(noNLA, "FreeRDP_NlaSecurity") == "FALSE")
+        #expect(value(noNLA, "FreeRDP_TlsSecurity") == "TRUE")
+        #expect(value(noNLA, "FreeRDP_RdpSecurity") == "FALSE")
         #expect(value(c, "FreeRDP_TcpConnectTimeout") == "15000")
         #expect(value(c, "FreeRDP_AutoReconnectMaxRetries") == "5")
         #expect(value(c, "FreeRDP_ConsoleSession") == "TRUE")
