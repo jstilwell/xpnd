@@ -305,6 +305,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 
 - (void)scrollWheel:(NSEvent *)event {
     // MRDPView's units and steps, sent at the pointer rather than at (0, height).
+    [self noteCommandUsed];  // ⌘ and a scroll is a gesture, not a tap of the Windows key
     const CGFloat dx = event.deltaX, dy = event.deltaY;
     UINT16 flags, units;
     if (fabs(dy) > FLT_EPSILON) {
@@ -372,6 +373,10 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
             [self setCommandState:XPCommandUp];
         }
         // Hide ⌘ from MRDPView, which would send the Windows key the moment it goes down.
+        // ⌘ with another modifier is a shortcut in the making, not a tap: macOS keeps ⌘⇧4 and other apps' global
+        // hotkeys to itself, so no key ever arrives to say so, and the release would open Start.
+        if (down && (event.modifierFlags & (NSEventModifierFlagShift | NSEventModifierFlagControl | NSEventModifierFlagOption)))
+            [self noteCommandUsed];
         kbdModFlags = (kbdModFlags & ~(DWORD)XPCommandFlag) | (DWORD)(event.modifierFlags & XPCommandFlag);
     }
     [super flagsChanged:event];
