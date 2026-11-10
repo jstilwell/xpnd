@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.3.1 - Unreleased
+## 0.3.1 - 11-10-2026
 
 ### Changed
 - **Importing snippets always shows what will be added** before anything is imported, and lists snippets that press keys along with those that run scripts, open apps, run Shortcuts or send shortcuts.
