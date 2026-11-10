@@ -137,7 +137,7 @@ extension XPRDPSession: RDPSessionControlling {}
         let scale = window?.backingScaleFactor ?? 2
         let size = window?.contentLayoutRect.size ?? NSSize(width: 1000, height: 640)
         return config.freerdpSettings(
-            configPath: Self.configPath, viewPixelSize: (Int(size.width * scale), Int(size.height * scale)))
+            configPath: Self.configPath, viewPixelSize: (Int(size.width * scale), Int(size.height * scale)), scale: scale)
     }
 
     // MARK: XPRDPSessionDelegate

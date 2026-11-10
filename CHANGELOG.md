@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - A Windows password could be sent to a server that skipped Network Level Authentication, without a certificate question.
 - Expanding a snippet on the Mac no longer offers it to connected Windows desktops, or replaces what you copied in Windows.
 - A refused Windows login says why in the password sheet, and cancelling it ends the tab with that reason instead of "cancelled". "Access denied" no longer looks like a wrong password.
+- A Windows desktop on a non-Retina screen is no longer drawn at double size.
 - Importing says how many snippets or connections it added and skipped, and says so when a file holds none, instead of "Imported." every time. File errors read as sentences.
 
 ## 0.3.0 - 11-07-2026
