@@ -70,6 +70,9 @@ enum SSHCommandBuilder {
         case .connection(let id): arguments += ["-o", "ProxyCommand=" + (try proxyCommand(id, visited: visited, library, keysDirectory))]
         case nil: break
         }
+        // Before the credential's options: ssh keeps the first value it is given for an option, so here the
+        // user's `-o PubkeyAuthentication=yes` (a server that wants a key and a password) wins over xpnd's own.
+        arguments += try ShellQuote.split(connection.sshOptions)
         if let ref = library.loginCredential(for: connection.id)?.ref {
             if ref.category == .sshKey {
                 // ssh splits -o values on spaces, so the socket needs its own quotes inside the argument.
@@ -79,7 +82,7 @@ enum SSHCommandBuilder {
                 arguments += ["-o", "PubkeyAuthentication=no"]
             }
         }
-        return arguments + (try ShellQuote.split(connection.sshOptions))
+        return arguments
     }
 
     /// `--` keeps a value starting with `-` from being read as an ssh option.

@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 - **Delete** (⌫) deletes the item selected in the sidebar, snippets and groups have a right-click **Delete…**, and a connection's Details has **Delete Connection…**.
 - A snippet's text is saved when typing pauses, not on every key, which kept large libraries and synced folders busy.
+- A connection's extra SSH options now come before the ones xpnd adds for its credential, so yours win (ssh keeps the first value it is given): `-o PubkeyAuthentication=yes` reaches a server that wants a key and a password.
 
 ### Fixed
 - Deleting a snippet or a connection asks first, like deleting a group or a folder that holds something: a delete can't be undone.
