@@ -80,20 +80,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// Opens a session's tab over any editor card, and shows the window.
-    func openTab(_ request: TabRequest, for connection: Connection, color: ItemColor?) {
+    func openTab(_ request: TabRequest, for connection: Connection, color: ItemColor?) -> TerminalSession.ID {
         model.hideEditor()
         show(selecting: nil)
-        sessions.open(request, for: connection, color: color)
+        return sessions.open(request, for: connection, color: color)
     }
 
-    /// Whether the keyboard is in a session's terminal. Requires the main window to be key: a window
+    /// Whether the keyboard is in a session's terminal or desktop.
+    var terminalHasFocus: Bool { focusedSessionKind != nil }
+
+    /// The kind of the session whose view holds the first responder. Requires the main window to be key: a window
     /// keeps its first responder after the app deactivates or another window (Settings, a panel) takes key.
-    var terminalHasFocus: Bool {
-        guard let window, window.isKeyWindow, let responder = window.firstResponder as? NSView else { return false }
-        return sessions.sessions.contains { responder.isDescendant(of: $0.host.view) }
-    }
-
-    /// The kind of the session whose view holds the first responder, under the same key-window rule.
     var focusedSessionKind: TerminalSession.Kind? {
         guard let window, window.isKeyWindow, let responder = window.firstResponder as? NSView else { return nil }
         return sessions.sessions.first { responder.isDescendant(of: $0.host.view) }?.kind
@@ -128,11 +125,14 @@ private struct MainView: View {
     /// Connections keep their ids, but a hand edit can drop them: then the folder names from the
     /// root (and the connection's name) find the item again.
     @State private var selectedPath: [String]?
+    /// An item with something to lose, waiting for its delete to be confirmed.
+    @State private var deleting: SidebarItem?
 
     var body: some View {
+        let question = deleting.flatMap { EditorRules.deleteQuestion(for: $0, connections: connections.library, snippets: editing.store.library) }
         NavigationSplitView {
             Sidebar(connections: connections, editing: editing, sessions: sessions, selection: $model.selection, focus: $model.focus,
-                    openSettings: openSettings)
+                    openSettings: openSettings, delete: askDelete)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
             Group {
@@ -147,6 +147,12 @@ private struct MainView: View {
             .navigationSplitViewColumnWidth(min: 480, ideal: 700)
         }
         .frame(minWidth: 900, minHeight: 560)
+        .confirmationDialog(question?.title ?? "", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            presenting: deleting) { item in
+            Button("Delete", role: .destructive) { delete(item) }
+        } message: { _ in
+            Text(question?.message ?? "")
+        }
         .onChange(of: model.selection) { if !sessions.sessions.isEmpty && model.selection != nil { model.editorShown = true } }
         // Back to the selected item's Details with the last tab gone; the next first tab shows its terminal.
         .onChange(of: sessions.sessions.isEmpty) { model.editorShown = false }
@@ -158,7 +164,31 @@ private struct MainView: View {
     }
 
     private var details: some View {
-        DetailsPane(connections: connections, editing: editing, sessions: sessions, selection: $model.selection, focus: $model.focus)
+        DetailsPane(connections: connections, editing: editing, sessions: sessions, selection: $model.selection, focus: $model.focus,
+                    delete: askDelete)
+    }
+
+    /// The one way anything in the window is deleted: a delete can't be undone, so it asks first unless
+    /// there is nothing to lose (`EditorRules.deleteQuestion`).
+    private func askDelete(_ item: SidebarItem) {
+        let question = EditorRules.deleteQuestion(for: item, connections: connections.library, snippets: editing.store.library)
+        if question == nil { delete(item) } else { deleting = item }
+    }
+
+    /// On failure the item is selected, so its Details shows why. A deleted snippet leaves its group selected.
+    private func delete(_ item: SidebarItem) {
+        var next: SidebarItem?
+        let deleted: Bool
+        switch item {
+        case .folder, .connection:
+            deleted = connections.delete(item)
+        case .snippet(let id):
+            next = editing.group(containing: id).map { .snippetGroup($0.id) }
+            deleted = editing.snippet(id).map(editing.deleteSnippet) ?? false
+        case .snippetGroup(let id):
+            deleted = editing.group(id).map(editing.deleteGroup) ?? false
+        }
+        if !deleted { model.selection = item } else if model.selection == item { model.selection = next }
     }
 
     private var editorCard: some View {

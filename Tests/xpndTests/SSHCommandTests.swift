@@ -81,7 +81,13 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
     @Test func argumentOrder() throws {
         let c = Connection(name: "a", host: "host", port: 2200, username: "u", credential: ref("k", .sshKey),
                            jumpHost: .text("j"), sshOptions: "-v", autoSudo: true)
-        #expect(try build(c).arguments == ["ssh", "-p", "2200", "-J", "j"] + keyOptions("k") + ["-v", "-t", "u@host", "sudo", "-i"])
+        #expect(try build(c).arguments == ["ssh", "-p", "2200", "-J", "j", "-v"] + keyOptions("k") + ["-t", "u@host", "sudo", "-i"])
+    }
+
+    /// ssh keeps the first value it is given for an option, so the user's must come before xpnd's own.
+    @Test func extraOptionsOverrideTheCredentialsOptions() throws {
+        let c = Connection(name: "a", host: "host", credential: ref("pw", .login), sshOptions: "-o PubkeyAuthentication=yes")
+        #expect(try build(c).arguments == ["ssh", "-o", "PubkeyAuthentication=yes", "-o", "PubkeyAuthentication=no", "host"])
     }
 
     @Test func jumpText() throws {
@@ -100,7 +106,7 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
         #expect(command.arguments[2] == "ProxyCommand=" + value)
         #expect(Array(command.arguments[3...]) == keyOptions("k") + ["host"])
         #expect(value.contains(" -W '[%h]:%p' "))
-        #expect(try ShellQuote.split(value) == ["ssh", "-p", "2022"] + keyOptions("jk") + ["-v", "-W", "[%h]:%p", "user@jump"])
+        #expect(try ShellQuote.split(value) == ["ssh", "-p", "2022", "-v"] + keyOptions("jk") + ["-W", "[%h]:%p", "user@jump"])
         #expect(try ShellQuote.split(command.shellLine) == command.arguments)
     }
 
@@ -121,7 +127,7 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
         let jump = Connection(name: "j", host: "jump", username: "a%hb", credential: ref("k", .sshKey), sshOptions: "-o Tag=%p")
         let c = Connection(name: "a", host: "host", jumpHost: .connection(jump.id))
         let parts = try ShellQuote.split(try proxyCommand(try build(c, with: jump)))
-        #expect(parts.suffix(4) == ["Tag=%%p", "-W", "[%h]:%p", "a%%hb@jump"])
+        #expect(parts == ["ssh", "-o", "Tag=%%p"] + keyOptions("k") + ["-W", "[%h]:%p", "a%%hb@jump"])
     }
 
     @Test func jumpCycleAndMissing() {
@@ -254,7 +260,9 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
             let command = try build(c, with: jump)
             let parts = try ShellQuote.split(try proxyCommand(command))
             #expect(try ShellQuote.split(command.shellLine) == command.arguments)
-            #expect(parts.suffix(4) == [value, "-W", "[%h]:%p", "\(value)@\(value)"])
+            // The jump's own options come first (ssh keeps the first value), then its key's.
+            #expect(parts.prefix(3) == ["ssh", "-o", value])
+            #expect(parts.suffix(3) == ["-W", "[%h]:%p", "\(value)@\(value)"])
         }
     }
 

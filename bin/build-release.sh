@@ -168,6 +168,10 @@ if git rev-parse -q --verify "refs/tags/v${VERSION}" > /dev/null \
     exit 1
 fi
 
+# An update reaches every installed copy by itself, so one that fails its own tests never gets built.
+echo -e "${YELLOW}Running the tests...${NC}"
+make test
+
 echo -e "${GREEN}Building ${APP_NAME} ${VERSION}${NC}"
 rm -rf "$RELEASE_DIR"
 make release-app TEAM_ID="$TEAM_ID"

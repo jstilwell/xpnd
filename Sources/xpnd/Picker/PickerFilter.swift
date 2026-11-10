@@ -1,7 +1,8 @@
 import Foundation
 
 enum PickerFilter {
-    /// `snippets` is taken as given: the caller passes `library.activeSnippets`, so disabled ones never show.
+    /// `snippets` is taken as given: the picker passes `library.activeSnippets`, so disabled ones never show
+    /// there, and the sidebar a whole group, disabled ones included.
     static func filter(_ snippets: [Snippet], query: String) -> [Snippet] {
         let query = query.trimmingCharacters(in: .whitespaces)
         let byName: (Snippet, Snippet) -> Bool = { $0.name.localizedStandardCompare($1.name) == .orderedAscending }

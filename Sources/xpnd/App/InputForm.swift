@@ -13,15 +13,22 @@ import SwiftUI
     static func ask(_ labels: [String]) async -> [String: String]? {
         guard current == nil else { return nil }
         let previous = NSWorkspace.shared.frontmostApplication
-        let values = await withCheckedContinuation { continuation in
-            let panel = InputFormPanel(labels: labels, near: previous.flatMap { frontWindowFrame(of: $0) }) { values in
-                current = nil
-                continuation.resume(returning: values)
+        let values = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let panel = InputFormPanel(labels: labels, near: previous.flatMap { frontWindowFrame(of: $0) }) { values in
+                    current = nil
+                    continuation.resume(returning: values)
+                }
+                current = panel
+                panel.show()
             }
-            current = panel
-            panel.show()
+        } onCancel: {
+            // Another app came forward, which ends the expansion: left open, the form would take an answer only
+            // to throw it away, and no other keyword would expand until someone closed it.
+            Task { @MainActor in current?.cancel() }
         }
-        if let previous, previous != .current { await refocus(previous) }
+        // Cancelled that way, the user chose the app now in front.
+        if !Task.isCancelled, let previous, previous != .current { await refocus(previous) }
         return values
     }
 
@@ -82,6 +89,8 @@ import SwiftUI
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
     }
+
+    func cancel() { end(nil) }
 
     private func end(_ values: [String: String]?) {
         guard let finish else { return }

@@ -32,6 +32,41 @@ import xpndRDP
         return answers
     }
 
+    /// An expansion's paste puts the old contents back under a new change count, so the poll offers them again.
+    @Test func theSameOfferIsNotAnnouncedTwice() async {
+        await inSync { c in
+            c.offerText("copied on the Mac", fileURIList: nil)
+            let sent = c.testListsOnWire
+            c.offerText("copied on the Mac", fileURIList: nil)
+            #expect(c.testListsOnWire == sent)
+            c.offerText("something else", fileURIList: nil)
+            #expect(c.testListsOnWire == sent + 1)
+        }
+    }
+
+    @Test func theSameOfferGoesOutAgainOnceWindowsHasCopiedSomething() async {
+        await inSync { c in
+            c.offerText("copied on the Mac", fileURIList: nil)
+            let sent = c.testListsOnWire
+            c.testServerSendsFormatList()
+            c.offerText("copied on the Mac", fileURIList: nil)
+            #expect(c.testListsOnWire == sent + 1)
+        }
+    }
+
+    /// Announced back, the text Windows gave the Mac would replace the richer copy Windows still holds.
+    @Test func textThatCameFromWindowsIsNotOfferedBack() async {
+        await inSync { c in
+            c.testServerSendsFormatList()
+            c.testServerWroteText("cells from Excel")
+            let sent = c.testListsOnWire
+            c.offerText("cells from Excel", fileURIList: nil)
+            #expect(c.testListsOnWire == sent)
+            c.offerText("typed on the Mac", fileURIList: nil)
+            #expect(c.testListsOnWire == sent + 1)
+        }
+    }
+
     @Test func noChannelIsRefusedAtOnce() async {
         let c = XPRDPClipboard()
         let answers = offer(c)
@@ -93,11 +128,12 @@ import xpndRDP
 
     @Test func noResponseTimesOutOnce() async {
         await inSync { c in
-            c.offerTimeout = 0.02
+            // Long enough that another suite holding the main thread for a moment can't use it up before the first check.
+            c.offerTimeout = 0.3
             let answers = offer(c)
             await settled()
             #expect(answers.all.isEmpty)
-            try? await Task.sleep(for: .milliseconds(100))
+            try? await Task.sleep(for: .milliseconds(600))
             #expect(answers.all == [false])
             c.testServerAnswersFormatList(true) // late
             await settled()

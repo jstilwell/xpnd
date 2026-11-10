@@ -123,6 +123,9 @@ private let sudo = ref("sudo", .password)
     var onCopy: () -> Void = {}
     var rdpSettings = RDPSettings.standard
     var opened: [(TabRequest, Connection)] = []
+    /// The tab `openTab` says it opened, and the tabs offers were made in.
+    let tab = TerminalSession.ID()
+    var offeredIn: [TerminalSession.ID] = []
     var tabPasswords = TabPasswordMode.clipboard
     /// What a tab's offer answers: true as if the password went in.
     var offerAccepted = true
@@ -149,6 +152,7 @@ private let sudo = ref("sudo", .password)
             openTab: { [unowned self] in
                 opened.append(($0, $1))
                 log.events.append("tab \($1.name) (\($0.kind))")
+                return tab
             },
             sender: sender,
             terminal: { [unowned self] in settings },
@@ -157,7 +161,8 @@ private let sudo = ref("sudo", .password)
             notify: { [log] in log.events.append("notify \($0)") },
             showCopied: { [log] text, _ in log.events.append("banner \(text)") },
             tabPasswords: { [unowned self] in tabPasswords },
-            offerInTab: { [unowned self] label, password, _, automatic in
+            offerInTab: { [unowned self] label, password, tab, automatic in
+                offeredIn.append(tab)
                 log.events.append("offer \(label) \(password)\(automatic ? " auto" : "")")
                 return offerAccepted
             },
@@ -642,6 +647,7 @@ struct ConnectionServiceTests {
         await h.connect(aws, typedInto: nil, preferBuiltIn: true)
         #expect(h.log.events == ["tab aws (terminal)", "password login", "offer Password secret-login",
                                  "password sudo", "offer Sudo password secret-sudo"])
+        #expect(h.offeredIn == [h.tab, h.tab]) // the tab this connect opened, not any tab of the connection
     }
 
     @Test func automaticModeAndAnUnsentLoginSkipsSudo() async throws {

@@ -22,6 +22,14 @@ struct CredentialItem: Hashable, Sendable {
     let username: String?
     var provider = "1password"
 
+    /// Whether a search for `query` finds this item: in its title, username or (1Password) vault, whatever
+    /// the case. Every Keychain item's vault is "Keychain", so that one isn't searched.
+    func matches(_ query: String) -> Bool {
+        let query = query.lowercased()
+        let fields = provider == KeychainProvider.id ? [title, username ?? ""] : [title, vaultName, username ?? ""]
+        return query.isEmpty || fields.contains { $0.lowercased().contains(query) }
+    }
+
     func ref(account: String) -> CredentialRef {
         CredentialRef(provider: provider, account: account, vault: vaultID, item: id, title: title, category: category, username: username)
     }

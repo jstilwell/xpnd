@@ -51,6 +51,8 @@ struct RDPPasswordPrompt: View {
     }
 
     let host: String
+    /// Why the sheet came up after a rejected login (`RDPErrorText.rejectionNote`); nil for a first ask.
+    let note: String?
     let answer: (Login?) -> Void
     private let title: String
     @State private var username: String
@@ -60,8 +62,9 @@ struct RDPPasswordPrompt: View {
 
     private enum Field { case username, password }
 
-    init(user: String, domain: String, host: String, answer: @escaping (Login?) -> Void) {
+    init(user: String, domain: String, host: String, note: String? = nil, answer: @escaping (Login?) -> Void) {
         self.host = host
+        self.note = note
         self.answer = answer
         title = user.isEmpty ? "Password for \(host)" : "Password for \(user)@\(host)"
         _username = State(initialValue: user)
@@ -71,6 +74,7 @@ struct RDPPasswordPrompt: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title).font(.headline)
+            if let note { Text(note).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             Form {
                 TextField("Username", text: $username).focused($focus, equals: .username)
                 TextField("Domain", text: $domain, prompt: Text("Optional"))

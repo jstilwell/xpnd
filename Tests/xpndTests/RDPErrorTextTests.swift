@@ -10,6 +10,7 @@ struct RDPErrorTextTests {
             ("ERRCONNECT_CONNECT_TRANSPORT_FAILED", "the connection timed out"),
             ("ERRCONNECT_CONNECT_FAILED", "the server refused the connection"),
             ("ERRCONNECT_TLS_CONNECT_FAILED", "the secure connection failed"),
+            ("ERRCONNECT_SECURITY_NEGO_CONNECT_FAILED", "the server doesn't accept this connection's security (check its Network Level Authentication option)"),
             (XPRDPErrorCertificateRejected, "the certificate was rejected"),
             ("ERRCONNECT_CONNECT_CANCELLED", "cancelled"),
             ("ERRCONNECT_DNS_NAME_NOT_FOUND", "the host name could not be resolved"),
@@ -21,6 +22,14 @@ struct RDPErrorTextTests {
         for (name, reason) in cases {
             #expect(RDPErrorText.reason(forErrorName: name) == reason, "\(name ?? "nil")")
         }
+    }
+
+    @Test func aRejectedLoginHasANoteForThePasswordSheet() {
+        #expect(RDPErrorText.rejectionNote(forErrorName: "ERRCONNECT_LOGON_FAILURE") == "Windows answered: logon failed.")
+        #expect(RDPErrorText.rejectionNote(forErrorName: "ERRCONNECT_ACCESS_DENIED")
+            == "Windows answered: access denied. The password may be right and the account not allowed to connect to this computer.")
+        #expect(RDPErrorText.rejectionNote(forErrorName: "ERRCONNECT_CONNECT_CANCELLED") == nil)
+        #expect(RDPErrorText.rejectionNote(forErrorName: nil) == nil)
     }
 
     @Test func aTransportFailureAfterConnectingIsALostConnection() {

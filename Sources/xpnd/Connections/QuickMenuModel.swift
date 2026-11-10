@@ -33,11 +33,13 @@ struct QuickMenuModel {
 
     var rows: [QuickMenuRow] {
         guard let folder = current else { return [] }
-        let items: [(String, QuickMenuRow.Kind, ActivationTarget, FolderIcon?)] =
-            folder.connections.map { ($0.name, .connection($0.id, $0.type), .connection($0.id), nil) }
-            + folder.folders.map { ($0.name, .folder($0.id), .folder($0.id), $0.icon) }
+        // One lookup for the folder; everything in it without a colour of its own takes that.
+        let inherited = library.color(for: .folder(folder.id))?.color
+        let items: [(String, QuickMenuRow.Kind, ItemColor?, FolderIcon?)] =
+            folder.connections.map { ($0.name, .connection($0.id, $0.type), $0.color, nil) }
+            + folder.folders.map { ($0.name, .folder($0.id), $0.color, $0.icon) }
         return items.enumerated().map {
-            QuickMenuRow(number: $0 < 9 ? $0 + 1 : nil, title: $1.0, kind: $1.1, color: library.color(for: $1.2)?.color, icon: $1.3)
+            QuickMenuRow(number: $0 < 9 ? $0 + 1 : nil, title: $1.0, kind: $1.1, color: $1.2 ?? inherited, icon: $1.3)
         }
     }
 

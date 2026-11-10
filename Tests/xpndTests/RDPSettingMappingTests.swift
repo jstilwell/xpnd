@@ -9,8 +9,8 @@ import Testing
         return c
     }
 
-    private func value(_ c: RDPSessionConfig, _ name: String, size: (width: Int, height: Int) = (2880, 1800)) -> String? {
-        c.freerdpSettings(configPath: "/tmp/freerdp", viewPixelSize: size).first { $0.name == name }?.value
+    private func value(_ c: RDPSessionConfig, _ name: String, size: (width: Int, height: Int) = (2880, 1800), scale: Double = 2) -> String? {
+        c.freerdpSettings(configPath: "/tmp/freerdp", viewPixelSize: size, scale: scale).first { $0.name == name }?.value
     }
 
     @Test func fitUsesViewSizeAndDynamicResolution() {
@@ -40,6 +40,18 @@ import Testing
         let c = config { $0.display = .fixed(width: 1280, height: 720) }
         #expect(value(c, "FreeRDP_SupportDisplayControl") == "TRUE")
         #expect(value(c, "FreeRDP_DynamicResolutionUpdate") == "FALSE")
+    }
+
+    /// A screen with one pixel per point has no extra pixels to give: 200% there would double everything.
+    @Test func retinaOnANonRetinaScreenStaysAtOneHundredPercent() {
+        let c = config()
+        #expect(value(c, "FreeRDP_DesktopWidth", size: (1440, 900), scale: 1) == "1440")
+        #expect(value(c, "FreeRDP_DesktopHeight", size: (1440, 900), scale: 1) == "900")
+        #expect(value(c, "FreeRDP_DesktopScaleFactor", size: (1440, 900), scale: 1) == "100")
+        #expect(value(c, "FreeRDP_DeviceScaleFactor", size: (1440, 900), scale: 1) == "100")
+        let off = config { $0.retina = false }
+        #expect(value(off, "FreeRDP_DesktopWidth", size: (1440, 900), scale: 1) == "1440")
+        #expect(value(off, "FreeRDP_DesktopScaleFactor", size: (1440, 900), scale: 1) == "100")
     }
 
     @Test func retinaOffHalvesTheViewSize() {
@@ -136,6 +148,14 @@ import Testing
     @Test func securityAndMisc() {
         let c = config { $0.alternateShell = "cmd.exe"; $0.consoleSession = true }
         #expect(value(c, "FreeRDP_NlaSecurity") == "TRUE")
+        // FreeRDP leaves TLS-only and legacy RDP security on by default: NLA on must mean NLA only, and the
+        // legacy mode (no certificate check at all) is never offered.
+        #expect(value(c, "FreeRDP_TlsSecurity") == "FALSE")
+        #expect(value(c, "FreeRDP_RdpSecurity") == "FALSE")
+        let noNLA = config { $0.nla = false }
+        #expect(value(noNLA, "FreeRDP_NlaSecurity") == "FALSE")
+        #expect(value(noNLA, "FreeRDP_TlsSecurity") == "TRUE")
+        #expect(value(noNLA, "FreeRDP_RdpSecurity") == "FALSE")
         #expect(value(c, "FreeRDP_TcpConnectTimeout") == "15000")
         #expect(value(c, "FreeRDP_AutoReconnectMaxRetries") == "5")
         #expect(value(c, "FreeRDP_ConsoleSession") == "TRUE")

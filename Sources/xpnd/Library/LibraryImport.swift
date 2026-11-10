@@ -3,7 +3,7 @@ import Foundation
 enum ConflictChoice: Sendable { case skip, replace }
 
 struct RiskyAction: Hashable, Sendable {
-    enum Kind: Sendable { case shell, openApp, runShortcut, shortcut }
+    enum Kind: Sendable { case shell, openApp, runShortcut, shortcut, key }
     let snippetName: String
     let keyword: String
     let kind: Kind
@@ -60,12 +60,24 @@ enum LibraryImport {
                 case "runShortcut": kind = .runShortcut
                 // Keys sent to whatever is in front can open Terminal and type a command.
                 case "shortcut": kind = .shortcut
+                // Typed text plus Return is a command run in whatever terminal the keyword is typed in.
+                case "key": kind = .key
                 default: continue
                 }
                 found.append(RiskyAction(snippetName: snippet.name, keyword: snippet.keyword, kind: kind, target: target))
             }
         }
         return found
+    }
+
+    /// What merging with `choice` did, for the message after an import; nil when it would add nothing,
+    /// so the caller can leave the file alone.
+    static func outcome(incoming: SnippetLibrary, existing: SnippetLibrary, choice: ConflictChoice) -> String? {
+        let skipped = choice == .skip ? conflicts(incoming: incoming, existing: existing).count : 0
+        let added = incoming.groups.flatMap(\.snippets).count - skipped
+        guard added > 0 else { return nil }
+        let imported = "Imported \(added) snippet\(added == 1 ? "" : "s")"
+        return skipped == 0 ? imported + "." : imported + "; skipped \(skipped) that already exist\(skipped == 1 ? "s" : "")."
     }
 
     /// `groups == nil` exports every group.

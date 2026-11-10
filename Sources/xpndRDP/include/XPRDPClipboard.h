@@ -44,6 +44,8 @@ typedef NS_OPTIONS(NSUInteger, XPRDPClipboardFormats) {
 - (void)testServerReady;
 - (void)testServerAnswersFormatList:(BOOL)ok;
 - (void)testServerSendsFormatList;
+/// Test hook: as if the server's text had just been written to the Mac pasteboard.
+- (void)testServerWroteText:(NSString *)text;
 /// Test hook: the format lists that went out on the stand-in channel.
 @property (readonly) NSUInteger testListsOnWire;
 @end

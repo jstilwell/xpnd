@@ -25,7 +25,7 @@ struct ImportExportView: View {
     }
 }
 
-/// Exports chosen groups to YAML, and imports YAML after confirming anything that can run things.
+/// Exports chosen groups to YAML, and imports YAML after showing every snippet it adds and what any can run.
 private struct SnippetImportExport: View {
     let store: SnippetStore
     /// Groups left out of the export; every group starts included.
@@ -35,7 +35,7 @@ private struct SnippetImportExport: View {
     @State private var incoming: SnippetLibrary?
     @State private var risky: [RiskyAction] = []
     @State private var conflicts: [String] = []
-    @State private var confirmingRisky = false
+    @State private var previewing = false
     @State private var resolvingConflicts = false
 
     var body: some View {
@@ -62,9 +62,9 @@ private struct SnippetImportExport: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .frame(minHeight: 320)
-        .sheet(isPresented: $confirmingRisky) {
-            RiskyActionsSheet(actions: risky, cancel: cancelImport) {
-                confirmingRisky = false
+        .sheet(isPresented: $previewing) {
+            SnippetImportSheet(snippets: incoming?.groups.flatMap(\.snippets) ?? [], risky: risky, cancel: cancelImport) {
+                previewing = false
                 checkConflicts()
             }
         }
@@ -107,10 +107,15 @@ private struct SnippetImportExport: View {
             message = "Couldn't import \(url.lastPathComponent): \(error)"
             return
         }
+        // A connections file, or any other YAML, decodes to nothing: every key is optional.
+        guard library.groups.contains(where: { !$0.snippets.isEmpty }) else {
+            message = "No snippets were found in \(url.lastPathComponent)."
+            return
+        }
         incoming = library
         risky = LibraryImport.riskyActions(in: library)
-        // Nothing is merged until anything that can run things is confirmed.
-        if risky.isEmpty { checkConflicts() } else { confirmingRisky = true }
+        // Nothing is merged until the preview is confirmed: a snippet needs no script to do harm once typed.
+        previewing = true
     }
 
     private func checkConflicts() {
@@ -122,9 +127,13 @@ private struct SnippetImportExport: View {
     private func merge(_ choice: ConflictChoice) {
         guard let incoming else { return }
         self.incoming = nil
+        guard let outcome = LibraryImport.outcome(incoming: incoming, existing: store.library, choice: choice) else {
+            message = "Nothing was imported: every keyword already exists."
+            return
+        }
         do {
             try store.update { $0 = LibraryImport.merge(incoming, into: $0, choice: choice) }
-            message = "Imported."
+            message = outcome
         } catch {
             message = error.message
         }
@@ -132,27 +141,45 @@ private struct SnippetImportExport: View {
 
     private func cancelImport() {
         incoming = nil
-        confirmingRisky = false
+        previewing = false
         message = "Nothing was imported."
     }
 }
 
-/// Lists what imported snippets would run, before any of them are imported.
-private struct RiskyActionsSheet: View {
-    let actions: [RiskyAction]
+/// Lists every snippet an import adds, and first what any of them can run, before any is imported.
+private struct SnippetImportSheet: View {
+    let snippets: [Snippet]
+    let risky: [RiskyAction]
     let cancel: () -> Void
     let confirm: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("These snippets can run things on this Mac").font(.headline)
-            Table(actions.indices.map { IndexedAction(index: $0, action: actions[$0]) }) {
-                TableColumn("Name", value: \.action.snippetName)
-                TableColumn("Keyword", value: \.action.keyword)
-                TableColumn("Kind", value: \.kind)
-                TableColumn("Target", value: \.action.target)
+            Text("Import \(EditorRules.count(snippets.count, "snippet"))?").font(.headline)
+            // Wrapping text, not table cells, so a long path is never cut off; `visible` shows hidden characters.
+            List {
+                if !risky.isEmpty {
+                    Section("These can run things on this Mac") {
+                        ForEach(Array(risky.enumerated()), id: \.offset) { _, action in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(ConnectionImport.visible(action.snippetName)) (\(ConnectionImport.visible(action.keyword)))")
+                                Text("\(Self.label(action.kind)): \(ConnectionImport.visible(action.target))")
+                                    .font(.callout.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                        }
+                    }
+                }
+                Section("Typing the keyword inserts the snippet") {
+                    ForEach(snippets) { snippet in
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(ConnectionImport.visible(snippet.name))
+                            Spacer()
+                            Text(ConnectionImport.visible(snippet.keyword)).font(.callout.monospaced()).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
-            .frame(minHeight: 160)
+            .frame(minHeight: 240)
             HStack {
                 Spacer()
                 // No default button, so Return doesn't import scripts by accident.
@@ -164,17 +191,13 @@ private struct RiskyActionsSheet: View {
         .frame(width: 620)
     }
 
-    private struct IndexedAction: Identifiable {
-        let index: Int
-        let action: RiskyAction
-        var id: Int { index }
-        var kind: String {
-            switch action.kind {
-            case .shell: "Script"
-            case .openApp: "Open app"
-            case .runShortcut: "Shortcut"
-            case .shortcut: "Sends shortcut"
-            }
+    private static func label(_ kind: RiskyAction.Kind) -> String {
+        switch kind {
+        case .shell: "Runs a script"
+        case .openApp: "Opens an app"
+        case .runShortcut: "Runs a Shortcut"
+        case .shortcut: "Sends a keyboard shortcut"
+        case .key: "Presses a key"
         }
     }
 }
@@ -259,6 +282,11 @@ private struct ConnectionImportExport: View {
             message = "Couldn't import \(url.lastPathComponent): \(error)"
             return
         }
+        // A snippets file, or any other YAML, decodes to nothing: every key is optional.
+        guard !library.folders.isEmpty else {
+            message = "No connections or folders were found in \(url.lastPathComponent)."
+            return
+        }
         incoming = library
         conflicts = ConnectionImport.conflicts(incoming: library, existing: store.library)
         if conflicts.isEmpty { showPreview(.skip) } else { resolvingConflicts = true }
@@ -273,11 +301,12 @@ private struct ConnectionImportExport: View {
 
     private func merge() {
         guard let incoming else { return }
+        let added = preview?.added.count ?? 0
         self.incoming = nil
         preview = nil
         do {
             try store.update { $0 = ConnectionImport.merge(incoming, into: $0, choice: choice) }
-            message = "Imported."
+            message = added == 0 ? "Imported the folders; no connections were added." : "Imported \(EditorRules.count(added, "connection"))."
         } catch {
             message = error.connectionsMessage
         }

@@ -222,6 +222,27 @@ import xpndRDP
         #expect(ended == ["logon failed"])
     }
 
+    /// "Cancelled" would hide why the sheet came up: the tab ends with what the server said.
+    @Test func cancellingThePasswordSheetAfterARejectionEndsWithTheRejection() {
+        let (host, s) = host()
+        var ended: [String?] = []
+        host.onDisconnect = { ended.append($0) }
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_ACCESS_DENIED")
+        host.session(s, requestPasswordForUser: "me", domain: "", host: "win") { _, _, _ in } // no window: cancels
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_CONNECT_CANCELLED")
+        #expect(ended == ["access denied"])
+        #expect(fake.calls == ["start", "forgetPassword", "reconnect"])
+    }
+
+    @Test func cancellingAFirstPasswordSheetIsJustCancelled() {
+        let (host, s) = host()
+        var ended: [String?] = []
+        host.onDisconnect = { ended.append($0) }
+        host.session(s, requestPasswordForUser: "me", domain: "", host: "win") { _, _, _ in }
+        host.session(s, didDisconnectWithErrorName: "ERRCONNECT_CONNECT_CANCELLED")
+        #expect(ended == ["cancelled"])
+    }
+
     @Test func noWindowForThePasswordSheetCancels() {
         let (host, s) = host()
         var answer: (String, String, String?)?

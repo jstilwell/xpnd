@@ -276,7 +276,7 @@ import Testing
     @Test func automaticOfferSendsOnceThePromptShows() async throws {
         open("a")
         let host = hosts.all[0]
-        let offer = Task { await sessions.offer("Password", password: "pw", for: sessions.sessions[0].connectionID, automatic: true) }
+        let offer = Task { await sessions.offer("Password", password: "pw", in: sessions.sessions[0].id, automatic: true) }
         try await Task.sleep(for: .milliseconds(300))
         #expect(host.sent.isEmpty)
         host.atPrompt = true
@@ -289,7 +289,7 @@ import Testing
         open("a")
         let host = hosts.all[0]
         host.atPrompt = true
-        let offer = Task { await sessions.offer("Password", password: "pw", for: sessions.sessions[0].connectionID, automatic: false) }
+        let offer = Task { await sessions.offer("Password", password: "pw", in: sessions.sessions[0].id, automatic: false) }
         try await Task.sleep(for: .milliseconds(300))
         #expect(host.sent.isEmpty)
         sessions.sessions[0].passwordOffer?.finish(sent: false)
@@ -297,10 +297,42 @@ import Testing
         #expect(host.sent.isEmpty)
     }
 
+    /// A duplicated tab is a second tab of one connection: the password is for the one that just opened.
+    @Test func anOfferGoesToTheTabThatAskedNotAnotherTabOfItsConnection() async throws {
+        let connection = Connection(name: "a", host: "a")
+        let older = sessions.open(.terminal(SSHCommand(arguments: ["ssh", "a"])), for: connection, color: nil)
+        let newer = sessions.open(.terminal(SSHCommand(arguments: ["ssh", "a"])), for: connection, color: nil)
+        sessions.selected = older
+        let offer = Task { await sessions.offer("Password", password: "pw", in: newer, automatic: false) }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(sessions.sessions[0].passwordOffer == nil)
+        let pending = try #require(sessions.sessions[1].passwordOffer)
+        pending.finish(sent: false)
+        #expect(await offer.value == false)
+    }
+
+    /// Otherwise the password waits in memory, and the watcher keeps trying the dead tab, for a minute.
+    @Test func closingATabEndsItsOffer() async throws {
+        let id = open("a")
+        let offer = Task { await sessions.offer("Password", password: "pw", in: id, automatic: true) }
+        try await Task.sleep(for: .milliseconds(50))
+        let pending = try #require(sessions.sessions[0].passwordOffer)
+        sessions.close(id)
+        #expect(pending.isFinished)
+        #expect(await offer.value == false)
+        #expect(hosts.all[0].sent.isEmpty)
+    }
+
+    @Test func anOfferForATabThatIsGoneIsRefused() async {
+        let id = open("a")
+        sessions.close(id)
+        #expect(await sessions.offer("Password", password: "pw", in: id, automatic: true) == false)
+    }
+
     @Test func clickSendsOnlyAtAPrompt() async throws {
         open("a")
         let host = hosts.all[0]
-        let offer = Task { await sessions.offer("Password", password: "pw", for: sessions.sessions[0].connectionID, automatic: false) }
+        let offer = Task { await sessions.offer("Password", password: "pw", in: sessions.sessions[0].id, automatic: false) }
         try await Task.sleep(for: .milliseconds(50))
         let pending = try #require(sessions.sessions[0].passwordOffer)
         #expect(!pending.send(through: host))

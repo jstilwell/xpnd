@@ -1,11 +1,15 @@
 import SwiftUI
 
 extension StoreError {
-    var message: String {
+    /// Why a save to snippets.yaml failed.
+    var message: String { message(file: "snippets", owner: "snippet") }
+
+    /// `file` without ".yaml"; `owner` is what else could hold a duplicate string.
+    func message(file: String, owner: String) -> String {
         switch self {
-        case .fileUnreadable: "Couldn't save snippets.yaml."
-        case .duplicateKeyword(let keyword): "“\(keyword)” is already used by another snippet."
-        case .encodingFailed: "Couldn't write the snippets as YAML, so nothing was saved."
+        case .fileUnreadable: "Couldn't save \(file).yaml."
+        case .duplicateKeyword(let keyword): "“\(keyword)” is already used by another \(owner)."
+        case .encodingFailed: "Couldn't write the \(file) as YAML, so nothing was saved."
         }
     }
 }
@@ -82,9 +86,7 @@ final class SnippetEditing {
 
     /// The new group's id, or nil if it wasn't saved.
     func addGroup() -> SnippetGroup.ID? {
-        let names = Set(store.library.groups.map(\.name))
-        let name = (1...).lazy.map { $0 == 1 ? "New Group" : "New Group \($0)" }.first { !names.contains($0) }!
-        let new = SnippetGroup(name: name, snippets: [])
+        let new = SnippetGroup(name: EditorRules.uniqueName("New Group", taken: Set(store.library.groups.map(\.name))), snippets: [])
         return save({ $0.groups.append(new) }) ? new.id : nil
     }
 
@@ -119,7 +121,8 @@ struct SnippetGroupDetails: View {
     let group: SnippetGroup
     let connections: ConnectionLibrary
     @Binding var selection: SidebarItem?
-    @State private var confirmingDelete = false
+    /// Asks (when the group holds snippets), then deletes it.
+    let delete: () -> Void
 
     var body: some View {
         Form {
@@ -131,20 +134,11 @@ struct SnippetGroupDetails: View {
                     if let id = editing.addSnippet(to: group, connections: connections) { selection = .snippet(id) }
                 }
                 Spacer()
-                Button("Delete Group…", systemImage: "minus", role: .destructive) {
-                    if group.snippets.isEmpty { deleteGroup() } else { confirmingDelete = true }
-                }
+                Button("Delete Group…", systemImage: "minus", role: .destructive, action: delete)
             }
         }
         .formStyle(.grouped)
         .disabled(editing.readOnly)
-        .confirmationDialog("Delete “\(group.name)” and its \(group.snippets.count) snippets?", isPresented: $confirmingDelete) {
-            Button("Delete", role: .destructive, action: deleteGroup)
-        }
-    }
-
-    private func deleteGroup() {
-        if editing.deleteGroup(group) { selection = nil }
     }
 }
 
@@ -153,7 +147,8 @@ struct SnippetDetails: View {
     let editing: SnippetEditing
     let snippet: Snippet
     let connections: ConnectionLibrary
-    @Binding var selection: SidebarItem?
+    /// Asks, then deletes this snippet.
+    let delete: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -163,11 +158,8 @@ struct SnippetDetails: View {
             }
             HStack {
                 Spacer()
-                Button("Delete Snippet", systemImage: "minus", role: .destructive) {
-                    let group = editing.group(containing: snippet.id)
-                    if editing.deleteSnippet(snippet) { selection = group.map { .snippetGroup($0.id) } }
-                }
-                .disabled(editing.readOnly)
+                Button("Delete Snippet…", systemImage: "minus", role: .destructive, action: delete)
+                    .disabled(editing.readOnly)
             }
             .padding(8)
         }

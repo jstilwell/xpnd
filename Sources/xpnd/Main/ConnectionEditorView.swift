@@ -10,6 +10,8 @@ struct ConnectionEditorView: View {
     let hasSession: Bool
     /// A field the sidebar asked to focus; consumed here.
     @Binding var focus: EditorFocus?
+    /// Asks, then deletes this connection.
+    let delete: () -> Void
 
     private enum JumpChoice: Hashable { case none, connection(Connection.ID), other }
 
@@ -84,6 +86,8 @@ struct ConnectionEditorView: View {
             .formStyle(.grouped)
             .disabled(editing.readOnly)
             HStack {
+                // Here as well as in the sidebar's menu, which a first look doesn't find.
+                Button("Delete Connection…", systemImage: "minus", role: .destructive, action: delete).disabled(editing.readOnly)
                 Spacer()
                 if hasSession { Button("Show Session") { editing.showSession(connection.id) } }
                 if live {

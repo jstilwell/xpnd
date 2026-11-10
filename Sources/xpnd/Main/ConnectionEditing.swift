@@ -6,13 +6,8 @@ enum EditorFocus: Hashable {
 }
 
 extension StoreError {
-    var connectionsMessage: String {
-        switch self {
-        case .fileUnreadable: "Couldn't save connections.yaml."
-        case .duplicateKeyword(let string): "“\(string)” is already used by another connection or folder."
-        case .encodingFailed: "Couldn't write the connections as YAML, so nothing was saved."
-        }
-    }
+    /// Why a save to connections.yaml failed.
+    var connectionsMessage: String { message(file: "connections", owner: "connection or folder") }
 }
 
 /// The editors' rules that don't need a view.
@@ -32,6 +27,39 @@ enum EditorRules {
         case .folder(let id)?: library.folder(id)?.id
         case .connection(let id)?: library.path(of: id).last?.id
         default: nil
+        }
+    }
+
+    /// The folders to open so the sidebar shows `selection`: every folder above it. A new connection
+    /// lands in a closed (or until then empty) folder, and a selection made from outside may be nested.
+    static func foldersToOpen(for selection: SidebarItem?, in library: ConnectionLibrary) -> Set<ConnectionFolder.ID> {
+        switch selection {
+        case .connection(let id)?: Set(library.path(of: id).map(\.id))
+        case .folder(let id)?: Set(library.folderPath(of: id).dropLast().map(\.id))
+        default: []
+        }
+    }
+
+    /// What to ask before deleting `item`, since nothing can bring it back. nil when there is nothing to
+    /// lose (an empty folder or group) or the item is gone, and the delete just goes ahead.
+    static func deleteQuestion(for item: SidebarItem, connections: ConnectionLibrary, snippets: SnippetLibrary) -> (title: String, message: String)? {
+        let final = "This can't be undone."
+        switch item {
+        case .connection(let id):
+            guard let connection = connections.connection(id) else { return nil }
+            let users = connections.allConnections.filter { $0.jumpHost == .connection(id) }.count
+            let lost = users == 0 ? "" : "\(count(users, "connection")) use\(users == 1 ? "s" : "") it as a jump host and will lose it. "
+            return ("Delete “\(connection.name)”?", lost + final)
+        case .folder(let id):
+            guard let folder = connections.folder(id), !(folder.connections.isEmpty && folder.folders.isEmpty) else { return nil }
+            return ("Delete “\(folder.name)” and everything in it?",
+                    "\(count(folder.allConnections.count, "connection")) and \(count(folder.allFolders.count - 1, "folder")). \(final)")
+        case .snippet(let id):
+            guard let snippet = snippets.groups.lazy.flatMap(\.snippets).first(where: { $0.id == id }) else { return nil }
+            return ("Delete “\(snippet.name)”?", "Its keyword is \(snippet.keyword). \(final)")
+        case .snippetGroup(let id):
+            guard let group = snippets.groups.first(where: { $0.id == id }), !group.snippets.isEmpty else { return nil }
+            return ("Delete “\(group.name)” and its \(count(group.snippets.count, "snippet"))?", final)
         }
     }
 

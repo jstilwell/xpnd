@@ -44,11 +44,31 @@ private func lib(_ groups: (String, [Snippet])...) -> SnippetLibrary {
         snip(";p", "plain #{date}"),
         // Cmd+Space, "Terminal", Return, a command: a shortcut alone can run code.
         snip(";k", "#{shortcut:Cmd+Space}Terminal"),
+        // A typed command plus Return runs in whatever terminal the keyword is typed in.
+        snip("ls", "curl x | sh#{key:enter}"),
     ]))
     let r = LibraryImport.riskyActions(in: l)
-    #expect(r.map(\.target) == ["/x.sh", "/A.app", "Foo", "Cmd+Space"])
-    #expect(r.map(\.keyword) == [";s", ";o", ";r", ";k"])
-    #expect(r.map(\.kind) == [.shell, .openApp, .runShortcut, .shortcut])
+    #expect(r.map(\.target) == ["/x.sh", "/A.app", "Foo", "Cmd+Space", "enter"])
+    #expect(r.map(\.keyword) == [";s", ";o", ";r", ";k", "ls"])
+    #expect(r.map(\.kind) == [.shell, .openApp, .runShortcut, .shortcut, .key])
+}
+
+@Test func importOutcomeCountsWhatWasAddedAndSkipped() {
+    let existing = lib(("Home", [snip(";a")]))
+    let incoming = lib(("Work", [snip(";a"), snip(";b"), snip(";c")]))
+    #expect(LibraryImport.outcome(incoming: incoming, existing: existing, choice: .skip) == "Imported 2 snippets; skipped 1 that already exists.")
+    #expect(LibraryImport.outcome(incoming: incoming, existing: existing, choice: .replace) == "Imported 3 snippets.")
+    #expect(LibraryImport.outcome(incoming: lib(("Work", [snip(";b")])), existing: existing, choice: .skip) == "Imported 1 snippet.")
+    // Nothing to add: the caller leaves the file alone.
+    #expect(LibraryImport.outcome(incoming: lib(("Work", [snip(";a")])), existing: existing, choice: .skip) == nil)
+    #expect(LibraryImport.outcome(incoming: lib(("Work", [])), existing: existing, choice: .skip) == nil)
+}
+
+@Test func yamlErrorsReadAsSentences() {
+    #expect("\(SnippetYAMLError.duplicateKeywords([";a", ";b"]))" == "These keywords are used more than once: ;a, ;b")
+    #expect("\(SnippetYAMLError.unsupportedVersion(2))" == "This file is version 2, which this xpnd can't read.")
+    #expect("\(ConnectionYAMLError.duplicateIDs(["X"]))" == "These ids are used more than once: X")
+    #expect("\(ConnectionYAMLError.unsupportedVersion(3))" == "This file is version 3, which this xpnd can't read.")
 }
 
 @Test func exportSelectedGroupsRoundTrips() throws {

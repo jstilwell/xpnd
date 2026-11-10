@@ -22,6 +22,7 @@ enum RDPErrorText {
         "ERRCONNECT_CONNECT_TRANSPORT_FAILED": "the connection timed out",
         "ERRCONNECT_CONNECT_FAILED": "the server refused the connection",
         "ERRCONNECT_TLS_CONNECT_FAILED": "the secure connection failed",
+        "ERRCONNECT_SECURITY_NEGO_CONNECT_FAILED": "the server doesn't accept this connection's security (check its Network Level Authentication option)",
         XPRDPErrorCertificateRejected: "the certificate was rejected",
         "ERRCONNECT_CONNECT_CANCELLED": "cancelled",
         "ERRCONNECT_DNS_NAME_NOT_FOUND": "the host name could not be resolved",
@@ -40,6 +41,15 @@ enum RDPErrorText {
 
     static func needsNewPassword(_ name: String?) -> Bool {
         name.map(rejectedLogins.contains) ?? false
+    }
+
+    /// One line for the password sheet a rejected login brings up, so it says why it is asking; nil otherwise.
+    static func rejectionNote(forErrorName name: String?) -> String? {
+        guard let name, needsNewPassword(name) else { return nil }
+        let note = "Windows answered: \(reason(forErrorName: name))."
+        // FreeRDP reports this when the login was right and the account may not open a session on this host.
+        return name == "ERRCONNECT_ACCESS_DENIED"
+            ? note + " The password may be right and the account not allowed to connect to this computer." : note
     }
 
     /// `afterConnect`: the session had been up, so a transport failure means the network went away.

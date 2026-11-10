@@ -7,6 +7,17 @@ enum SnippetYAMLError: Error, Equatable {
     case duplicateKeywords([String])
 }
 
+/// Shown as is: in the load-error banner and after a failed import.
+extension SnippetYAMLError: CustomStringConvertible {
+    var description: String {
+        switch self {
+        case .malformed(let detail): "This isn't a snippets file xpnd can read: \(detail)"
+        case .unsupportedVersion(let version): "This file is version \(version), which this xpnd can't read."
+        case .duplicateKeywords(let keywords): "These keywords are used more than once: \(keywords.joined(separator: ", "))"
+        }
+    }
+}
+
 enum SnippetYAML {
     static let currentVersion = 1
 

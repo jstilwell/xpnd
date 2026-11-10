@@ -10,4 +10,8 @@
     return YES;
 }
 
++ (BOOL)shouldIgnorePasteboardTypes:(NSArray<NSString *> *)types {
+    return [types containsObject:@"org.nspasteboard.TransientType"] && [self shouldOfferPasteboardTypes:types];
+}
+
 @end

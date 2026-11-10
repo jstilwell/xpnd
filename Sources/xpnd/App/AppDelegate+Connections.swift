@@ -13,8 +13,8 @@ extension AppDelegate {
             notify: { hud.flash($0) },
             showCopied: { [weak self] text, id in self?.mainWindow?.sessions.showCopied(text, for: id) },
             tabPasswords: { AppSettings.shared.tabPasswords },
-            offerInTab: { [weak self] label, password, id, automatic in
-                await self?.mainWindow?.sessions.offer(label, password: password, for: id, automatic: automatic) ?? false
+            offerInTab: { [weak self] label, password, tab, automatic in
+                await self?.mainWindow?.sessions.offer(label, password: password, in: tab, automatic: automatic) ?? false
             },
             copySecret: { [weak self] secret in await self?.engine.whenIdle { SecretClipboard.copy(secret) } },
             prompt: PasswordPrompt(),
@@ -75,9 +75,9 @@ extension AppDelegate {
 
     /// The window is shown first, so the new tab's terminal has a window to take focus in (and a
     /// desktop its first size and sheets).
-    private func openTab(_ request: TabRequest, for connection: Connection) {
+    private func openTab(_ request: TabRequest, for connection: Connection) -> TerminalSession.ID? {
         showMainWindow(selecting: nil)
-        mainWindow?.openTab(request, for: connection, color: connections.library.color(for: .connection(connection.id))?.color)
+        return mainWindow?.openTab(request, for: connection, color: connections.library.color(for: .connection(connection.id))?.color)
     }
 
     @objc func openMainWindow() {

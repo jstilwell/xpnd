@@ -30,16 +30,20 @@ enum RDPLogin {
 
 extension RDPSessionConfig {
     /// Everything but the password, in a stable order; `configPath` is xpnd's Application Support/xpnd/freerdp.
-    func freerdpSettings(configPath: String, viewPixelSize: (width: Int, height: Int)) -> [RDPSetting] {
+    /// `scale`: the window's pixels per point. Retina (Windows at 200%, one desktop pixel per screen pixel)
+    /// needs a screen with 2: on one with 1 there are no extra pixels, and 200% would double everything.
+    // shortcut: the scale is fixed at connect, so a window dragged to a screen of another density keeps it until the next connect; send the new scale with the Display Control layout if that bites.
+    func freerdpSettings(configPath: String, viewPixelSize: (width: Int, height: Int), scale: Double = 2) -> [RDPSetting] {
         func s(_ name: String, _ value: String) -> RDPSetting { RDPSetting(name: "FreeRDP_" + name, value: value) }
         func s(_ name: String, _ value: Int) -> RDPSetting { s(name, String(value)) }
         func s(_ name: String, _ value: Bool) -> RDPSetting { s(name, value ? "TRUE" : "FALSE") }
 
+        let hiDPI = retina && scale >= 2
         let width: Int, height: Int, fit: Bool
         switch display {
         case .fit:
             fit = true
-            (width, height) = retina ? viewPixelSize : (viewPixelSize.width / 2, viewPixelSize.height / 2)
+            (width, height) = hiDPI ? viewPixelSize : (Int(Double(viewPixelSize.width) / scale), Int(Double(viewPixelSize.height) / scale))
         case .fixed(let w, let h):
             fit = false
             (width, height) = (w, h)
@@ -54,11 +58,13 @@ extension RDPSessionConfig {
             s("DesktopWidth", width), s("DesktopHeight", height),
             s("DynamicResolutionUpdate", fit), s("SupportDisplayControl", true),
             s("ColorDepth", colorDepth),
-            s("DesktopScaleFactor", retina ? 200 : 100), s("DeviceScaleFactor", retina ? 180 : 100),
+            s("DesktopScaleFactor", hiDPI ? 200 : 100), s("DeviceScaleFactor", hiDPI ? 180 : 100),
             s("RedirectClipboard", clipboard),
             s("AudioPlayback", audio == .local), s("RemoteConsoleAudio", audio == .remote),
             s("RedirectPrinters", printers),
-            s("NlaSecurity", nla),
+            // FreeRDP's defaults also offer TLS-only and legacy RDP security, so a server (or whoever answers for
+            // it) could skip NLA and still be sent the password. Legacy has no certificate check: never offered.
+            s("NlaSecurity", nla), s("TlsSecurity", !nla), s("RdpSecurity", false),
             s("TcpConnectTimeout", timeoutSeconds * 1000),
             s("AutoReconnectionEnabled", autoReconnect), s("AutoReconnectMaxRetries", reconnectTries),
             s("ConnectionType", connectionType),

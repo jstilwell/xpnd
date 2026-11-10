@@ -1,5 +1,6 @@
 #import "XPRDPView.h"  // FreeRDP's headers first; see XPRDPView.h
 
+#import "XPRDPClipboardFilter.h"
 #import "XPRDPCursor.h"
 #import "XPRDPFitRect.h"
 #import "XPRDPResizeCoalescer.h"
@@ -245,9 +246,10 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 - (BOOL)desktopPointForViewPoint:(NSPoint)p x:(UINT16 *)x y:(UINT16 *)y {
     if (!self.is_connected || !context)
         return NO;
-    const UINT32 dw = freerdp_settings_get_uint32(context->settings, FreeRDP_DesktopWidth);
-    const UINT32 dh = freerdp_settings_get_uint32(context->settings, FreeRDP_DesktopHeight);
-    const NSRect b = [self desktopRectForSize:NSMakeSize(dw, dh)];
+    // Not the settings: a redirect frees them on the client thread while main reads (see `desktopPixelSize`).
+    const NSSize desktop = self.desktopPixelSize;
+    const UINT32 dw = (UINT32)desktop.width, dh = (UINT32)desktop.height;
+    const NSRect b = [self desktopRectForSize:desktop];
     if (b.size.width < 1 || b.size.height < 1 || dw == 0 || dh == 0)
         return NO;
     const double fx = (p.x - b.origin.x) / b.size.width * dw, fy = (1.0 - (p.y - b.origin.y) / b.size.height) * dh;
@@ -303,6 +305,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 - (void)otherMouseUp:(NSEvent *)event { [self sendButton:event.buttonNumber event:event down:NO]; }
 
 - (void)scrollWheel:(NSEvent *)event {
+    [self noteCommandUsed];  // ⌘ and a scroll is a gesture, not a tap of the Windows key
     // MRDPView's units and steps, sent at the pointer rather than at (0, height).
     const CGFloat dx = event.deltaX, dy = event.deltaY;
     UINT16 flags, units;
@@ -370,6 +373,10 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
             }
             [self setCommandState:XPCommandUp];
         }
+        // ⌘ with another modifier is a shortcut in the making, not a tap: macOS keeps ⌘⇧4 and other apps' global
+        // hotkeys to itself, so no key ever arrives to say so, and the release would open Start.
+        if (down && (event.modifierFlags & (NSEventModifierFlagShift | NSEventModifierFlagControl | NSEventModifierFlagOption)))
+            [self noteCommandUsed];
         // Hide ⌘ from MRDPView, which would send the Windows key the moment it goes down.
         kbdModFlags = (kbdModFlags & ~(DWORD)XPCommandFlag) | (DWORD)(event.modifierFlags & XPCommandFlag);
     }
@@ -445,6 +452,8 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     NSMutableArray<NSString *> *types = [NSMutableArray array];
     for (NSPasteboardItem *item in items)
         [types addObjectsFromArray:item.types];
+    if ([XPRDPClipboardFilter shouldIgnorePasteboardTypes:types])
+        return;  // a snippet's paste, gone within a moment: a later tick reads what is put back
     const XPRDPClipboardFormats formats = [_clipboard formatsToAnnounceNowForPasteboardTypes:types];
     NSString *text = (formats & XPRDPClipboardFormatsText) ? [items.firstObject stringForType:NSPasteboardTypeString] : nil;
     NSData *files = (formats & XPRDPClipboardFormatsFiles) ? [_clipboard localFileURIList] : nil;

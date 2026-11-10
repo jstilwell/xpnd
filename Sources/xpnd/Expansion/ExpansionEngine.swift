@@ -31,7 +31,8 @@ import Foundation
     /// so they're kept until either library changes.
     private var namespace = KeywordNamespace(snippets: .empty, connections: .empty)
     private var activations: [String: ActivationTarget] = [:]
-    private var duplicates: Set<String> = []
+    /// The snippets a typed keyword can match: enabled, and not also a connection's string.
+    private var candidates: [Snippet] = []
 
     init(
         store: SnippetStore, connections: ConnectionStore, player: Player,
@@ -60,9 +61,7 @@ import Foundation
         buffer.apply(input)
         refreshNamespace()
         let text = buffer.text
-        let snippet = snippetsOK
-            ? Matcher.match(text, in: store.library.activeSnippets.filter { !duplicates.contains($0.keyword) })
-            : nil
+        let snippet = snippetsOK ? Matcher.match(text, in: candidates) : nil
         if connectionsOK, let target = activations[text], text.count > snippet?.keyword.count ?? 0 {
             start { await self.activate(target, deletingCharacters: text.count, in: $0) }
         } else if let snippet {
@@ -74,7 +73,8 @@ import Foundation
         guard namespace.snippets != store.library || namespace.connections != connections.library else { return }
         namespace = KeywordNamespace(snippets: store.library, connections: connections.library)
         activations = namespace.activations
-        duplicates = namespace.crossFileDuplicates
+        let duplicates = namespace.crossFileDuplicates
+        candidates = store.library.activeSnippets.filter { !duplicates.contains($0.keyword) }
     }
 
     /// `work` gets the app the string was typed in.

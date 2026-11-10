@@ -181,6 +181,15 @@ struct XPRDPSessionTests {
         #expect(XPRDPClipboardFilter.shouldOfferPasteboardTypes([]))
     }
 
+    @Test func clipboardFilterSetsAnExpansionAside() {
+        // A snippet's paste sits on the pasteboard for a moment, marked transient: it is neither offered nor
+        // a reason to withdraw what is on offer. A password is transient too, and that one is withdrawn.
+        let transient = "org.nspasteboard.TransientType"
+        #expect(XPRDPClipboardFilter.shouldIgnorePasteboardTypes(["public.utf8-plain-text", transient]))
+        #expect(!XPRDPClipboardFilter.shouldIgnorePasteboardTypes(["public.utf8-plain-text"]))
+        #expect(!XPRDPClipboardFilter.shouldIgnorePasteboardTypes(["public.utf8-plain-text", transient, "org.nspasteboard.ConcealedType"]))
+    }
+
     @MainActor @Test func clipboardFilterKnowsSecretClipboardsTag() {
         // SecretClipboard tags each copy "<prefix>.<UUID>"; the filter must match that shape.
         #expect(!XPRDPClipboardFilter.shouldOfferPasteboardTypes(["public.utf8-plain-text", "\(SecretClipboard.secretTypePrefix).\(UUID().uuidString)"]))
@@ -205,14 +214,15 @@ struct XPRDPSessionTests {
 
     @MainActor @Test func resizeCoalescerFiresOnceWithLastSize() async throws {
         var sizes: [CGSize] = []
-        let c = XPRDPResizeCoalescer(idleInterval: 0.1) { sizes.append($0) }
+        // An idle interval well past any moment another suite holds the main thread between two notes.
+        let c = XPRDPResizeCoalescer(idleInterval: 0.5) { sizes.append($0) }
         c.noteSize(CGSize(width: 100, height: 100))
         try await Task.sleep(for: .milliseconds(20))
         c.noteSize(CGSize(width: 200, height: 150))
         try await Task.sleep(for: .milliseconds(20))
         c.noteSize(CGSize(width: 300, height: 250))
         #expect(sizes.isEmpty)
-        try await Task.sleep(for: .milliseconds(400))
+        try await Task.sleep(for: .milliseconds(1200))
         #expect(sizes == [CGSize(width: 300, height: 250)])
     }
 

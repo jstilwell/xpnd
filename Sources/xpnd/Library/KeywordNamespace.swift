@@ -12,10 +12,17 @@ struct KeywordNamespace {
 
     let snippets: SnippetLibrary
     let connections: ConnectionLibrary
+    /// The trees flattened once: the sidebar asks about every folder on each pass, and each answer walks them all.
+    private let allSnippets: [Snippet]
+    private let allConnections: [Connection]
+    private let allFolders: [ConnectionFolder]
 
     init(snippets: SnippetLibrary, connections: ConnectionLibrary) {
         self.snippets = snippets
         self.connections = connections
+        allSnippets = snippets.groups.flatMap(\.snippets)
+        allConnections = connections.allConnections
+        allFolders = connections.allFolders
     }
 
     /// Why `string` can't be used by `owner` (nil for a new item), or nil if it can.
@@ -24,10 +31,10 @@ struct KeywordNamespace {
         if case .snippet(let id) = owner { snippetID = id }
         // The format rules and the snippet owner's message stay exactly as `keywordProblem` has them.
         if let problem = snippets.keywordProblem(string, for: snippetID) { return problem }
-        if let other = connections.allConnections.first(where: { $0.activation == string && owner != .connection($0.id) }) {
+        if let other = allConnections.first(where: { $0.activation == string && owner != .connection($0.id) }) {
             return "“\(string)” is already used by connection “\(other.name)”"
         }
-        if let other = connections.allFolders.first(where: {
+        if let other = allFolders.first(where: {
             owner != .folder($0.id) && effectiveActivation(ofFolder: $0.id).string == string
         }) {
             return "“\(string)” is already used by folder “\(other.name)”"
@@ -39,27 +46,27 @@ struct KeywordNamespace {
     /// snippet keywords, connection strings and custom folder strings (and any of those it's a prefix
     /// of), and earlier folders in tree order.
     func effectiveActivation(ofFolder id: ConnectionFolder.ID) -> (string: String?, reason: String?) {
-        guard let folder = connections.folder(id) else { return (nil, nil) }
+        guard let folder = allFolders.first(where: { $0.id == id }) else { return (nil, nil) }
         if let custom = folder.activation { return (custom.isEmpty ? nil : custom, nil) }
         let derived = ConnectionFolder.derivedActivation(for: folder.name)
         if derived.isEmpty { return (nil, nil) }
         let taken = "“\(derived)” is already used by"
-        if let snippet = snippets.snippet(keyword: derived) { return (nil, "\(taken) “\(snippet.name)”") }
+        if let snippet = allSnippets.first(where: { $0.keyword == derived }) { return (nil, "\(taken) “\(snippet.name)”") }
         // Typing the derived string would fire it before a longer snippet keyword could finish.
-        if let longer = snippets.groups.lazy.flatMap(\.snippets).first(where: { $0.keyword != derived && $0.keyword.hasPrefix(derived) }) {
+        if let longer = allSnippets.first(where: { $0.keyword != derived && $0.keyword.hasPrefix(derived) }) {
             return (nil, "“\(derived)” would hide the snippet “\(longer.keyword)”")
         }
         func longer(_ string: String?) -> String? { string.flatMap { $0 != derived && $0.hasPrefix(derived) ? $0 : nil } }
-        for other in connections.allConnections {
+        for other in allConnections {
             if let string = longer(other.activation) { return (nil, "“\(derived)” would hide “\(string)”, used by connection “\(other.name)”") }
         }
-        for other in connections.allFolders {
+        for other in allFolders {
             if let string = longer(other.activation) { return (nil, "“\(derived)” would hide “\(string)”, used by folder “\(other.name)”") }
         }
-        if let other = connections.allConnections.first(where: { $0.activation == derived }) {
+        if let other = allConnections.first(where: { $0.activation == derived }) {
             return (nil, "\(taken) connection “\(other.name)”")
         }
-        let folders = connections.allFolders
+        let folders = allFolders
         if let other = folders.first(where: { $0.activation == derived })
             ?? folders.first(where: { $0.activation == nil && ConnectionFolder.derivedActivation(for: $0.name) == derived }),
            other.id != id {
@@ -81,12 +88,12 @@ struct KeywordNamespace {
         Set(entries.map(\.string)).intersection(snippetKeywords)
     }
 
-    private var snippetKeywords: Set<String> { Set(snippets.groups.flatMap(\.snippets).map(\.keyword)) }
+    private var snippetKeywords: Set<String> { Set(allSnippets.map(\.keyword)) }
 
     private var entries: [(string: String, target: ActivationTarget)] {
-        connections.allConnections.compactMap { connection in
+        allConnections.compactMap { connection in
             connection.activation.flatMap { $0.isEmpty ? nil : ($0, .connection(connection.id)) }
-        } + connections.allFolders.compactMap { folder in
+        } + allFolders.compactMap { folder in
             effectiveActivation(ofFolder: folder.id).string.map { ($0, .folder(folder.id)) }
         }
     }
