@@ -73,7 +73,7 @@ struct Shortcut: Codable, Hashable, Sendable {
 }
 
 /// A shortcut that works whichever app is in front. A Carbon hot key: it needs no permission beyond
-/// what the app has, and the keys go to HoverEnhance alone rather than to the app in front too.
+/// what the app has, and the keys go to xpnd alone rather than to the app in front too.
 @MainActor
 final class GlobalShortcut {
     var action: (() -> Void)?

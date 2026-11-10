@@ -120,11 +120,6 @@ enum ConnectionImport {
         return result
     }
 
-    /// Hosts of the incoming connections the merge with `choice` would add, sorted and unique.
-    static func hostsAdded(incoming: ConnectionLibrary, existing: ConnectionLibrary, choice: ConflictChoice) -> [String] {
-        Set(preview(incoming: incoming, existing: existing, choice: choice).added.map(\.host)).sorted()
-    }
-
     /// What the import confirmation shows: what's added, and what happens to existing connections.
     struct Preview: Equatable {
         let added: [PreviewRow]

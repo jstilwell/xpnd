@@ -6,13 +6,8 @@ enum EditorFocus: Hashable {
 }
 
 extension StoreError {
-    var connectionsMessage: String {
-        switch self {
-        case .fileUnreadable: "Couldn't save connections.yaml."
-        case .duplicateKeyword(let string): "“\(string)” is already used by another connection or folder."
-        case .encodingFailed: "Couldn't write the connections as YAML, so nothing was saved."
-        }
-    }
+    /// Why a save to connections.yaml failed.
+    var connectionsMessage: String { message(file: "connections", owner: "connection or folder") }
 }
 
 /// The editors' rules that don't need a view.

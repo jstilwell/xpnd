@@ -1,11 +1,15 @@
 import SwiftUI
 
 extension StoreError {
-    var message: String {
+    /// Why a save to snippets.yaml failed.
+    var message: String { message(file: "snippets", owner: "snippet") }
+
+    /// `file` without ".yaml"; `owner` is what else could hold a duplicate string.
+    func message(file: String, owner: String) -> String {
         switch self {
-        case .fileUnreadable: "Couldn't save snippets.yaml."
-        case .duplicateKeyword(let keyword): "“\(keyword)” is already used by another snippet."
-        case .encodingFailed: "Couldn't write the snippets as YAML, so nothing was saved."
+        case .fileUnreadable: "Couldn't save \(file).yaml."
+        case .duplicateKeyword(let keyword): "“\(keyword)” is already used by another \(owner)."
+        case .encodingFailed: "Couldn't write the \(file) as YAML, so nothing was saved."
         }
     }
 }
@@ -82,9 +86,7 @@ final class SnippetEditing {
 
     /// The new group's id, or nil if it wasn't saved.
     func addGroup() -> SnippetGroup.ID? {
-        let names = Set(store.library.groups.map(\.name))
-        let name = (1...).lazy.map { $0 == 1 ? "New Group" : "New Group \($0)" }.first { !names.contains($0) }!
-        let new = SnippetGroup(name: name, snippets: [])
+        let new = SnippetGroup(name: EditorRules.uniqueName("New Group", taken: Set(store.library.groups.map(\.name))), snippets: [])
         return save({ $0.groups.append(new) }) ? new.id : nil
     }
 
