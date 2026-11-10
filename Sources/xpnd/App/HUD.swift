@@ -59,11 +59,20 @@ final class HUD {
         panel.orderFrontRegardless()
     }
 
-    /// Shows `text`, then hides it after `seconds` unless something newer was shown meanwhile.
-    func flash(_ text: String, seconds: Double = 3) {
+    /// Seconds a message stays up: 3, or longer for one that takes longer to read (about 15 characters a
+    /// second), up to 12.
+    nonisolated static func duration(for text: String) -> Double {
+        min(max(3, Double(text.count) / 15), 12)
+    }
+
+    /// Shows `text`, then hides it after `duration(for:)` unless something newer was shown meanwhile.
+    func flash(_ text: String) {
         show(text)
+        // The panel takes no focus and no mouse, so VoiceOver would never come across it.
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
         hideTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(seconds))
+            try? await Task.sleep(for: .seconds(Self.duration(for: text)))
             guard !Task.isCancelled else { return }
             self?.hide()
         }
