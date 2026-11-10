@@ -59,6 +59,8 @@ extension XPRDPSession: RDPSessionControlling {}
     /// A rejected login reconnected to ask, and no sheet has been asked for since. Another rejection then
     /// means FreeRDP sent stored credentials without asking, so the tab ends instead of looping.
     private var awaitingPrompt = false
+    /// The rejection whose password sheet was cancelled: the tab ends with it, not with "cancelled".
+    private var cancelledAfter: String?
     /// Internal for tests, which await it.
     private(set) var retry: Task<Void, Never>?
     private var sheet: NSWindow?
@@ -150,16 +152,25 @@ extension XPRDPSession: RDPSessionControlling {}
     func session(_ s: XPRDPSession, requestPasswordForUser user: String, domain: String, host: String,
                  completion: @escaping (String, String, String?) -> Void) {
         awaitingPrompt = false
-        present(RDPPasswordPrompt(user: user, domain: domain, host: host) { [weak self] typed in
+        let rejection = RDPErrorText.needsNewPassword(lastError) ? lastError : nil
+        let cancel = { [weak self] in
+            self?.cancelledAfter = rejection
+            completion("", "", nil)
+        }
+        present(RDPPasswordPrompt(user: user, domain: domain, host: host, note: RDPErrorText.rejectionNote(forErrorName: rejection)) { [weak self] typed in
             self?.dismissSheet()
-            guard let typed else { return completion("", "", nil) }
+            guard let typed else { return cancel() }
             let login = RDPLogin.split(username: typed.username, domain: typed.domain)
             completion(login.username, login.domain ?? "", typed.password)
-        }, orElse: { completion("", "", nil) })
+        }, orElse: cancel)
     }
 
     func session(_ s: XPRDPSession, didDisconnectWithErrorName errorName: String?) {
         isConnected = false
+        if let rejection = cancelledAfter {
+            cancelledAfter = nil
+            if errorName == "ERRCONNECT_CONNECT_CANCELLED" { return ended(rejection) }
+        }
         // A rejected login asks again at once (the sheet); the password that failed is never resent.
         if RDPErrorText.needsNewPassword(errorName), !awaitingPrompt {
             lastError = errorName

@@ -43,6 +43,15 @@ enum RDPErrorText {
         name.map(rejectedLogins.contains) ?? false
     }
 
+    /// One line for the password sheet a rejected login brings up, so it says why it is asking; nil otherwise.
+    static func rejectionNote(forErrorName name: String?) -> String? {
+        guard let name, needsNewPassword(name) else { return nil }
+        let note = "Windows answered: \(reason(forErrorName: name))."
+        // FreeRDP reports this when the login was right and the account may not open a session on this host.
+        return name == "ERRCONNECT_ACCESS_DENIED"
+            ? note + " The password may be right and the account not allowed to connect to this computer." : note
+    }
+
     /// `afterConnect`: the session had been up, so a transport failure means the network went away.
     static func reason(forErrorName name: String?, afterConnect: Bool = false) -> String {
         guard let name else { return "the server closed the session" }

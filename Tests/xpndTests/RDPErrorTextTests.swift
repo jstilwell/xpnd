@@ -24,6 +24,14 @@ struct RDPErrorTextTests {
         }
     }
 
+    @Test func aRejectedLoginHasANoteForThePasswordSheet() {
+        #expect(RDPErrorText.rejectionNote(forErrorName: "ERRCONNECT_LOGON_FAILURE") == "Windows answered: logon failed.")
+        #expect(RDPErrorText.rejectionNote(forErrorName: "ERRCONNECT_ACCESS_DENIED")
+            == "Windows answered: access denied. The password may be right and the account not allowed to connect to this computer.")
+        #expect(RDPErrorText.rejectionNote(forErrorName: "ERRCONNECT_CONNECT_CANCELLED") == nil)
+        #expect(RDPErrorText.rejectionNote(forErrorName: nil) == nil)
+    }
+
     @Test func aTransportFailureAfterConnectingIsALostConnection() {
         for name in ["ERRCONNECT_CONNECT_TRANSPORT_FAILED", "ERRCONNECT_CONNECT_FAILED", "ERRCONNECT_DNS_NAME_NOT_FOUND"] {
             #expect(RDPErrorText.reason(forErrorName: name, afterConnect: true) == "the network connection was lost")
