@@ -59,8 +59,8 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
   `ActionRunner` opens apps and runs Shortcuts (`ShortcutsList` lists them). `HUD` flashes failures.
 - `SnippetStore` owns the library, loads and atomically saves `snippets.yaml` through `SnippetYAML`,
   watches the file for edits, and keeps an unreadable file untouched (`loadError`). `KeywordValidation`
-  keeps keywords unique. `LibraryImport` merges groups, applies skip/replace (`ConflictChoice`), and
-  lists `RiskyAction`s for confirmation.
+  keeps keywords unique. `LibraryImport` merges groups, applies skip/replace (`ConflictChoice`), lists
+  `RiskyAction`s for the import preview (which every import shows), and words the outcome.
 - `PickerPanel` is the search panel opened by the `GlobalShortcut` hotkey (Carbon); `PickerFilter`
   filters it. `AppSettings` keeps preferences in UserDefaults.
 - Settings (`SettingsWindowController`): `GeneralSettingsView`, `TerminalSettingsView`,
@@ -103,10 +103,13 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
   (input mapping, ⌘ as Ctrl or Windows, clipboard polling, drawing); `XPRDPClipboard` is the clipboard
   channel in place of the Mac client's (`XPPreConnect` unsubscribes MRDPView's channel handlers and passes
   them every other channel): text both ways, and Finder files to Windows through FreeRDP's file context
-  (`client_cliprdr_file`); `XPRDPClipboardFilter` keeps concealed and secret items from the remote;
+  (`client_cliprdr_file`); `XPRDPClipboardFilter` keeps concealed and secret items from the remote and sets a snippet's paste (a transient
+  pasteboard) aside, and `XPRDPClipboard` doesn't announce the same offer twice, so the restore after a paste leaves
+  the Windows clipboard alone;
   `XPRDPResizeCoalescer` debounces Display Control resizes.
   In `Sources/xpnd/RemoteDesktop/`: `RDPOptions`/`RDPSettings` (per connection and defaults) resolve to an
-  `RDPSessionConfig`, `RDPSettingMapping` turns that into FreeRDP setting names, `RDPHost` is the tab's
+  `RDPSessionConfig`, `RDPSettingMapping` turns that into FreeRDP setting names (NLA alone when it is on, TLS alone
+  when it is off, never legacy RDP security; 200% only on a 2× screen), `RDPHost` is the tab's
   `TerminalHost` (`TerminalSession.kind` is `.remoteDesktop`), `RDPErrorText` words `ERRCONNECT_*`/`ERRINFO_*`,
   `RDPReconnectPolicy` decides auto-reconnect, and `RDPPrompts` and `RDPOptionLabels` serve the sheets
   and Settings → Remote Desktop. `ConnectionService` fetches the password before the `.rdpTab` plan opens
