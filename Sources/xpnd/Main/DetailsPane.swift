@@ -8,6 +8,8 @@ struct DetailsPane: View {
     let sessions: TerminalSessions
     @Binding var selection: SidebarItem?
     @Binding var focus: EditorFocus?
+    /// Deletes an item, asking first when there is something to lose.
+    let delete: (SidebarItem) -> Void
 
     var body: some View {
         TabView {
@@ -25,15 +27,15 @@ struct DetailsPane: View {
             } else { nothingSelected }
         case .connection(let id):
             if let connection = connections.library.connection(id) {
-                connectionChrome { ConnectionEditorView(editing: connections, connection: connection, live: sessions.liveConnectionIDs.contains(id), hasSession: sessions.session(for: id) != nil, focus: $focus).id(id) }
+                connectionChrome { ConnectionEditorView(editing: connections, connection: connection, live: sessions.liveConnectionIDs.contains(id), hasSession: sessions.session(for: id) != nil, focus: $focus) { delete(.connection(id)) }.id(id) }
             } else { nothingSelected }
         case .snippetGroup(let id):
             if let group = editing.group(id) {
-                snippetChrome { SnippetGroupDetails(editing: editing, group: group, connections: connections.library, selection: $selection) }
+                snippetChrome { SnippetGroupDetails(editing: editing, group: group, connections: connections.library, selection: $selection) { delete(.snippetGroup(id)) } }
             } else { nothingSelected }
         case .snippet(let id):
             if let snippet = editing.snippet(id) {
-                snippetChrome { SnippetDetails(editing: editing, snippet: snippet, connections: connections.library, selection: $selection) }
+                snippetChrome { SnippetDetails(editing: editing, snippet: snippet, connections: connections.library) { delete(.snippet(id)) } }
             } else { nothingSelected }
         case nil:
             nothingSelected

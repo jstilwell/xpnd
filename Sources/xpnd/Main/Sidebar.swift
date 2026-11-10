@@ -41,8 +41,8 @@ struct Sidebar: View {
     @Binding var selection: SidebarItem?
     @Binding var focus: EditorFocus?
     let openSettings: () -> Void
-    /// A folder with something in it, waiting for Delete to be confirmed.
-    @State private var confirmingDelete: ConnectionFolder?
+    /// Deletes an item, asking first when there is something to lose.
+    let delete: (SidebarItem) -> Void
     @State private var search = ""
     /// Groups opened by hand; every group shows open while searching.
     @State private var expandedGroups: Set<SnippetGroup.ID> = []
@@ -68,14 +68,19 @@ struct Sidebar: View {
             default: break
             }
         }
-        .confirmationDialog(
-            "Delete “\(confirmingDelete?.name ?? "")” and everything in it?",
-            isPresented: Binding(get: { confirmingDelete != nil }, set: { if !$0 { confirmingDelete = nil } }),
-            presenting: confirmingDelete
-        ) { folder in
-            Button("Delete", role: .destructive) { delete(.folder(folder.id)) }
-        } message: { folder in
-            Text("\(EditorRules.count(folder.allConnections.count, "connection")) and \(EditorRules.count(folder.allFolders.count - 1, "folder"))")
+        // ⌫ with the list focused, as in Finder's sidebar and Mail.
+        .onDeleteCommand {
+            guard let selection else { return }
+            let readOnly = switch selection {
+            case .folder, .connection: connections.readOnly
+            case .snippetGroup, .snippet: editing.readOnly
+            }
+            if !readOnly { delete(selection) }
+        }
+        // Whatever is selected is shown: a new connection lands in a closed (or until now empty) folder.
+        .onChange(of: selection) { _, item in
+            expandedFolders.formUnion(EditorRules.foldersToOpen(for: item, in: connections.library))
+            if case .snippet(let id)? = item, let group = editing.group(containing: id) { expandedGroups.insert(group.id) }
         }
         .safeAreaInset(edge: .bottom) {
             HStack {
@@ -255,10 +260,7 @@ struct Sidebar: View {
                 Button("Set Activation…") { select(.folder(id), focus: .activation) }
                 moveMenu(.folder(id))
                 Divider()
-                Button("Delete", role: .destructive) {
-                    guard let folder = connections.library.folder(id) else { return }
-                    if folder.connections.isEmpty && folder.folders.isEmpty { delete(.folder(id)) } else { confirmingDelete = folder }
-                }
+                Button("Delete…", role: .destructive) { delete(.folder(id)) }
             }
             .disabled(readOnly)
         case .connection(let id)?:
@@ -275,14 +277,21 @@ struct Sidebar: View {
                 Button("Duplicate") { select(connections.duplicate(id).map(SidebarItem.connection), focus: .name, else: .connection(id)) }
                 moveMenu(.connection(id))
                 Divider()
-                Button("Delete", role: .destructive) { delete(.connection(id)) }
+                Button("Delete…", role: .destructive) { delete(.connection(id)) }
             }
             .disabled(readOnly)
         case .snippetGroup(let id)?:
-            Button("New Snippet") {
-                if let group = editing.store.library.groups.first(where: { $0.id == id }) { addSnippet(to: group) }
+            Group {
+                Button("New Snippet") {
+                    if let group = editing.store.library.groups.first(where: { $0.id == id }) { addSnippet(to: group) }
+                }
+                Divider()
+                Button("Delete…", role: .destructive) { delete(.snippetGroup(id)) }
             }
             .disabled(editing.readOnly)
+        case .snippet(let id)?:
+            Button("Delete…", role: .destructive) { delete(.snippet(id)) }
+                .disabled(editing.readOnly)
         default:
             if items.isEmpty {
                 Button("New Folder") { select(connections.addFolder(in: nil).map(SidebarItem.folder), focus: .name) }
@@ -326,14 +335,6 @@ struct Sidebar: View {
     /// On failure the item is selected, so its Details shows why.
     private func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?) {
         if !connections.move(item, to: destination) { selection = item }
-    }
-
-    private func delete(_ item: SidebarItem) {
-        if connections.delete(item) {
-            if selection == item { selection = nil }
-        } else {
-            selection = item
-        }
     }
 
 }

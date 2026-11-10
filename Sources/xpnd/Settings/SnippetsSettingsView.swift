@@ -119,7 +119,8 @@ struct SnippetGroupDetails: View {
     let group: SnippetGroup
     let connections: ConnectionLibrary
     @Binding var selection: SidebarItem?
-    @State private var confirmingDelete = false
+    /// Asks (when the group holds snippets), then deletes it.
+    let delete: () -> Void
 
     var body: some View {
         Form {
@@ -131,20 +132,11 @@ struct SnippetGroupDetails: View {
                     if let id = editing.addSnippet(to: group, connections: connections) { selection = .snippet(id) }
                 }
                 Spacer()
-                Button("Delete Group…", systemImage: "minus", role: .destructive) {
-                    if group.snippets.isEmpty { deleteGroup() } else { confirmingDelete = true }
-                }
+                Button("Delete Group…", systemImage: "minus", role: .destructive, action: delete)
             }
         }
         .formStyle(.grouped)
         .disabled(editing.readOnly)
-        .confirmationDialog("Delete “\(group.name)” and its \(group.snippets.count) snippets?", isPresented: $confirmingDelete) {
-            Button("Delete", role: .destructive, action: deleteGroup)
-        }
-    }
-
-    private func deleteGroup() {
-        if editing.deleteGroup(group) { selection = nil }
     }
 }
 
@@ -153,7 +145,8 @@ struct SnippetDetails: View {
     let editing: SnippetEditing
     let snippet: Snippet
     let connections: ConnectionLibrary
-    @Binding var selection: SidebarItem?
+    /// Asks, then deletes this snippet.
+    let delete: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -163,11 +156,8 @@ struct SnippetDetails: View {
             }
             HStack {
                 Spacer()
-                Button("Delete Snippet", systemImage: "minus", role: .destructive) {
-                    let group = editing.group(containing: snippet.id)
-                    if editing.deleteSnippet(snippet) { selection = group.map { .snippetGroup($0.id) } }
-                }
-                .disabled(editing.readOnly)
+                Button("Delete Snippet…", systemImage: "minus", role: .destructive, action: delete)
+                    .disabled(editing.readOnly)
             }
             .padding(8)
         }
