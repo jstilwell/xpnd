@@ -7,6 +7,17 @@ enum ConnectionYAMLError: Error, Equatable {
     case duplicateIDs([String])
 }
 
+/// Shown as is: in the load-error banner and after a failed import.
+extension ConnectionYAMLError: CustomStringConvertible {
+    var description: String {
+        switch self {
+        case .malformed(let detail): "This isn't a connections file xpnd can read: \(detail)"
+        case .unsupportedVersion(let version): "This file is version \(version), which this xpnd can't read."
+        case .duplicateIDs(let ids): "These ids are used more than once: \(ids.joined(separator: ", "))"
+        }
+    }
+}
+
 enum ConnectionYAML {
     static let currentVersion = 1
 

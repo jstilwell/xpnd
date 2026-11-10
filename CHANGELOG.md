@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.1 - Unreleased
+
+### Changed
+- **Importing snippets always shows what will be added** before anything is imported, and lists snippets that press keys along with those that run scripts, open apps, run Shortcuts or send shortcuts.
+- A Windows desktop with **Network Level Authentication** on now connects with it or not at all, and the old "RDP security" mode is never used. For a server without Network Level Authentication, turn the option off for that connection.
+
+### Fixed
+- A Windows password could be sent to a server that skipped Network Level Authentication, without a certificate question.
+- Expanding a snippet on the Mac no longer offers it to connected Windows desktops, or replaces what you copied in Windows.
+- Importing says how many snippets or connections it added and skipped, and says so when a file holds none, instead of "Imported." every time. File errors read as sentences.
+
 ## 0.3.0 - 11-07-2026
 
 ### Added
