@@ -29,7 +29,7 @@
 - **Keywords**: type one and it's replaced. Keywords are case-sensitive. A strict snippet (the default) expands when the whole word matches; a loose one when what you typed ends with it. Space, Return, Tab, arrows, a click, or switching apps start the word over. If you switch apps while a snippet's form is open or its script runs, the expansion is cancelled (and the script stopped) rather than typed into the wrong app. Keywords can't be seen in password fields or in a terminal with Secure Keyboard Entry on.
 - **Picker**: press Control-Option-Command-Space (changeable in Settings) to search snippets by keyword, name, or text, and press Return to insert one.
 - **Groups**: snippets sit in groups you can turn on or off together.
-- **Editing**: snippets are edited in the xpnd window. Its sidebar search filters snippets by keyword, name, or text, and connections by name, host, activation string, or folder.
+- **Editing**: snippets are edited in the xpnd window. Its sidebar search filters snippets by keyword, name, or text, and connections by name, host, activation string, or folder. To delete a snippet, group, connection or folder, select it and press Delete, right-click it, or use the button in its Details; xpnd asks first, since a delete can't be undone. A snippet's text is saved when you pause typing.
 - **Import and export**: share snippets as YAML. Importing first lists every snippet the file adds, and calls out any that runs a script, opens an app, runs a Shortcut, sends a keyboard shortcut or presses a key; nothing is added until you confirm.
 
 ## Variables

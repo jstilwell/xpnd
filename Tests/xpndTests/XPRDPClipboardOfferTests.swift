@@ -128,11 +128,12 @@ import xpndRDP
 
     @Test func noResponseTimesOutOnce() async {
         await inSync { c in
-            c.offerTimeout = 0.02
+            // Long enough that another suite holding the main thread for a moment can't use it up before the first check.
+            c.offerTimeout = 0.3
             let answers = offer(c)
             await settled()
             #expect(answers.all.isEmpty)
-            try? await Task.sleep(for: .milliseconds(100))
+            try? await Task.sleep(for: .milliseconds(600))
             #expect(answers.all == [false])
             c.testServerAnswersFormatList(true) // late
             await settled()

@@ -18,6 +18,7 @@ final class TemplateTextController {
 /// caret on macOS 14, and its smart quotes, dashes, and substitutions would corrupt `#{…}` syntax.
 struct TemplateTextView: NSViewRepresentable {
     /// The saved text. Typing doesn't go through a binding: `save` returns false when the store refused it.
+    /// It runs once typing pauses (`Coordinator.saveDelay`), not per key.
     let text: String
     /// Which snippet this is, so switching snippets starts a fresh caret.
     let snippetID: Snippet.ID
@@ -54,19 +55,32 @@ struct TemplateTextView: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         let coordinator = context.coordinator
+        let switched = coordinator.shownID != snippetID
+        // What was typed belongs to the snippet it was typed in, whose `save` the old parent holds. Next turn
+        // of the run loop: a save changes the store, which a view update may not do.
+        if switched, let unsaved = coordinator.takeUnsaved() {
+            Task { @MainActor in _ = unsaved.save(unsaved.text) }
+        }
         coordinator.parent = self
         guard let textView = scroll.documentView as? NSTextView else { return }
         textView.isEditable = isEditable
         controller.textView = textView
-        let switched = coordinator.shownID != snippetID
-        // Typing saves before this runs, so the text matches; only a switch or a change from outside
-        // differs. Never replace text mid-composition (marked text from an input method).
-        guard switched || (textView.string != text && !textView.hasMarkedText()) else { return }
+        // Once typing is saved the text matches; only a switch or a change from outside differs. Never replace
+        // text mid-composition (marked text from an input method), or typing that is still waiting to be saved.
+        guard switched || (textView.string != text && !textView.hasMarkedText() && !coordinator.hasUnsavedText) else { return }
         coordinator.shownID = snippetID
         coordinator.replace(in: textView, with: text, caretAtStart: switched)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    /// The editor is going away (another kind of item selected, the window's content torn down).
+    static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+        if let unsaved = coordinator.takeUnsaved() {
+            Task { @MainActor in _ = unsaved.save(unsaved.text) } // as in `updateNSView`
+        }
+        coordinator.stopWatchingForQuit()
+    }
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -75,10 +89,55 @@ struct TemplateTextView: NSViewRepresentable {
         var saved = ""
         var shownID: Snippet.ID?
 
-        init(parent: TemplateTextView) { self.parent = parent }
+        /// Tuning value: how long typing must pause before it is saved. Every save encodes and rewrites the
+        /// whole library, and a synced folder uploads each one.
+        static let saveDelay: Duration = .milliseconds(300)
+        private var pendingSave: Task<Void, Never>?
+        private weak var pendingView: NSTextView?
+        private var quitObserver: (any NSObjectProtocol)?
+        var hasUnsavedText: Bool { pendingSave != nil }
+
+        init(parent: TemplateTextView) {
+            self.parent = parent
+            super.init()
+            // Quitting inside the pause would lose the last keys.
+            quitObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+            ) { [weak self] _ in MainActor.assumeIsolated { self?.flush() } }
+        }
+
+        func stopWatchingForQuit() {
+            if let quitObserver { NotificationCenter.default.removeObserver(quitObserver) }
+            quitObserver = nil
+        }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+            pendingSave?.cancel()
+            pendingView = textView
+            pendingSave = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: Self.saveDelay)
+                if !Task.isCancelled { self?.flush() }
+            }
+        }
+
+        /// Leaving the field can't wait for the pause.
+        func textDidEndEditing(_ notification: Notification) { flush() }
+
+        /// The typed text and the `save` of the snippet it was typed in, for a caller that saves it itself
+        /// because this view is about to show another snippet; nil when everything is saved.
+        func takeUnsaved() -> (text: String, save: (String) -> Bool)? {
+            guard pendingSave != nil, let textView = pendingView else { return nil }
+            pendingSave?.cancel()
+            pendingSave = nil
+            return (textView.string, parent.save)
+        }
+
+        /// Saves what was typed since the last save, now.
+        func flush() {
+            guard pendingSave != nil, let textView = pendingView else { return }
+            pendingSave?.cancel()
+            pendingSave = nil
             if parent.save(textView.string) {
                 saved = textView.string
             } else {
