@@ -1,5 +1,6 @@
 #import "XPRDPView.h"  // FreeRDP's headers first; see XPRDPView.h
 
+#import "XPRDPClipboardFilter.h"
 #import "XPRDPCursor.h"
 #import "XPRDPFitRect.h"
 #import "XPRDPResizeCoalescer.h"
@@ -445,6 +446,8 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     NSMutableArray<NSString *> *types = [NSMutableArray array];
     for (NSPasteboardItem *item in items)
         [types addObjectsFromArray:item.types];
+    if ([XPRDPClipboardFilter shouldIgnorePasteboardTypes:types])
+        return;  // a snippet's paste, gone within a moment: a later tick reads what is put back
     const XPRDPClipboardFormats formats = [_clipboard formatsToAnnounceNowForPasteboardTypes:types];
     NSString *text = (formats & XPRDPClipboardFormatsText) ? [items.firstObject stringForType:NSPasteboardTypeString] : nil;
     NSData *files = (formats & XPRDPClipboardFormatsFiles) ? [_clipboard localFileURIList] : nil;

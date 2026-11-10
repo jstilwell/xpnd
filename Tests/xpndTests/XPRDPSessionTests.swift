@@ -181,6 +181,15 @@ struct XPRDPSessionTests {
         #expect(XPRDPClipboardFilter.shouldOfferPasteboardTypes([]))
     }
 
+    @Test func clipboardFilterSetsAnExpansionAside() {
+        // A snippet's paste sits on the pasteboard for a moment, marked transient: it is neither offered nor
+        // a reason to withdraw what is on offer. A password is transient too, and that one is withdrawn.
+        let transient = "org.nspasteboard.TransientType"
+        #expect(XPRDPClipboardFilter.shouldIgnorePasteboardTypes(["public.utf8-plain-text", transient]))
+        #expect(!XPRDPClipboardFilter.shouldIgnorePasteboardTypes(["public.utf8-plain-text"]))
+        #expect(!XPRDPClipboardFilter.shouldIgnorePasteboardTypes(["public.utf8-plain-text", transient, "org.nspasteboard.ConcealedType"]))
+    }
+
     @MainActor @Test func clipboardFilterKnowsSecretClipboardsTag() {
         // SecretClipboard tags each copy "<prefix>.<UUID>"; the filter must match that shape.
         #expect(!XPRDPClipboardFilter.shouldOfferPasteboardTypes(["public.utf8-plain-text", "\(SecretClipboard.secretTypePrefix).\(UUID().uuidString)"]))

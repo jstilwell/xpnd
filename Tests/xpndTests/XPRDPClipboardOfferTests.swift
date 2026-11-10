@@ -32,6 +32,41 @@ import xpndRDP
         return answers
     }
 
+    /// An expansion's paste puts the old contents back under a new change count, so the poll offers them again.
+    @Test func theSameOfferIsNotAnnouncedTwice() async {
+        await inSync { c in
+            c.offerText("copied on the Mac", fileURIList: nil)
+            let sent = c.testListsOnWire
+            c.offerText("copied on the Mac", fileURIList: nil)
+            #expect(c.testListsOnWire == sent)
+            c.offerText("something else", fileURIList: nil)
+            #expect(c.testListsOnWire == sent + 1)
+        }
+    }
+
+    @Test func theSameOfferGoesOutAgainOnceWindowsHasCopiedSomething() async {
+        await inSync { c in
+            c.offerText("copied on the Mac", fileURIList: nil)
+            let sent = c.testListsOnWire
+            c.testServerSendsFormatList()
+            c.offerText("copied on the Mac", fileURIList: nil)
+            #expect(c.testListsOnWire == sent + 1)
+        }
+    }
+
+    /// Announced back, the text Windows gave the Mac would replace the richer copy Windows still holds.
+    @Test func textThatCameFromWindowsIsNotOfferedBack() async {
+        await inSync { c in
+            c.testServerSendsFormatList()
+            c.testServerWroteText("cells from Excel")
+            let sent = c.testListsOnWire
+            c.offerText("cells from Excel", fileURIList: nil)
+            #expect(c.testListsOnWire == sent)
+            c.offerText("typed on the Mac", fileURIList: nil)
+            #expect(c.testListsOnWire == sent + 1)
+        }
+    }
+
     @Test func noChannelIsRefusedAtOnce() async {
         let c = XPRDPClipboard()
         let answers = offer(c)

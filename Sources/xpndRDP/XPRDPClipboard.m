@@ -37,6 +37,8 @@ static UINT XPServerFormatDataResponse(CliprdrClientContext *, const CLIPRDR_FOR
     NSString *_text;                 // the Mac clipboard's offer
     NSData *_uriList;
     NSInteger _writtenChangeCount;  // main thread: the pasteboard change our own write of server text made
+    NSString *_writtenText;          // main thread: that text, which Windows holds a richer copy of
+    BOOL _serverListed;              // Windows has copied something since our last list
     NSUInteger _testListsOnWire;
 }
 
@@ -145,6 +147,7 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
 /// Whatever this announces takes the place of a file offer still waiting, so that offer has failed.
 - (UINT)sendFormatList {
     [self finishOffer:NO];
+    _serverListed = NO;
     UINT32 *ids = NULL, count = 0;
     if (_text) {
         const char *utf8 = _text.UTF8String;
@@ -229,6 +232,7 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
 - (UINT)serverFormatList:(const CLIPRDR_FORMAT_LIST *)formatList channel:(CliprdrClientContext *)cliprdr {
     [_lock lock];
     [self finishOffer:NO];  // Windows' clipboard is its own again: a paste now wouldn't be our files
+    _serverListed = YES;
     (void)cliprdr_file_context_clear(_file);  // the server stops reading the files it had from us
     UINT rc = cliprdr_file_context_notify_new_server_format_list(_file);
     CLIPRDR_FORMAT_LIST_RESPONSE response = {0};
@@ -356,6 +360,7 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
             [pasteboard setString:text forType:NSPasteboardTypeString];
             // Announced back, this text would replace the richer copy Windows still holds (Excel cells...).
             self->_writtenChangeCount = pasteboard.changeCount;
+            self->_writtenText = text;
         });
     // A failed or late reply is dropped: an error here would end the channel's thread.
     return CHANNEL_RC_OK;
@@ -404,8 +409,10 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
             (void)[self sendFormatList];
     }
     [_lock unlock];
-    if (changed && enabled)
+    if (changed && enabled) {
         _writtenChangeCount = -1;  // announce even the server's own text, as a richer Windows copy can't be told apart
+        _writtenText = nil;
+    }
 }
 
 - (XPRDPClipboardFormats)formatsToAnnounceNowForPasteboardTypes:(NSArray<NSString *> *)types {
@@ -452,6 +459,16 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
 - (void)offerText:(nullable NSString *)text fileURIList:(nullable NSData *)uriList {
     [_lock lock];
     if (!_enabled) {
+        [_lock unlock];
+        return;
+    }
+    // A snippet's paste puts the old contents back under a new change count, and the poll brings them here
+    // again. Announced twice, they would replace what Windows still holds: nothing new if it is our own
+    // last offer, and its richer copy (Excel cells...) if it is the text Windows gave the Mac.
+    const BOOL sameOffer = (text || uriList) && !_serverListed && (text == _text || [text isEqualToString:_text]) &&
+                           (uriList == _uriList || [uriList isEqualToData:_uriList]);
+    const BOOL fromServer = text && !uriList && [text isEqualToString:_writtenText];
+    if (sameOffer || fromServer) {
         [_lock unlock];
         return;
     }
@@ -511,6 +528,10 @@ static UINT XPTestFormatListResponse(CliprdrClientContext *cliprdr, const CLIPRD
 - (void)testServerSendsFormatList {
     CLIPRDR_FORMAT_LIST list = {0};
     (void)XPServerFormatList(_cliprdr, &list);
+}
+
+- (void)testServerWroteText:(NSString *)text {
+    _writtenText = [text copy];
 }
 
 - (NSUInteger)testListsOnWire {
