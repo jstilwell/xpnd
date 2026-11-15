@@ -10,6 +10,8 @@ enum ExpansionError: Error, Equatable, Sendable {
     case shortcutFailed(name: String, status: Int32)
     case shortcutTimedOut(String)
     case targetAppChanged
+    case expansionTurnedOff
+    case busy
 
     var message: String {
         switch self {
@@ -24,6 +26,8 @@ enum ExpansionError: Error, Equatable, Sendable {
         case .shortcutFailed(let name, let status): "The shortcut “\(name)” failed with exit status \(status)."
         case .shortcutTimedOut(let name): "The shortcut “\(name)” took too long and was stopped."
         case .targetAppChanged: "Expansion cancelled: the app you typed in is no longer in front."
+        case .expansionTurnedOff: "Expansion cancelled: expansion was turned off."
+        case .busy: "Another action is still running."
         }
     }
 }

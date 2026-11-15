@@ -50,7 +50,7 @@ extension AppDelegate {
                            preferBuiltIn: Bool = false) async {
         let service = service
         guard await engine.exclusive({ await service?.connect(id, typedInto: pid, deletingCharacters: deleting, sudo: sudo, preferBuiltIn: preferBuiltIn) }) else {
-            return hud.flash("Another action is still running.")
+            return hud.flash(ExpansionError.busy.message)
         }
     }
 

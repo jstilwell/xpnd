@@ -115,10 +115,10 @@ import Foundation
         evaluation?.cancel()
     }
 
-    /// Does nothing while another expansion is in flight: its paste would capture this one's text as
+    /// Says so and does nothing while another expansion is in flight: its paste would capture this one's text as
     /// the clipboard to restore. Inserts into the app in front when called.
     func expand(_ snippet: Snippet, deletingCharacters: Int) async {
-        guard !isExpanding else { return }
+        guard !isExpanding else { return notify(ExpansionError.busy.message) }
         isExpanding = true
         await run(snippet, deletingCharacters: deletingCharacters, into: frontmostPID())
     }
@@ -137,7 +137,7 @@ import Foundation
             self.evaluation = evaluation
             let result = await evaluation.value
             self.evaluation = nil
-            guard !evaluation.isCancelled, frontmostPID() == target else { throw .targetAppChanged }
+            guard !evaluation.isCancelled, frontmostPID() == target else { throw isEnabled ? .targetAppChanged : .expansionTurnedOff }
             let steps = try result.get()
             try await player.play(steps, deletingCharacters: deletingCharacters)
         } catch {
