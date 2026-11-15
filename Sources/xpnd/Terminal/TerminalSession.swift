@@ -187,8 +187,8 @@ extension TerminalHost {
         let offer = PasswordOffer(label: label, password: password, automatic: automatic)
         session.passwordOffer = offer
         // shortcut: polls the screen 4×/s while an offer is open; upgrade to SwiftTerm's output handler if it shows in profiles
+        let start = ContinuousClock.now // the window runs from the offer, however late the watch first runs
         let watch = Task { @MainActor [weak session] in
-            let start = ContinuousClock.now
             while ContinuousClock.now < start + PasswordOffer.lifetime, !offer.isFinished, let session, session.isLive {
                 if offer.automatic {
                     if ContinuousClock.now < start + automaticWindow { offer.send(through: session.host) } else { offer.automatic = false }
