@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - **Send automatically** types a built-in tab's password by itself only for 15 seconds; after that **Send Password** sends it, for the rest of the minute. A later prompt may be another login's, such as `ssh` to a second server from a root shell that needed no sudo password.
 
 ### Fixed
+- A snippet with `#{runShortcut:}` or `#{openApp:}` naming a Shortcut or app that isn't there fails before anything changes, as the README says, instead of deleting the keyword and typing half the snippet.
 - The end of a gentle downward scroll on a trackpad no longer jumps a Windows desktop two notches.
 - After a Windows desktop reconnects, pasting in Windows no longer gives what you copied on the Mac before something you copied in Windows since, and files dropped earlier aren't offered to Windows again.
 - The snippet import preview lists snippets whose text has a new line, which presses Return when typed as keystrokes, and the message after an import says when snippets went into a group that's turned off.

@@ -1,8 +1,14 @@
 import AppKit
 
 protocol ActionRunning: Sendable {
+    /// Throws what `openApp` or `runShortcut` would for a missing app or Shortcut, before anything is played.
+    func check(_ steps: [PlayStep]) async throws(ExpansionError)
     func openApp(path: String) async throws(ExpansionError)
     func runShortcut(name: String) async throws(ExpansionError)
+}
+
+extension ActionRunning {
+    func check(_ steps: [PlayStep]) async throws(ExpansionError) {}
 }
 
 struct ActionRunner: ActionRunning {
@@ -19,11 +25,27 @@ struct ActionRunner: ActionRunning {
         self.shortcutNames = shortcutNames
     }
 
-    func openApp(path: String) async throws(ExpansionError) {
-        var isDir: ObjCBool = false
-        guard path.hasSuffix(".app"), FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
-            throw .appNotFound(path: path)
+    func check(_ steps: [PlayStep]) async throws(ExpansionError) {
+        var names: [String]?
+        for step in steps {
+            switch step {
+            case .openApp(let path) where !Self.isApp(path): throw .appNotFound(path: path)
+            case .runShortcut(let name):
+                let known = if let names { names } else { await shortcutNames() }
+                names = known
+                guard known.contains(name) else { throw .unknownShortcut(name) }
+            default: break
+            }
         }
+    }
+
+    private static func isApp(_ path: String) -> Bool {
+        var isDir: ObjCBool = false
+        return path.hasSuffix(".app") && FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+    }
+
+    func openApp(path: String) async throws(ExpansionError) {
+        guard Self.isApp(path) else { throw .appNotFound(path: path) }
         do { try await launch(URL(fileURLWithPath: path)) } catch { throw .appNotFound(path: path) }
     }
 

@@ -2,8 +2,10 @@
     let sender: any KeystrokeSending
     let actions: any ActionRunning
 
-    /// Deletes the typed keyword, then plays each step in order. An action's error stops playback.
+    /// Deletes the typed keyword, then plays each step in order. A missing app or Shortcut throws before the
+    /// keyword is deleted; any other action's error stops playback where it is.
     func play(_ steps: [PlayStep], deletingCharacters: Int) async throws(ExpansionError) {
+        try await actions.check(steps)
         if deletingCharacters > 0 { await sender.backspace(times: deletingCharacters) }
         for step in steps {
             switch step {

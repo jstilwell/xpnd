@@ -40,6 +40,20 @@ private struct FakeActions: ActionRunning {
         #expect(sender.log == ["bs 2", "paste a"])
     }
 
+    /// "Nothing changes and your keyword stays where it is" (README): a typo'd Shortcut or app fails first.
+    @Test func aMissingShortcutOrAppFailsBeforeAnythingIsDeleted() async {
+        let sender = FakeSender()
+        let names: @Sendable () async -> [String] = { ["Real"] }
+        let player = Player(sender: sender, actions: ActionRunner(launch: { _ in }, shortcutNames: names))
+        await #expect(throws: ExpansionError.unknownShortcut("Typo")) {
+            try await player.play([.paste("Hi "), .runShortcut(name: "Typo"), .paste("there")], deletingCharacters: 3)
+        }
+        await #expect(throws: ExpansionError.appNotFound(path: "/Nope.app")) {
+            try await player.play([.paste("Hi "), .openApp(path: "/Nope.app")], deletingCharacters: 3)
+        }
+        #expect(sender.log.isEmpty)
+    }
+
     @Test func snapshotRestoresEveryType() throws {
         let pb = NSPasteboard(name: .init("xpnd-test-\(UUID())"))
         defer { pb.releaseGlobally() }
