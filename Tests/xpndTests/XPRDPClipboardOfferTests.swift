@@ -54,6 +54,20 @@ import xpndRDP
         }
     }
 
+    /// A reconnect's MonitorReady announces what's on offer: once Windows has copied, that's nothing of the Mac's.
+    @Test func aReconnectDoesNotAnnounceWhatWindowsReplaced() async {
+        await inSync { c in
+            offer(c).all.removeAll()
+            #expect(c.lastAnnouncedFormats == .files)
+            c.testServerSendsFormatList()
+            #expect(c.lastAnnouncedFormats.isEmpty)
+            c.detachTestChannel()
+            c.attachTestChannel()
+            c.testServerReady()
+            #expect(c.lastAnnouncedFormats.isEmpty)
+        }
+    }
+
     /// Announced back, the text Windows gave the Mac would replace the richer copy Windows still holds.
     @Test func textThatCameFromWindowsIsNotOfferedBack() async {
         await inSync { c in

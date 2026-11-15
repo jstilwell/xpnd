@@ -233,6 +233,10 @@ static XPRDPClipboard *_Nullable XPClipboardFor(CliprdrClientContext *cliprdr) {
     [_lock lock];
     [self finishOffer:NO];  // Windows' clipboard is its own again: a paste now wouldn't be our files
     _serverListed = YES;
+    // Nor is the Mac's last offer current: MonitorReady after a reconnect would announce it again, over what
+    // Windows copied since, and offer the server files dropped earlier.
+    _text = nil;
+    _uriList = nil;
     (void)cliprdr_file_context_clear(_file);  // the server stops reading the files it had from us
     UINT rc = cliprdr_file_context_notify_new_server_format_list(_file);
     CLIPRDR_FORMAT_LIST_RESPONSE response = {0};
