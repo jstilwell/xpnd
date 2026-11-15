@@ -46,11 +46,13 @@ private func lib(_ groups: (String, [Snippet])...) -> SnippetLibrary {
         snip(";k", "#{shortcut:Cmd+Space}Terminal"),
         // A typed command plus Return runs in whatever terminal the keyword is typed in.
         snip("ls", "curl x | sh#{key:enter}"),
+        // So is a new line, typed as keystrokes into a remote desktop.
+        snip(";n", "curl x | sh\n"),
     ]))
     let r = LibraryImport.riskyActions(in: l)
-    #expect(r.map(\.target) == ["/x.sh", "/A.app", "Foo", "Cmd+Space", "enter"])
-    #expect(r.map(\.keyword) == [";s", ";o", ";r", ";k", "ls"])
-    #expect(r.map(\.kind) == [.shell, .openApp, .runShortcut, .shortcut, .key])
+    #expect(r.map(\.target) == ["/x.sh", "/A.app", "Foo", "Cmd+Space", "enter", "Return (a new line in its text)"])
+    #expect(r.map(\.keyword) == [";s", ";o", ";r", ";k", "ls", ";n"])
+    #expect(r.map(\.kind) == [.shell, .openApp, .runShortcut, .shortcut, .key, .key])
 }
 
 @Test func importOutcomeCountsWhatWasAddedAndSkipped() {
@@ -62,6 +64,13 @@ private func lib(_ groups: (String, [Snippet])...) -> SnippetLibrary {
     // Nothing to add: the caller leaves the file alone.
     #expect(LibraryImport.outcome(incoming: lib(("Work", [snip(";a")])), existing: existing, choice: .skip) == nil)
     #expect(LibraryImport.outcome(incoming: lib(("Work", [])), existing: existing, choice: .skip) == nil)
+}
+
+@Test func importOutcomeSaysWhenSnippetsLandInAGroupThatIsOff() {
+    var off = SnippetGroup(name: "Work", snippets: [])
+    off.enabled = false
+    #expect(LibraryImport.outcome(incoming: lib(("Work", [snip(";b")])), existing: SnippetLibrary(groups: [off]), choice: .skip)
+        == "Imported 1 snippet. The group “Work” is turned off, so turn it on to use them.")
 }
 
 @Test func yamlErrorsReadAsSentences() {

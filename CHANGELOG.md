@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - **Send automatically** types a built-in tab's password by itself only for 15 seconds; after that **Send Password** sends it, for the rest of the minute. A later prompt may be another login's, such as `ssh` to a second server from a root shell that needed no sudo password.
 
 ### Fixed
+- The snippet import preview lists snippets whose text has a new line, which presses Return when typed as keystrokes, and the message after an import says when snippets went into a group that's turned off.
 - Importing no longer brings in a snippet keyword a connection or folder already answers to, or the other way round, which left both doing nothing. The preview lists what's left out: such snippets aren't imported, and such connections come without their string.
 - Importing connections keeps the logins the file gave them. The file's global and folder credentials were dropped, so imported connections used this Mac's credential for a folder of the same name, or none; now they fill levels that have none here, and a connection that would inherit a different one keeps the file's as its own.
 - Clearing a Windows desktop's **Gateway host** to retype it no longer deletes the gateway's port and login.

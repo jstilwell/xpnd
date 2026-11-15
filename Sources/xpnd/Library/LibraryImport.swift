@@ -81,6 +81,10 @@ enum LibraryImport {
                 }
                 found.append(RiskyAction(snippetName: snippet.name, keyword: snippet.keyword, kind: kind, target: target))
             }
+            // Typed as keystrokes (remote desktops, or everywhere by the setting), a new line is a press of Return.
+            if snippet.text.contains(where: \.isNewline) {
+                found.append(RiskyAction(snippetName: snippet.name, keyword: snippet.keyword, kind: .key, target: "Return (a new line in its text)"))
+            }
         }
         return found
     }
@@ -92,7 +96,14 @@ enum LibraryImport {
         let added = incoming.groups.flatMap(\.snippets).count - skipped
         guard added > 0 else { return nil }
         let imported = "Imported \(added) snippet\(added == 1 ? "" : "s")"
-        return skipped == 0 ? imported + "." : imported + "; skipped \(skipped) that already exist\(skipped == 1 ? "s" : "")."
+        let summary = skipped == 0 ? imported + "." : imported + "; skipped \(skipped) that already exist\(skipped == 1 ? "s" : "")."
+        // Groups merge by name, so snippets can land in one that's off and never expand.
+        let off = incoming.groups.filter { !$0.snippets.isEmpty }.compactMap { group in
+            existing.groups.first { $0.name == group.name && !$0.enabled }.map { "“\($0.name)”" }
+        }
+        guard !off.isEmpty else { return summary }
+        let one = off.count == 1
+        return summary + " \(one ? "The group" : "The groups") \(off.joined(separator: ", ")) \(one ? "is" : "are") turned off, so turn \(one ? "it" : "them") on to use them."
     }
 
     /// `groups == nil` exports every group.
