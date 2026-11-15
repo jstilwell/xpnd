@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - **Send automatically** types a built-in tab's password by itself only for 15 seconds; after that **Send Password** sends it, for the rest of the minute. A later prompt may be another login's, such as `ssh` to a second server from a root shell that needed no sudo password.
 
 ### Fixed
+- Clearing a Windows desktop's **Gateway host** to retype it no longer deletes the gateway's port and login.
 - A snippet script that prints without end (`yes`, a runaway loop) is stopped once it has printed 8 MB, instead of filling memory until it times out, or forever with no timeout.
 - A snippet or connection file that is a symlink to a folder that's offline (Dropbox, iCloud) now shows an error instead of an empty library, and editing no longer replaces the link with a new file.
 - "Password copied" shows over the tab that just connected, not another tab of the same connection that may sit at a shell prompt, where pasting would run the password as a command.

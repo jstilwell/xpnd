@@ -135,16 +135,16 @@ struct ConnectionEditorView: View {
         }
     }
 
-    /// No host means no gateway; the credential falls back to the connection's own.
+    /// No host means no gateway; the credential falls back to the connection's own. Clearing the host to retype it keeps
+    /// the port and credential set (an empty host connects without a gateway, `RDPOptions.resolved`).
     private var gatewaySection: some View {
         let gateway = connection.rdp?.gateway
         return Section("Gateway") {
             TextField("Gateway host", text: Binding(get: { gateway?.host ?? "" }, set: { host in
                 editing.edit(connection: connection.id) {
                     var options = $0.rdp ?? RDPOptions()
-                    if host.isEmpty { options.gateway = nil } else if options.gateway == nil { options.gateway = .init(host: host) } else {
-                        options.gateway?.host = host
-                    }
+                    if options.gateway == nil { options.gateway = .init(host: host) } else { options.gateway?.host = host }
+                    if host.isEmpty, options.gateway == .init(host: "") { options.gateway = nil }
                     $0.rdp = options
                 }
             }), prompt: Text("None"))

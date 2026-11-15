@@ -197,7 +197,7 @@ enum ConnectionImport {
             let user = login.map { "\($0)@" } ?? ""
             let host = c.host.contains(":") && !c.host.hasPrefix("[") ? "[\(c.host)]" : c.host
             return PreviewRow(id: c.id, name: c.name, host: c.host, address: "\(user)\(host):\(c.effectivePort)",
-                              jumpHost: jump, gateway: c.type == .rdp ? c.rdp?.gateway?.host : nil, sshOptions: c.sshOptions)
+                              jumpHost: jump, gateway: c.type == .rdp ? c.rdp?.gateway.flatMap { $0.host.isEmpty ? nil : $0.host } : nil, sshOptions: c.sshOptions)
         }
         return Preview(added: added, removed: removed, rejumped: rejumped)
     }
