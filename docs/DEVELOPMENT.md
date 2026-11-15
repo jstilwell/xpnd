@@ -55,33 +55,41 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
   restoring every pasteboard type, and sends keys through `KeystrokeSender` (`SyntheticEvent`). In
   remote-desktop and VM apps (`CGEventKeystrokeSender.remoteDesktopApps`), or everywhere with the
   General setting, text is typed instead: `KeyMap` finds each character's key on the current layout
-  and the modifier keys are pressed around it (CLAUDE.md explains why).
-  `ActionRunner` opens apps and runs Shortcuts (`ShortcutsList` lists them). `HUD` flashes failures.
+  and the modifier keys are pressed around it (CLAUDE.md explains why); it prefers main keys to the keypad,
+  and follows a dead key with Space.
+  `ActionRunner` opens apps and runs Shortcuts (`ShortcutsList` lists them), and `Player` has it `check` that every
+  app and Shortcut exists before the keyword is deleted. `ProcessRunner` stops a script past 8 MB of output.
+  `HUD` flashes failures.
 - `SnippetStore` owns the library, loads and atomically saves `snippets.yaml` through `SnippetYAML`,
-  watches the file for edits, and keeps an unreadable file untouched (`loadError`). `KeywordValidation`
-  keeps keywords unique. `LibraryImport` merges groups, applies skip/replace (`ConflictChoice`), lists
-  `RiskyAction`s for the import preview (which every import shows), and words the outcome.
+  watches the file for edits, and keeps an unreadable file untouched (`loadError`; a symlink to a missing file
+  counts as unreadable). `YAMLErrorText` words decoding errors. `KeywordValidation` keeps keywords unique.
+  `LibraryImport` leaves out keywords the connections file uses, merges groups, applies skip/replace
+  (`ConflictChoice`), lists `RiskyAction`s for the import preview (which every import shows), and words the outcome.
 - `PickerPanel` is the search panel opened by the `GlobalShortcut` hotkey (Carbon); `PickerFilter`
   filters it. `AppSettings` keeps preferences in UserDefaults.
 - Settings (`SettingsWindowController`): `GeneralSettingsView`, `TerminalSettingsView`,
-  `PasswordManagerSettingsView`, and `ImportExportView`. `ShortcutRecorder` records the picker and
+  `RemoteDesktopSettingsView` (with `RDPFields`), `PasswordManagerSettingsView`, and `ImportExportView`. `ShortcutRecorder` records the picker and
   launcher hotkeys.
 - The main window (`MainWindowController`): `Sidebar` (with a search that filters snippets through
   `PickerFilter` and connections through `ConnectionFilter`) and `DetailsPane`. Snippets are edited
   through `SnippetEditing`, `SnippetGroupDetails`, and `SnippetDetails` (in
   `Settings/SnippetsSettingsView.swift`) with `SnippetEditorView` and `TemplateTextView`; connections
-  through `ConnectionEditing` with `ConnectionEditorView` and `FolderEditorView`.
+  through `ConnectionEditing` with `ConnectionEditorView` and `FolderEditorView`. Their text fields are
+  `CommittingTextField`s, which save once typing pauses (like `TemplateTextView`), not per key.
 - Connections: `ConnectionStore` owns the library and atomically saves `connections.yaml` through
   `ConnectionYAML` (an unreadable file is left untouched, like snippets). `KeywordNamespace` makes
-  snippet keywords and connection and folder activation strings one namespace; `ExpansionEngine`
+  snippet keywords and connection and folder activation strings one namespace (`hidingNote` warns when one
+  starts another); `ExpansionEngine`
   matches both and hands a hit to `AppDelegate.activate` as an `ActivationTarget`. A connection goes to
   `ConnectionService`, a folder to `QuickMenuPanel`; `ConnectionLauncherPanel` (its own hotkey) and
   `MainWindowController` call `connectExclusively`, so one action runs at a time.
 - `ConnectionService.connect` has `SSHCommandBuilder` build the argument list (jump hosts, key file,
   options, `sudo -i`; `ShellQuote` quotes it), has `LaunchPlanner` choose a `LaunchPlan` (type into a
   front terminal, AppleScript, `open`, a custom template checked by `templateProblem`, or a `vnc://`
-  URL), and `LiveLaunchExecutor` runs it. Only then does `OnePasswordProvider` fetch passwords, which go
-  to `SecretClipboard` (concealed and transient markers, cleared after 30 s or on quit).
+  URL), and `LiveLaunchExecutor` runs it. Only then does the `CredentialProvider` fetch passwords, which go
+  to `SecretClipboard` (concealed and transient markers, cleared after 30 s or on quit). The provider is
+  `OnePasswordProvider`, or `KeychainProvider` (the login keychain's generic passwords, through Security; no SSH
+  keys) when Settings → Password Manager says so.
   `OnePasswordProvider` shells out to `op` through `ProcessRunner` (`item list`, `item get`, `account
   list`, `vault list` as an access probe) and keeps nothing. Public keys are written to `keys/` by `ConnectionEditing` (when an
   SSH key item is picked or refreshed) and by `ConnectionService` (when one is missing at connect),
@@ -106,7 +114,8 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
   (`client_cliprdr_file`); `XPRDPClipboardFilter` keeps concealed and secret items from the remote and sets a snippet's paste (a transient
   pasteboard) aside, and `XPRDPClipboard` doesn't announce the same offer twice, so the restore after a paste leaves
   the Windows clipboard alone;
-  `XPRDPResizeCoalescer` debounces Display Control resizes.
+  `XPRDPResizeCoalescer` debounces Display Control resizes; `XPRDPCommandKey` holds the ⌘ state machine, the
+  edit-shortcut check and the wheel step maths as pure functions, so tests drive them without a connection.
   In `Sources/xpnd/RemoteDesktop/`: `RDPOptions`/`RDPSettings` (per connection and defaults) resolve to an
   `RDPSessionConfig`, `RDPSettingMapping` turns that into FreeRDP setting names (NLA alone when it is on, TLS alone
   when it is off, never legacy RDP security; 200% only on a 2× screen), `RDPHost` is the tab's
@@ -178,7 +187,8 @@ and on the GitHub release, which is what xpnd.dev links to.
 
 1. Raise `CFBundleShortVersionString` and `CFBundleVersion` in `Resources/Info.plist` and date the
    entry in `CHANGELOG.md` (its bullets become the release notes).
-2. Commit, then run `./bin/build-release.sh --upload`.
+2. Commit, push and merge the PR, pull `main`, then run `./bin/build-release.sh --upload` there: it refuses a
+   commit that isn't on GitHub's `main`.
 
 The script runs the tests first and stops if any fails. It then builds a universal app signed with Developer ID and the hardened runtime, puts it in a
 signed DMG, notarizes and staples it, and signs the update and the appcast. It then uploads the DMG to
