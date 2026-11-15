@@ -318,6 +318,8 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
     } else {
         return;
     }
+    if (units == 0)
+        return;  // under 1/120 (a momentum tail): negated, 0 would be 0x100, a step of -256
     if (flags & PTR_FLAGS_WHEEL_NEGATIVE)
         units = 0x100 - units;  // 9-bit two's complement
     [self sendMouse:event flags:flags | (units & 0x1FF)];
