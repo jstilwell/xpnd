@@ -88,7 +88,9 @@ struct KeywordNamespace {
         Set(entries.map(\.string)).intersection(snippetKeywords)
     }
 
-    private var snippetKeywords: Set<String> { Set(allSnippets.map(\.keyword)) }
+    var snippetKeywords: Set<String> { Set(allSnippets.map(\.keyword)) }
+    /// What connections and folders answer to now, which a snippet keyword can't take.
+    var connectionStrings: Set<String> { Set(entries.map(\.string)) }
 
     private var entries: [(string: String, target: ActivationTarget)] {
         allConnections.compactMap { connection in

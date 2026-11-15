@@ -78,3 +78,14 @@ private func lib(_ groups: (String, [Snippet])...) -> SnippetLibrary {
     #expect(back.groups.map(\.name) == ["Work"])
     #expect(LibraryImport.export(l, groups: nil) == SnippetYAML.encode(l))
 }
+
+/// A keyword a connection already answers to would leave both doing nothing.
+@Test func keywordsTheConnectionsFileUsesAreLeftOut() {
+    let connections = ConnectionLibrary(folders: [ConnectionFolder(name: "Web", connections: [
+        Connection(name: "w", host: "h", activation: ";sig")])])
+    let reserved = KeywordNamespace(snippets: .init(groups: []), connections: connections).connectionStrings
+    #expect(reserved == [";sig", ";web"])
+    let (kept, taken) = LibraryImport.removing(reserved, from: lib(("Work", [snip(";sig"), snip(";a")])))
+    #expect(kept.groups[0].snippets.map(\.keyword) == [";a"])
+    #expect(taken == [";sig"])
+}

@@ -18,6 +18,21 @@ enum LibraryImport {
         return clashing.sorted()
     }
 
+    /// `library` without the snippets whose keyword is in `reserved` (strings the connections file uses: a keyword
+    /// owned in both files triggers neither), and those keywords, sorted.
+    static func removing(_ reserved: Set<String>, from library: SnippetLibrary) -> (SnippetLibrary, [String]) {
+        var library = library
+        var removed: Set<String> = []
+        for gi in library.groups.indices {
+            library.groups[gi].snippets.removeAll { snippet in
+                guard reserved.contains(snippet.keyword) else { return false }
+                removed.insert(snippet.keyword)
+                return true
+            }
+        }
+        return (library, removed.sorted())
+    }
+
     /// Groups merge by exact name. `.replace` removes the existing snippet wherever it lives.
     static func merge(_ incoming: SnippetLibrary, into existing: SnippetLibrary, choice: ConflictChoice) -> SnippetLibrary {
         var result = existing

@@ -74,6 +74,15 @@ struct ConnectionImportTests {
         #expect(r.credential == ref("mine"))
     }
 
+    /// A string a snippet already uses would leave both doing nothing; the item still comes in, without it.
+    @Test func stringsSnippetsUseAreTakenOff() {
+        let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "f", activation: ";s", connections: [conn("c", act: ";sig"), conn("d", act: ";d")])])
+        let (kept, taken) = ConnectionImport.removing([";sig", ";s"], from: incoming)
+        #expect(taken == [";s", ";sig"])
+        #expect(kept.folders[0].activation == nil)
+        #expect(kept.folders[0].connections.map(\.activation) == [nil, ";d"])
+    }
+
     @Test func idsKeptUnlessColliding() {
         let shared = conn("shared")
         let existing = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [shared])])

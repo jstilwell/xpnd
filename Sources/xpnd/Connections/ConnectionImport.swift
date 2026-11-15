@@ -7,6 +7,28 @@ enum ConnectionImport {
         Set(library.allFolders.flatMap { [$0.activation] + $0.connections.map(\.activation) }.compactMap(custom))
     }
 
+    /// `library` with its custom strings that are in `reserved` (snippet keywords: a string owned in both files
+    /// triggers neither) taken off, and those strings, sorted. A connection keeps no string; a folder goes back to
+    /// its derived one, which yields to snippets by itself.
+    static func removing(_ reserved: Set<String>, from library: ConnectionLibrary) -> (ConnectionLibrary, [String]) {
+        var removed: Set<String> = []
+        func strip(_ f: ConnectionFolder) -> ConnectionFolder {
+            var f = f
+            if let a = custom(f.activation), reserved.contains(a) { f.activation = nil; removed.insert(a) }
+            for i in f.connections.indices {
+                if let a = custom(f.connections[i].activation), reserved.contains(a) {
+                    f.connections[i].activation = nil
+                    removed.insert(a)
+                }
+            }
+            f.folders = f.folders.map(strip)
+            return f
+        }
+        var library = library
+        library.folders = library.folders.map(strip)
+        return (library, removed.sorted())
+    }
+
     /// Custom activation strings present in both, sorted.
     static func conflicts(incoming: ConnectionLibrary, existing: ConnectionLibrary) -> [String] {
         activations(incoming).intersection(activations(existing)).sorted()
