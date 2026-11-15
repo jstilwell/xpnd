@@ -1,13 +1,10 @@
 #import "XPRDPView.h"  // FreeRDP's headers first; see XPRDPView.h
 
 #import "XPRDPClipboardFilter.h"
+#import "XPRDPCommandKey.h"
 #import "XPRDPCursor.h"
 #import "XPRDPFitRect.h"
 #import "XPRDPResizeCoalescer.h"
-
-/// Where ⌘ stands while it is held: nothing sent yet, used by xpnd (a shortcut or ⌘-click, so its release
-/// isn't a bare tap), or sent as the Windows key or as Ctrl.
-typedef NS_ENUM(NSInteger, XPCommandState) { XPCommandUp, XPCommandPending, XPCommandUsed, XPCommandWindows, XPCommandControl };
 
 static const NSEventModifierFlags XPCommandFlag = NSEventModifierFlagCommand;
 
@@ -16,13 +13,8 @@ static const NSEventModifierFlags XPCommandFlag = NSEventModifierFlagCommand;
 static const DWORD XPScancodeLeftWindows = 0x5B | KBDEXT;
 static const DWORD XPScancodeLeftControl = 0x1D;
 
-/// ⌘C/⌘V/⌘X/⌘Z/⌘A (Shift allowed, as in ⌘⇧Z): the shortcuts Windows knows as Ctrl+key.
 static BOOL XPIsEditShortcut(NSEvent *event) {
-    const NSEventModifierFlags flags = event.modifierFlags;
-    if (!(flags & XPCommandFlag) || (flags & (NSEventModifierFlagControl | NSEventModifierFlagOption)))
-        return NO;
-    NSString *key = event.charactersIgnoringModifiers.lowercaseString;
-    return key.length == 1 && [@"cvxza" containsString:key];
+    return XPIsEditShortcutKey(event.charactersIgnoringModifiers ?: @"", event.keyCode, event.modifierFlags);
 }
 
 @implementation XPRDPView {
@@ -306,23 +298,10 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 
 - (void)scrollWheel:(NSEvent *)event {
     [self noteCommandUsed];  // ⌘ and a scroll is a gesture, not a tap of the Windows key
-    // MRDPView's units and steps, sent at the pointer rather than at (0, height).
-    const CGFloat dx = event.deltaX, dy = event.deltaY;
-    UINT16 flags, units;
-    if (fabs(dy) > FLT_EPSILON) {
-        flags = PTR_FLAGS_WHEEL | (dy < 0 ? PTR_FLAGS_WHEEL_NEGATIVE : 0);
-        units = (UINT16)MIN(fabs(dy) * 120, 0xFF);
-    } else if (fabs(dx) > FLT_EPSILON) {
-        flags = PTR_FLAGS_HWHEEL | (dx > 0 ? PTR_FLAGS_WHEEL_NEGATIVE : 0);
-        units = (UINT16)MIN(fabs(dx) * 120, 0xFF);
-    } else {
-        return;
-    }
-    if (units == 0)
-        return;  // under 1/120 (a momentum tail): negated, 0 would be 0x100, a step of -256
-    if (flags & PTR_FLAGS_WHEEL_NEGATIVE)
-        units = 0x100 - units;  // 9-bit two's complement
-    [self sendMouse:event flags:flags | (units & 0x1FF)];
+    // Sent at the pointer rather than at (0, height), as MRDPView does.
+    const uint16_t flags = XPWheelFlags(event.deltaX, event.deltaY);
+    if (flags)
+        [self sendMouse:event flags:flags];
 }
 
 #pragma mark Keyboard
@@ -358,27 +337,23 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 }
 
 - (void)noteCommandUsed {
-    if (_command == XPCommandPending)
-        _command = XPCommandUsed;
+    _command = XPCommandAfterUse(_command);
 }
 
 - (void)flagsChanged:(NSEvent *)event {
     if (self.is_connected) {
         const BOOL down = (event.modifierFlags & XPCommandFlag) != 0;
-        if (down && _command == XPCommandUp) {
-            _command = XPCommandPending;  // decided by the next key
-        } else if (!down && _command != XPCommandUp) {
-            if (_command == XPCommandPending && _commandAsWindowsKey) {
-                // ⌘ alone taps the Windows key, which opens Start.
-                [self sendScancode:XPScancodeLeftWindows down:YES];
-                [self sendScancode:XPScancodeLeftWindows down:NO];
-            }
-            [self setCommandState:XPCommandUp];
+        const BOOL others = (event.modifierFlags & (NSEventModifierFlagShift | NSEventModifierFlagControl | NSEventModifierFlagOption)) != 0;
+        BOOL tap = NO;
+        const XPCommandState next = XPCommandAfterFlags(_command, down, others, _commandAsWindowsKey, &tap);
+        if (tap) {
+            [self sendScancode:XPScancodeLeftWindows down:YES];
+            [self sendScancode:XPScancodeLeftWindows down:NO];
         }
-        // ⌘ with another modifier is a shortcut in the making, not a tap: macOS keeps ⌘⇧4 and other apps' global
-        // hotkeys to itself, so no key ever arrives to say so, and the release would open Start.
-        if (down && (event.modifierFlags & (NSEventModifierFlagShift | NSEventModifierFlagControl | NSEventModifierFlagOption)))
-            [self noteCommandUsed];
+        if (next == XPCommandUp)
+            [self setCommandState:XPCommandUp];  // releases what ⌘ held down in Windows
+        else
+            _command = next;  // nothing sent yet
         // Hide ⌘ from MRDPView, which would send the Windows key the moment it goes down.
         kbdModFlags = (kbdModFlags & ~(DWORD)XPCommandFlag) | (DWORD)(event.modifierFlags & XPCommandFlag);
     }
@@ -388,8 +363,7 @@ static BOOL XPIsEditShortcut(NSEvent *event) {
 - (void)keyDown:(NSEvent *)event {
     const BOOL command = self.is_connected && (event.modifierFlags & XPCommandFlag);
     if (command) {
-        const BOOL control = XPIsEditShortcut(event) || !_commandAsWindowsKey;
-        [self setCommandState:control ? XPCommandControl : XPCommandWindows];
+        [self setCommandState:XPCommandAfterKey(_command, XPIsEditShortcut(event), _commandAsWindowsKey)];
     }
     [super keyDown:event];
     if (command)

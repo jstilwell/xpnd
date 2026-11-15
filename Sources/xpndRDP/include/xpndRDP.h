@@ -7,4 +7,5 @@
 #import "XPRDPClipboardFilter.h"
 #import "XPRDPResizeCoalescer.h"
 #import "XPRDPFitRect.h"
+#import "XPRDPCommandKey.h"
 #import "XPRDPCursor.h"
