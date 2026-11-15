@@ -1,12 +1,23 @@
 import Foundation
 
-enum ProcessRunError: Error, Equatable { case notExecutable, timedOut, cancelled }
+enum ProcessRunError: Error, Equatable { case notExecutable, timedOut, cancelled, tooMuchOutput }
 
 /// Thread-safe byte buffer filled by the pipe reader thread.
 private final class LockedBuffer: @unchecked Sendable {
+    /// Per stream. `yes`, or a runaway loop, would otherwise fill memory until the timeout, or forever with none.
+    static let limit = 8 << 20
     private let lock = NSLock()
     private var data = Data()
-    func append(_ d: Data) { lock.lock(); data.append(d); lock.unlock() }
+    private var full = false
+    /// False once the limit is passed; nothing more is kept.
+    func append(_ d: Data) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !full else { return false }
+        full = data.count + d.count > Self.limit
+        if !full { data.append(d) }
+        return !full
+    }
+    var overflowed: Bool { lock.lock(); defer { lock.unlock() }; return full }
     func snapshot() -> Data { lock.lock(); defer { lock.unlock() }; return data }
 }
 
@@ -98,7 +109,9 @@ enum ProcessRunner {
         for (p, b) in [(pipe, buffer), (errPipe, errBuffer)] {
             let reader = p.fileHandleForReading
             DispatchQueue.global().async {
-                while let chunk = try? reader.read(upToCount: 65536), !chunk.isEmpty { b.append(chunk) }
+                while let chunk = try? reader.read(upToCount: 65536), !chunk.isEmpty {
+                    if !b.append(chunk) { child.cancel(); break }
+                }
                 eof.signal()
             }
         }
@@ -121,6 +134,7 @@ enum ProcessRunner {
         let deadline = DispatchTime.now() + (timedOut || cancelled ? 0.1 : 1)
         _ = eof.wait(timeout: deadline)
         _ = eof.wait(timeout: deadline)
+        if buffer.overflowed || errBuffer.overflowed { return .failure(.tooMuchOutput) }
         if timedOut { return .failure(.timedOut) }
         if cancelled { return .failure(.cancelled) }
         return .success(ProcessOutput(status: process.terminationStatus,
@@ -142,6 +156,7 @@ enum ScriptRunner {
             // Only the engine cancels an evaluation, when the user leaves the app they typed in.
             case .cancelled: throw .targetAppChanged
             case .notExecutable: throw .scriptNotFound(path: path)
+            case .tooMuchOutput: throw .scriptOutputTooLarge(path: path)
             }
         } catch let e as ExpansionError {
             throw e

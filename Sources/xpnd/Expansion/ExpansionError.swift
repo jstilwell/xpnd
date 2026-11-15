@@ -3,6 +3,7 @@ enum ExpansionError: Error, Equatable, Sendable {
     case scriptNotFound(path: String)
     case scriptFailed(path: String, status: Int32)
     case scriptTimedOut(path: String)
+    case scriptOutputTooLarge(path: String)
     case inputCancelled
     case appNotFound(path: String)
     case unknownShortcut(String)
@@ -16,6 +17,7 @@ enum ExpansionError: Error, Equatable, Sendable {
         case .scriptNotFound(let path): "No script was found at “\(path)”."
         case .scriptFailed(let path, let status): "The script “\(path)” failed with exit status \(status)."
         case .scriptTimedOut(let path): "The script “\(path)” took too long and was stopped."
+        case .scriptOutputTooLarge(let path): "The script “\(path)” printed more than 8 MB and was stopped."
         case .inputCancelled: "The input form was cancelled."
         case .appNotFound(let path): "No app was found at “\(path)”."
         case .unknownShortcut(let name): "No shortcut is named “\(name)”."

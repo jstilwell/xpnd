@@ -169,7 +169,7 @@ struct EvaluatorTests {
     @Test func messagesAreOneLine() {
         let errors: [ExpansionError] = [
             .missingCombo(";zz"), .scriptNotFound(path: "/s"), .scriptFailed(path: "/s", status: 1),
-            .scriptTimedOut(path: "/s"), .inputCancelled, .appNotFound(path: "/A.app"), .unknownShortcut("F"),
+            .scriptTimedOut(path: "/s"), .scriptOutputTooLarge(path: "/s"), .inputCancelled, .appNotFound(path: "/A.app"), .unknownShortcut("F"),
             .shortcutFailed(name: "F", status: 2), .shortcutTimedOut("F"), .targetAppChanged,
         ]
         for e in errors { #expect(!e.message.isEmpty && !e.message.contains("\n")) }
