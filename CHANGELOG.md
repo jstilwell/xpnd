@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - **Send automatically** types a built-in tab's password by itself only for 15 seconds; after that **Send Password** sends it, for the rest of the minute. A later prompt may be another login's, such as `ssh` to a second server from a root shell that needed no sudo password.
 
 ### Fixed
+- Changing a connection's type with its old default port in the Port field (22, then VNC) clears the field to show the new default, instead of showing 22 and connecting on 5900.
 - Sending a password into a built-in tab works at a sudo or login prompt in German, French, Spanish, Japanese and other languages, not only English.
 - A built-in tab's LANG is always one a server accepts (`zh_CN.UTF-8`, not `zh-Hans_CN.UTF-8`), which ssh passes on and which made servers print "cannot change locale".
 - More of the reasons a Windows login is refused are said in words (an account that isn't in Remote Desktop Users, an expired account, missing permission, a server that's still starting...), instead of names like `ERRCONNECT_LOGON_TYPE_NOT_GRANTED`.

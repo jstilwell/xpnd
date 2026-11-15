@@ -109,6 +109,11 @@ struct ConnectionEditorView: View {
             let typed = EditorRules.parsePort(portText, type: connection.type)
             if typed.problem != nil || typed.port != connection.port { portText = connection.port.map(String.init) ?? "" }
         }
+        .onChange(of: connection.type) { old, _ in
+            // A typed 22 is stored as "the default", so on VNC the field would show 22 and connect on 5900. The old
+            // type's default goes, to show the new one's; any other port is kept for the new type.
+            if Int(portText.trimmingCharacters(in: .whitespaces)) == old.defaultPort { portText = "" } else { editPort(portText) }
+        }
         .onChange(of: editing.library, initial: true) {
             storedJumpProblem = Self.jumpProblem(of: connection.id, in: editing.library)
         }
