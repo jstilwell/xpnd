@@ -177,7 +177,7 @@ extension TerminalSettingsView {
         switch mode {
         case .clipboard: "The login and sudo passwords are copied for you to paste, and cleared after 30 seconds."
         case .sendOnClick: "The tab offers Send Password (⌘⇧P), which types it at a password prompt. Nothing is copied."
-        case .sendAutomatically: "Typed in as soon as a password prompt shows, for up to a minute after connecting. Anything that prints a password prompt in that minute gets it."
+        case .sendAutomatically: "Typed in as soon as a password prompt shows, for 15 seconds after it's ready; then it waits for Send Password. Anything that prints a password prompt in those seconds gets it."
         }
     }
 }

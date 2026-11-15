@@ -42,6 +42,25 @@ struct KeywordNamespace {
         return nil
     }
 
+    /// When `string` starts another string, or another starts it, typing the longer one fires the shorter first, so
+    /// the longer one never works. Allowed (the user may mean it, and `;new` must stay free beside `;new2`), but said.
+    func hidingNote(_ string: String, for owner: Owner?) -> String? {
+        guard !string.isEmpty else { return nil }
+        let others: [(string: String, label: String, owner: Owner)] =
+            allSnippets.map { ($0.keyword, "the snippet “\($0.name)”", .snippet($0.id)) }
+            + allConnections.compactMap { c in c.activation.flatMap { $0.isEmpty ? nil : ($0, "connection “\(c.name)”", .connection(c.id)) } }
+            + allFolders.compactMap { f in effectiveActivation(ofFolder: f.id).string.map { ($0, "folder “\(f.name)”", .folder(f.id)) } }
+        for other in others where other.owner != owner && other.string != string {
+            if other.string.hasPrefix(string) {
+                return "Typing “\(other.string)” (\(other.label)) will fire “\(string)” first, so it won't work."
+            }
+            if string.hasPrefix(other.string) {
+                return "“\(other.string)” (\(other.label)) fires first, so typing “\(string)” won't work."
+            }
+        }
+        return nil
+    }
+
     /// A custom string always stands (duplicates are flagged, not dropped). A derived one yields to
     /// snippet keywords, connection strings and custom folder strings (and any of those it's a prefix
     /// of), and earlier folders in tree order.
@@ -88,7 +107,9 @@ struct KeywordNamespace {
         Set(entries.map(\.string)).intersection(snippetKeywords)
     }
 
-    private var snippetKeywords: Set<String> { Set(allSnippets.map(\.keyword)) }
+    var snippetKeywords: Set<String> { Set(allSnippets.map(\.keyword)) }
+    /// What connections and folders answer to now, which a snippet keyword can't take.
+    var connectionStrings: Set<String> { Set(entries.map(\.string)) }
 
     private var entries: [(string: String, target: ActivationTarget)] {
         allConnections.compactMap { connection in

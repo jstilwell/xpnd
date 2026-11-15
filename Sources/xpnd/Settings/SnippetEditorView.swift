@@ -38,11 +38,13 @@ struct SnippetEditorView: View {
 
     var body: some View {
         Form {
-            TextField("Name", text: binding(\.name))
+            CommittingTextField("Name", text: snippet.name) { name in _ = edit { $0.name = name } }.id(snippet.id)
             VStack(alignment: .leading, spacing: 4) {
                 TextField("Keyword", text: $keyword)
                 if let keywordProblem {
                     Text(keywordProblem).font(.callout).foregroundStyle(.red)
+                } else if let note = namespace.hidingNote(keyword, for: .snippet(snippet.id)) {
+                    Text(note).font(.callout).foregroundStyle(.orange)
                 }
             }
             Picker("Matching", selection: binding(\.matching)) {

@@ -99,11 +99,14 @@ struct Sidebar: View {
         return Section {
                 if searching {
                     ForEach(ConnectionFilter.filter(ConnectionFilter.entries(connections.library), query: search), id: \.connection.id) { entry in
-                        sidebarRow(entry.connection.name, detail: entry.pathText, symbol: ConnectionNode(connection: entry.connection, inherited: nil).symbol,
+                        sidebarRow(EditorRules.displayName(entry.connection.name), detail: entry.pathText, symbol: ConnectionNode(connection: entry.connection, inherited: nil).symbol,
                                    color: entry.color, connected: established.contains(entry.connection.id))
                             .tag(SidebarItem.connection(entry.connection.id))
                     }
                 } else {
+                    if connections.library.folders.isEmpty, connections.store.loadError == nil {
+                        emptyHint("Connections live in folders: add one with +, then a connection in it.")
+                    }
                     ForEach(connections.library.folders) { folder in
                         FolderRows(folder: folder, namespace: namespace, drops: drops, inherited: nil, established: established, expanded: $expandedFolders)
                     }
@@ -120,6 +123,9 @@ struct Sidebar: View {
     private var snippetsSection: some View {
         let library = editing.store.library
         return Section {
+                if library.groups.isEmpty, !searching, editing.store.loadError == nil {
+                    emptyHint("Snippets live in groups: add one with +, then a snippet in it.")
+                }
                 ForEach(library.groups) { group in
                     let shown = searching ? PickerFilter.filter(group.snippets, query: search) : group.snippets
                     if !searching || !shown.isEmpty {
@@ -153,6 +159,10 @@ struct Sidebar: View {
                 }
             }
             .collapsible(false)
+    }
+
+    private func emptyHint(_ text: String) -> some View {
+        Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
     private static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
@@ -218,7 +228,7 @@ struct Sidebar: View {
     private func snippetGroup(_ group: SnippetGroup, _ snippets: [Snippet], expanded: Binding<Bool>) -> some View {
         DisclosureGroup(isExpanded: expanded) {
             ForEach(snippets) { snippet in
-                sidebarRow(snippet.name.isEmpty ? "Untitled" : snippet.name, detail: snippet.keyword, symbol: "text.cursor")
+                sidebarRow(EditorRules.displayName(snippet.name), detail: snippet.keyword, symbol: "text.cursor")
                     .opacity(snippet.enabled ? 1 : 0.5)
                     .tag(SidebarItem.snippet(snippet.id))
                     .draggable(SidebarItem.snippet(snippet.id).dragText)
@@ -228,13 +238,16 @@ struct Sidebar: View {
             }
         } label: {
             HStack {
-                sidebarRow(group.name.isEmpty ? "Untitled" : group.name, detail: nil, symbol: "folder")
+                sidebarRow(EditorRules.displayName(group.name), detail: nil, symbol: "folder")
                     .foregroundStyle(group.enabled ? .primary : .secondary)
                 Spacer()
-                Button("New Snippet", systemImage: "plus") { addSnippet(to: group) }
+                // Named for VoiceOver and the tooltip, which otherwise hear "New Snippet" and "Enabled" on every group.
+                let name = EditorRules.displayName(group.name)
+                Button("New Snippet in “\(name)”", systemImage: "plus") { addSnippet(to: group) }
                     .labelStyle(.iconOnly).buttonStyle(.borderless)
+                    .help("New Snippet in “\(name)”")
                     .disabled(editing.readOnly)
-                Toggle("Enabled", isOn: editing.groupBinding(group, \.enabled))
+                Toggle("“\(name)” enabled", isOn: editing.groupBinding(group, \.enabled))
                     .labelsHidden().toggleStyle(.switch).controlSize(.mini)
                     .disabled(editing.readOnly)
             }
@@ -435,7 +448,7 @@ private struct ConnectionNode {
 
     init(folder: ConnectionFolder, _ namespace: KeywordNamespace) {
         id = .folder(folder.id)
-        title = folder.name
+        title = EditorRules.displayName(folder.name)
         detail = namespace.effectiveActivation(ofFolder: folder.id).string
         symbol = folder.icon.symbol
         color = folder.color
@@ -443,7 +456,7 @@ private struct ConnectionNode {
 
     init(connection: Connection, inherited: ItemColor?) {
         id = .connection(connection.id)
-        title = connection.name
+        title = EditorRules.displayName(connection.name)
         detail = connection.activation.flatMap { $0.isEmpty ? nil : $0 }
         symbol = connection.type.symbol
         color = connection.color ?? inherited

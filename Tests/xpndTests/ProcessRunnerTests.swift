@@ -77,6 +77,15 @@ import Testing
         #expect(try await ScriptRunner.run(path: path, timeoutMs: 10_000).count == 1_000_000)
     }
 
+    /// Without a cap, `yes` with no timeout would fill memory until the user switched apps.
+    @Test func endlessOutputIsStopped() async throws {
+        let (path, dir) = try script("exec /usr/bin/yes")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        await #expect(throws: ExpansionError.scriptOutputTooLarge(path: path)) {
+            try await ScriptRunner.run(path: path, timeoutMs: 0)
+        }
+    }
+
     @Test func largeStderrDoesNotDeadlockAndIsCaptured() async throws {
         let (path, dir) = try script("head -c 1500000 /dev/zero | tr '\\0' e >&2\necho out")
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -21,7 +21,7 @@ import Foundation
     private let frontmost: @MainActor () -> (pid: pid_t, bundleID: String?)?
     private let notify: @MainActor (String) -> Void
     /// A password was copied for a connection that opened in a built-in tab, so the tab can say so too.
-    private let showCopied: @MainActor (String, Connection.ID) -> Void
+    private let showCopied: @MainActor (String, TerminalSession.ID) -> Void
     private let tabPasswords: @MainActor () -> TabPasswordMode
     /// Offers a password over a built-in tab; true once it went in.
     private let offerInTab: @MainActor (_ label: String, _ password: String, TerminalSession.ID, _ automatic: Bool) async -> Bool
@@ -35,7 +35,7 @@ import Foundation
         connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider, executor: any LaunchExecuting,
         openTab: @escaping @MainActor (TabRequest, Connection) -> TerminalSession.ID?, sender: any KeystrokeSending, terminal: @escaping @MainActor () -> TerminalSettings,
         remoteDesktop: @escaping @MainActor () -> RDPSettings, frontmost: @escaping @MainActor () -> (pid: pid_t, bundleID: String?)?,
-        notify: @escaping @MainActor (String) -> Void, showCopied: @escaping @MainActor (String, Connection.ID) -> Void = { _, _ in },
+        notify: @escaping @MainActor (String) -> Void, showCopied: @escaping @MainActor (String, TerminalSession.ID) -> Void = { _, _ in },
         tabPasswords: @escaping @MainActor () -> TabPasswordMode = { .clipboard },
         offerInTab: @escaping @MainActor (String, String, TerminalSession.ID, Bool) async -> Bool = { _, _, _, _ in false },
         copySecret: @escaping @MainActor (String) async -> Void, prompt: any PasswordPrompting, keysDirectory: URL
@@ -199,7 +199,6 @@ import Foundation
     }
 
     private func copyPasswords(for connection: Connection, in library: ConnectionLibrary, tab: TerminalSession.ID?) async {
-        let inTab = tab != nil
         if let tab, tabPasswords() != .clipboard {
             return await offerPasswords(for: connection, in: library, tab: tab, automatic: tabPasswords() == .sendAutomatically)
         }
@@ -209,7 +208,7 @@ import Foundation
         if needsLogin, let login {
             guard await copyPassword(login) else { return }
             notify("Password copied for \(name)")
-            if inTab { showCopied("Password copied", connection.id) }
+            if let tab { showCopied("Password copied", tab) }
         }
         // Screen Sharing always asks for a password; an SSH login may well need none.
         if connection.type == .vnc, !needsLogin { return notify("No password set for \(name)") }
@@ -221,7 +220,7 @@ import Foundation
         if needsLogin, !(await prompt.offerSudo(for: name)) { return }
         if await copyPassword(sudo) {
             notify("Sudo password copied")
-            if inTab { showCopied("Sudo password copied", connection.id) }
+            if let tab { showCopied("Sudo password copied", tab) }
         }
     }
 

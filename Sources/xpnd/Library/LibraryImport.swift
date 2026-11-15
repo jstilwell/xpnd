@@ -18,6 +18,21 @@ enum LibraryImport {
         return clashing.sorted()
     }
 
+    /// `library` without the snippets whose keyword is in `reserved` (strings the connections file uses: a keyword
+    /// owned in both files triggers neither), and those keywords, sorted.
+    static func removing(_ reserved: Set<String>, from library: SnippetLibrary) -> (SnippetLibrary, [String]) {
+        var library = library
+        var removed: Set<String> = []
+        for gi in library.groups.indices {
+            library.groups[gi].snippets.removeAll { snippet in
+                guard reserved.contains(snippet.keyword) else { return false }
+                removed.insert(snippet.keyword)
+                return true
+            }
+        }
+        return (library, removed.sorted())
+    }
+
     /// Groups merge by exact name. `.replace` removes the existing snippet wherever it lives.
     static func merge(_ incoming: SnippetLibrary, into existing: SnippetLibrary, choice: ConflictChoice) -> SnippetLibrary {
         var result = existing
@@ -66,6 +81,10 @@ enum LibraryImport {
                 }
                 found.append(RiskyAction(snippetName: snippet.name, keyword: snippet.keyword, kind: kind, target: target))
             }
+            // Typed as keystrokes (remote desktops, or everywhere by the setting), a new line is a press of Return.
+            if snippet.text.contains(where: \.isNewline) {
+                found.append(RiskyAction(snippetName: snippet.name, keyword: snippet.keyword, kind: .key, target: "Return (a new line in its text)"))
+            }
         }
         return found
     }
@@ -77,7 +96,14 @@ enum LibraryImport {
         let added = incoming.groups.flatMap(\.snippets).count - skipped
         guard added > 0 else { return nil }
         let imported = "Imported \(added) snippet\(added == 1 ? "" : "s")"
-        return skipped == 0 ? imported + "." : imported + "; skipped \(skipped) that already exist\(skipped == 1 ? "s" : "")."
+        let summary = skipped == 0 ? imported + "." : imported + "; skipped \(skipped) that already exist\(skipped == 1 ? "s" : "")."
+        // Groups merge by name, so snippets can land in one that's off and never expand.
+        let off = incoming.groups.filter { !$0.snippets.isEmpty }.compactMap { group in
+            existing.groups.first { $0.name == group.name && !$0.enabled }.map { "“\($0.name)”" }
+        }
+        guard !off.isEmpty else { return summary }
+        let one = off.count == 1
+        return summary + " \(one ? "The group" : "The groups") \(off.joined(separator: ", ")) \(one ? "is" : "are") turned off, so turn \(one ? "it" : "them") on to use them."
     }
 
     /// `groups == nil` exports every group.

@@ -47,7 +47,7 @@ enum SnippetYAML {
             // An empty document decodes to nil; treat it as an empty library.
             file = try YAMLDecoder().decode(File?.self, from: yaml) ?? File()
         } catch {
-            throw .malformed(String(describing: error))
+            throw .malformed(YAMLErrorText.describe(error))
         }
         let version = file.version ?? currentVersion
         guard version == currentVersion else { throw .unsupportedVersion(version) }

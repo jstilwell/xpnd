@@ -14,7 +14,8 @@ enum KeyInput: Equatable, Sendable {
 
     static func classify(keyCode: UInt16, characters: String, flags: CGEventFlags) -> KeyInput {
         if !flags.isDisjoint(with: [.maskCommand, .maskControl]) { return .reset }
-        if keyCode == UInt16(kVK_Delete) { return .backspace }
+        // ⌥⌫ deletes a word on screen, so the buffer can't follow it one character at a time.
+        if keyCode == UInt16(kVK_Delete) { return flags.contains(.maskAlternate) ? .reset : .backspace }
         if resetKeyCodes.contains(Int(keyCode)) { return .reset }
         if characters.isEmpty { return .ignore } // dead key: the composed character comes next
         // Control characters and the private-use scalars macOS reports for non-printing keys.

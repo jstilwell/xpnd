@@ -61,6 +61,10 @@ struct RDPErrorTextTests {
             ("ERRCONNECT_ACCOUNT_LOCKED_OUT", "the account is locked out"),
             ("ERRCONNECT_ACCOUNT_DISABLED", "the account is disabled"),
             ("ERRCONNECT_AUTHENTICATION_FAILED", "authentication failed"),
+            ("ERRCONNECT_LOGON_TYPE_NOT_GRANTED", "the account may not sign in remotely to this computer (it needs to be in Remote Desktop Users)"),
+            ("ERRCONNECT_ACCOUNT_EXPIRED", "the account has expired"),
+            // One with no wording of its own still reads as a sentence.
+            ("ERRCONNECT_POST_CONNECT_FAILED", "the connection failed (ERRCONNECT_POST_CONNECT_FAILED)"),
         ]
         for (name, reason) in cases {
             #expect(RDPErrorText.reason(forErrorName: name) == reason, "\(name)")

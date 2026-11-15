@@ -7,16 +7,42 @@ enum ConnectionImport {
         Set(library.allFolders.flatMap { [$0.activation] + $0.connections.map(\.activation) }.compactMap(custom))
     }
 
+    /// `library` with its custom strings that are in `reserved` (snippet keywords: a string owned in both files
+    /// triggers neither) taken off, and those strings, sorted. A connection keeps no string; a folder goes back to
+    /// its derived one, which yields to snippets by itself.
+    static func removing(_ reserved: Set<String>, from library: ConnectionLibrary) -> (ConnectionLibrary, [String]) {
+        var removed: Set<String> = []
+        func strip(_ f: ConnectionFolder) -> ConnectionFolder {
+            var f = f
+            if let a = custom(f.activation), reserved.contains(a) { f.activation = nil; removed.insert(a) }
+            for i in f.connections.indices {
+                if let a = custom(f.connections[i].activation), reserved.contains(a) {
+                    f.connections[i].activation = nil
+                    removed.insert(a)
+                }
+            }
+            f.folders = f.folders.map(strip)
+            return f
+        }
+        var library = library
+        library.folders = library.folders.map(strip)
+        return (library, removed.sorted())
+    }
+
     /// Custom activation strings present in both, sorted.
     static func conflicts(incoming: ConnectionLibrary, existing: ConnectionLibrary) -> [String] {
         activations(incoming).intersection(activations(existing)).sorted()
     }
 
     /// Folders merge by exact name, recursively. `.replace` removes the existing owner of a
-    /// conflicting string (a folder owner keeps its contents but loses its string).
+    /// conflicting string (a folder owner keeps its contents but loses its string). The file's global and folder
+    /// credentials fill levels that have none here; an incoming connection that would then inherit another
+    /// credential than the file gave it keeps the file's as its own.
     static func merge(_ incoming: ConnectionLibrary, into existing: ConnectionLibrary, choice: ConflictChoice) -> ConnectionLibrary {
         let existingIDs = Set(existing.allFolders.flatMap { [$0.id] + $0.connections.map(\.id) })
         var renamed: [UUID: UUID] = [:]
+        /// Each incoming connection's ID in the result -> its ID in `incoming`.
+        var origin: [UUID: UUID] = [:]
         func fresh(_ id: UUID) -> UUID {
             guard existingIDs.contains(id) else { return id }
             let new = UUID()
@@ -26,7 +52,11 @@ enum ConnectionImport {
         func reid(_ f: ConnectionFolder) -> ConnectionFolder {
             var f = f
             f.id = fresh(f.id)
-            for i in f.connections.indices { f.connections[i].id = fresh(f.connections[i].id) }
+            for i in f.connections.indices {
+                let old = f.connections[i].id
+                f.connections[i].id = fresh(old)
+                origin[f.connections[i].id] = old
+            }
             f.folders = f.folders.map(reid)
             return f
         }
@@ -67,6 +97,8 @@ enum ConnectionImport {
             for f in new {
                 if let i = target.firstIndex(where: { $0.name == f.name }) {
                     target[i].connections += dropBlocked(f.connections)
+                    if target[i].credential == nil { target[i].credential = f.credential }
+                    if target[i].sudoCredential == nil { target[i].sudoCredential = f.sudoCredential }
                     if let a = custom(f.activation), custom(target[i].activation) != a {
                         let clashes = activations(existing).contains(a)
                         if clashes ? choice == .replace : custom(target[i].activation) == nil {
@@ -81,6 +113,8 @@ enum ConnectionImport {
             }
         }
         var result = existing
+        if result.credential == nil { result.credential = incoming.credential }
+        if result.sudoCredential == nil { result.sudoCredential = incoming.sudoCredential }
         mergeFolders(&result.folders, incomingFolders)
 
         if choice == .replace {
@@ -117,6 +151,24 @@ enum ConnectionImport {
             for i in f.folders.indices { repoint(&f.folders[i]) }
         }
         if !redirect.isEmpty { for i in result.folders.indices { repoint(&result.folders[i]) } }
+
+        // Otherwise a connection whose file gave it one password would get this Mac's for its folder, or none.
+        let merged = result
+        func pin(_ f: inout ConnectionFolder) {
+            for i in f.connections.indices {
+                let id = f.connections[i].id
+                guard let old = origin[id] else { continue }
+                if let want = incoming.loginCredential(for: old)?.ref, merged.loginCredential(for: id)?.ref != want {
+                    f.connections[i].credential = want
+                }
+                if let want = incoming.sudoCredential(for: old), want.source != .login,
+                   merged.sudoCredential(for: id)?.ref != want.ref {
+                    f.connections[i].sudoCredential = want.ref
+                }
+            }
+            for i in f.folders.indices { pin(&f.folders[i]) }
+        }
+        for i in result.folders.indices { pin(&result.folders[i]) }
         return result
     }
 
@@ -139,7 +191,6 @@ enum ConnectionImport {
     struct PreviewRow: Identifiable, Equatable {
         let id: Connection.ID
         let name: String
-        let host: String
         /// `user@host:port`, without `user@` when no user resolves.
         let address: String
         /// The text, or the saved connection's name; nil for none.
@@ -196,8 +247,8 @@ enum ConnectionImport {
             }
             let user = login.map { "\($0)@" } ?? ""
             let host = c.host.contains(":") && !c.host.hasPrefix("[") ? "[\(c.host)]" : c.host
-            return PreviewRow(id: c.id, name: c.name, host: c.host, address: "\(user)\(host):\(c.effectivePort)",
-                              jumpHost: jump, gateway: c.type == .rdp ? c.rdp?.gateway?.host : nil, sshOptions: c.sshOptions)
+            return PreviewRow(id: c.id, name: c.name, address: "\(user)\(host):\(c.effectivePort)",
+                              jumpHost: jump, gateway: c.type == .rdp ? c.rdp?.gateway.flatMap { $0.host.isEmpty ? nil : $0.host } : nil, sshOptions: c.sshOptions)
         }
         return Preview(added: added, removed: removed, rejumped: rejumped)
     }

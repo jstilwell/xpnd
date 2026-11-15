@@ -48,6 +48,10 @@ import Testing
         #expect(KeyInput.classify(keyCode: 0, characters: "A", flags: .maskShift) == .characters("A"))
     }
 
+    @Test func optionDeleteResets() {
+        #expect(KeyInput.classify(keyCode: 51, characters: "\u{7f}", flags: .maskAlternate) == .reset)
+    }
+
     @Test func optionCharacterAppends() {
         #expect(KeyInput.classify(keyCode: 14, characters: "é", flags: .maskAlternate) == .characters("é"))
     }

@@ -3,12 +3,15 @@ enum ExpansionError: Error, Equatable, Sendable {
     case scriptNotFound(path: String)
     case scriptFailed(path: String, status: Int32)
     case scriptTimedOut(path: String)
+    case scriptOutputTooLarge(path: String)
     case inputCancelled
     case appNotFound(path: String)
     case unknownShortcut(String)
     case shortcutFailed(name: String, status: Int32)
     case shortcutTimedOut(String)
     case targetAppChanged
+    case expansionTurnedOff
+    case busy
 
     var message: String {
         switch self {
@@ -16,12 +19,15 @@ enum ExpansionError: Error, Equatable, Sendable {
         case .scriptNotFound(let path): "No script was found at “\(path)”."
         case .scriptFailed(let path, let status): "The script “\(path)” failed with exit status \(status)."
         case .scriptTimedOut(let path): "The script “\(path)” took too long and was stopped."
+        case .scriptOutputTooLarge(let path): "The script “\(path)” printed more than 8 MB and was stopped."
         case .inputCancelled: "The input form was cancelled."
         case .appNotFound(let path): "No app was found at “\(path)”."
         case .unknownShortcut(let name): "No shortcut is named “\(name)”."
         case .shortcutFailed(let name, let status): "The shortcut “\(name)” failed with exit status \(status)."
         case .shortcutTimedOut(let name): "The shortcut “\(name)” took too long and was stopped."
         case .targetAppChanged: "Expansion cancelled: the app you typed in is no longer in front."
+        case .expansionTurnedOff: "Expansion cancelled: expansion was turned off."
+        case .busy: "Another action is still running."
         }
     }
 }

@@ -11,7 +11,7 @@ extension AppDelegate {
             terminal: { AppSettings.shared.terminal }, remoteDesktop: { AppSettings.shared.remoteDesktop },
             frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.bundleIdentifier) } },
             notify: { hud.flash($0) },
-            showCopied: { [weak self] text, id in self?.mainWindow?.sessions.showCopied(text, for: id) },
+            showCopied: { [weak self] text, id in self?.mainWindow?.sessions.showCopied(text, in: id) },
             tabPasswords: { AppSettings.shared.tabPasswords },
             offerInTab: { [weak self] label, password, tab, automatic in
                 await self?.mainWindow?.sessions.offer(label, password: password, in: tab, automatic: automatic) ?? false
@@ -50,7 +50,7 @@ extension AppDelegate {
                            preferBuiltIn: Bool = false) async {
         let service = service
         guard await engine.exclusive({ await service?.connect(id, typedInto: pid, deletingCharacters: deleting, sudo: sudo, preferBuiltIn: preferBuiltIn) }) else {
-            return hud.flash("Another action is still running.")
+            return hud.flash(ExpansionError.busy.message)
         }
     }
 

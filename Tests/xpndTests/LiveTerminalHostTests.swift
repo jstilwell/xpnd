@@ -7,6 +7,11 @@ import SwiftTerm
         let env = LiveTerminalHost.environment(from: ["HOME": "/u", "LANG": "de_DE.UTF-8"], locale: "en_US")
         #expect(env.contains("TERM=xterm-256color") && env.contains("COLORTERM=truecolor") && env.contains("LANG=de_DE.UTF-8") && env.contains("HOME=/u"))
         #expect(LiveTerminalHost.environment(from: [:], locale: "en_US@rg=gbzzzz").contains("LANG=en_US.UTF-8"))
+        // Servers reject a script or a numeric region.
+        #expect(LiveTerminalHost.posixLocale("zh-Hans_CN") == "zh_CN.UTF-8")
+        #expect(LiveTerminalHost.posixLocale("de_DE") == "de_DE.UTF-8")
+        #expect(LiveTerminalHost.posixLocale("es_419") == "en_US.UTF-8")
+        #expect(LiveTerminalHost.posixLocale("en") == "en_US.UTF-8")
     }
 
     @Test func clipboardGuardDeniesRemoteReads() {

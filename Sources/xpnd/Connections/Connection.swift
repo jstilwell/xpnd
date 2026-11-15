@@ -44,6 +44,20 @@ struct CredentialRef: Hashable, Codable, Sendable {
     }
 }
 
+/// In an extension to keep the memberwise init; a hand-written ref may leave out `provider`, which then is 1Password.
+extension CredentialRef {
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try c.decodeIfPresent(String.self, forKey: .provider) ?? "1password"
+        account = try c.decode(String.self, forKey: .account)
+        vault = try c.decode(String.self, forKey: .vault)
+        item = try c.decode(String.self, forKey: .item)
+        title = try c.decode(String.self, forKey: .title)
+        category = try c.decode(CredentialCategory.self, forKey: .category)
+        username = try c.decodeIfPresent(String.self, forKey: .username)
+    }
+}
+
 /// A fixed palette, like Finder tags: it reads in light and dark mode and is hand-editable in YAML.
 enum ItemColor: String, Codable, CaseIterable, Sendable {
     case red, orange, yellow, green, blue, purple, gray

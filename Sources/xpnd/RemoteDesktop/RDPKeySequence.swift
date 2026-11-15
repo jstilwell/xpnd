@@ -52,20 +52,4 @@ enum RDPKeySequence {
             .scancode(enter, down: true), .scancode(enter, down: false),
         ]
     }
-
-    /// True when every scancode down is matched by an up in last-in-first-out order.
-    /// Non-scancode steps are ignored.
-    static func isBalanced(_ steps: [RDPKeyStep]) -> Bool {
-        var held: [UInt16] = []
-        for step in steps {
-            guard case let .scancode(code, down) = step else { continue }
-            if down {
-                held.append(code)
-            } else {
-                guard held.last == code else { return false }
-                held.removeLast()
-            }
-        }
-        return held.isEmpty
-    }
 }

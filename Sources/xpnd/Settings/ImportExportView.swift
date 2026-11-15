@@ -18,8 +18,8 @@ struct ImportExportView: View {
             }
             .pickerStyle(.segmented).labelsHidden().fixedSize().padding(.top, 12)
             switch kind {
-            case .snippets: SnippetImportExport(store: store)
-            case .connections: ConnectionImportExport(store: connections)
+            case .snippets: SnippetImportExport(store: store, connections: connections)
+            case .connections: ConnectionImportExport(store: connections, snippets: store)
             }
         }
     }
@@ -28,12 +28,16 @@ struct ImportExportView: View {
 /// Exports chosen groups to YAML, and imports YAML after showing every snippet it adds and what any can run.
 private struct SnippetImportExport: View {
     let store: SnippetStore
+    /// Its strings and the snippet keywords share one namespace.
+    let connections: ConnectionStore
     /// Groups left out of the export; every group starts included.
     @State private var excluded: Set<SnippetGroup.ID> = []
     @State private var message: String?
     /// The decoded file, held until the user confirms it.
     @State private var incoming: SnippetLibrary?
     @State private var risky: [RiskyAction] = []
+    /// Keywords left out because a connection or folder uses them.
+    @State private var taken: [String] = []
     @State private var conflicts: [String] = []
     @State private var previewing = false
     @State private var resolvingConflicts = false
@@ -42,7 +46,7 @@ private struct SnippetImportExport: View {
         Form {
             Section("Export") {
                 ForEach(store.library.groups) { group in
-                    Toggle(group.name.isEmpty ? "Untitled" : group.name, isOn: Binding(
+                    Toggle(EditorRules.displayName(group.name), isOn: Binding(
                         get: { !excluded.contains(group.id) },
                         set: { if $0 { excluded.remove(group.id) } else { excluded.insert(group.id) } }))
                 }
@@ -63,7 +67,7 @@ private struct SnippetImportExport: View {
         .frame(width: 460)
         .frame(minHeight: 320)
         .sheet(isPresented: $previewing) {
-            SnippetImportSheet(snippets: incoming?.groups.flatMap(\.snippets) ?? [], risky: risky, cancel: cancelImport) {
+            SnippetImportSheet(snippets: incoming?.groups.flatMap(\.snippets) ?? [], risky: risky, taken: taken, cancel: cancelImport) {
                 previewing = false
                 checkConflicts()
             }
@@ -112,7 +116,14 @@ private struct SnippetImportExport: View {
             message = "No snippets were found in \(url.lastPathComponent)."
             return
         }
-        incoming = library
+        let reserved = KeywordNamespace(snippets: store.library, connections: connections.library).connectionStrings
+        let (kept, taken) = LibraryImport.removing(reserved, from: library)
+        guard kept.groups.contains(where: { !$0.snippets.isEmpty }) else {
+            message = "Nothing was imported: connections or folders already use every keyword (\(taken.joined(separator: ", ")))."
+            return
+        }
+        self.taken = taken
+        incoming = kept
         risky = LibraryImport.riskyActions(in: library)
         // Nothing is merged until the preview is confirmed: a snippet needs no script to do harm once typed.
         previewing = true
@@ -133,7 +144,8 @@ private struct SnippetImportExport: View {
         }
         do {
             try store.update { $0 = LibraryImport.merge(incoming, into: $0, choice: choice) }
-            message = outcome
+            message = taken.isEmpty ? outcome
+                : outcome + " Skipped \(EditorRules.count(taken.count, "snippet")) whose keyword a connection or folder uses."
         } catch {
             message = error.message
         }
@@ -150,6 +162,7 @@ private struct SnippetImportExport: View {
 private struct SnippetImportSheet: View {
     let snippets: [Snippet]
     let risky: [RiskyAction]
+    let taken: [String]
     let cancel: () -> Void
     let confirm: () -> Void
 
@@ -167,6 +180,12 @@ private struct SnippetImportSheet: View {
                                     .font(.callout.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                             }
                         }
+                    }
+                }
+                if !taken.isEmpty {
+                    Section("Not imported: a connection or folder uses these keywords") {
+                        Text(taken.map(ConnectionImport.visible).joined(separator: ", "))
+                            .font(.callout.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                 }
                 Section("Typing the keyword inserts the snippet") {
@@ -205,12 +224,16 @@ private struct SnippetImportSheet: View {
 /// Exports chosen folders to YAML, and imports YAML after showing every connection it adds.
 private struct ConnectionImportExport: View {
     let store: ConnectionStore
+    /// Its keywords and the connection strings share one namespace.
+    let snippets: SnippetStore
     /// Top-level folders left out of the export; every folder starts included.
     @State private var excluded: Set<ConnectionFolder.ID> = []
     @State private var message: String?
     /// The decoded file and the chosen conflict handling, held until the user confirms the preview.
     @State private var incoming: ConnectionLibrary?
     @State private var choice = ConflictChoice.skip
+    /// Strings taken off incoming items because a snippet uses them.
+    @State private var taken: [String] = []
     @State private var conflicts: [String] = []
     @State private var resolvingConflicts = false
     @State private var preview: ConnectionImport.Preview?
@@ -219,7 +242,7 @@ private struct ConnectionImportExport: View {
         Form {
             Section("Export") {
                 ForEach(store.library.folders) { folder in
-                    Toggle(folder.name.isEmpty ? "Untitled" : folder.name, isOn: Binding(
+                    Toggle(EditorRules.displayName(folder.name), isOn: Binding(
                         get: { !excluded.contains(folder.id) },
                         set: { if $0 { excluded.remove(folder.id) } else { excluded.insert(folder.id) } }))
                 }
@@ -248,7 +271,7 @@ private struct ConnectionImportExport: View {
             Text("Skip keeps your connections; Replace uses the imported ones.\n" + conflicts.joined(separator: ", "))
         }
         .sheet(isPresented: Binding(get: { preview != nil }, set: { if !$0 { preview = nil } })) {
-            if let preview { ConnectionPreviewSheet(preview: preview, cancel: cancelImport, confirm: merge) }
+            if let preview { ConnectionPreviewSheet(preview: preview, taken: taken, cancel: cancelImport, confirm: merge) }
         }
     }
 
@@ -287,8 +310,10 @@ private struct ConnectionImportExport: View {
             message = "No connections or folders were found in \(url.lastPathComponent)."
             return
         }
-        incoming = library
-        conflicts = ConnectionImport.conflicts(incoming: library, existing: store.library)
+        let (kept, taken) = ConnectionImport.removing(Set(snippets.library.groups.flatMap(\.snippets).map(\.keyword)), from: library)
+        self.taken = taken
+        incoming = kept
+        conflicts = ConnectionImport.conflicts(incoming: kept, existing: store.library)
         if conflicts.isEmpty { showPreview(.skip) } else { resolvingConflicts = true }
     }
 
@@ -307,6 +332,7 @@ private struct ConnectionImportExport: View {
         do {
             try store.update { $0 = ConnectionImport.merge(incoming, into: $0, choice: choice) }
             message = added == 0 ? "Imported the folders; no connections were added." : "Imported \(EditorRules.count(added, "connection"))."
+            if !taken.isEmpty { message! += " Snippets use \(taken.joined(separator: ", ")), so those came without their string." }
         } catch {
             message = error.connectionsMessage
         }
@@ -323,6 +349,7 @@ private struct ConnectionImportExport: View {
 /// removes or re-points, before anything changes.
 private struct ConnectionPreviewSheet: View {
     let preview: ConnectionImport.Preview
+    let taken: [String]
     let cancel: () -> Void
     let confirm: () -> Void
 
@@ -364,6 +391,10 @@ private struct ConnectionPreviewSheet: View {
                     }
                 }
                 .frame(minHeight: 240)
+            }
+            if !taken.isEmpty {
+                Text("Snippets already use \(taken.map(ConnectionImport.visible).joined(separator: ", ")), so those come without their string.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
             Text("SSH options and jump hosts run when you connect, so check them before importing.")
                 .font(.callout).foregroundStyle(.secondary)

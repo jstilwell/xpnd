@@ -25,6 +25,13 @@ struct RDPOptionsTests {
         #expect(c.clipboard)
     }
 
+    /// The editor keeps a gateway's port and credential while its host is cleared to be retyped.
+    @Test func aGatewayWithNoHostConnectsWithoutOne() {
+        let c = RDPOptions(gateway: .init(host: "", port: 8443))
+            .resolved(over: .standard, host: "h", port: 3389, username: nil, domain: nil)
+        #expect(c.gateway == nil)
+    }
+
     @Test func onlySetKeysEncode() throws {
         let o = RDPOptions(audio: .off)
         let data = try JSONEncoder().encode(o)

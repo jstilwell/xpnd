@@ -135,8 +135,9 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         #expect(h.engine.isExpanding)
 
         h.type(";", "s", "i", "g")
-        // A direct call (as from the picker) is refused too.
+        // A direct call (as from the picker) is refused too, and says why.
         await h.engine.expand(snip(";x", "X"), deletingCharacters: 0)
+        #expect(h.notes == [ExpansionError.busy.message])
 
         h.gate.continuation?.resume(returning: ["Name": "Ann"])
         await first.value
@@ -216,6 +217,17 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         await picked.value
         #expect(h.sender.log.isEmpty)
         #expect(h.notes.count == 2)
+    }
+
+    @Test func turningExpansionOffCancelsAndSaysSo() async throws {
+        let h = try Harness([snip(";tix", "Hi #{input:Name}")])
+        h.type(";", "t", "i", "x")
+        #expect(await eventually { h.gate.continuation != nil })
+        h.engine.isEnabled = false
+        h.gate.continuation?.resume(returning: ["Name": "Ann"])
+        await h.settle()
+        #expect(h.sender.log.isEmpty)
+        #expect(h.notes == [ExpansionError.expansionTurnedOff.message])
     }
 
     @Test func unchangedFrontAppStillExpands() async throws {

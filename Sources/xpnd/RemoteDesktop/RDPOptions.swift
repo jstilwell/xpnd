@@ -158,7 +158,7 @@ extension RDPOptions {
             commandAsWindowsKey: commandAsWindowsKey ?? d.commandAsWindowsKey, nla: nla ?? d.nla,
             timeoutSeconds: timeoutSeconds ?? d.timeoutSeconds, autoReconnect: autoReconnect ?? d.autoReconnect,
             reconnectTries: reconnectTries ?? d.reconnectTries, performance: performance ?? d.performance,
-            gateway: gateway, alternateShell: alternateShell ?? d.alternateShell,
+            gateway: gateway?.host.isEmpty == false ? gateway : nil, alternateShell: alternateShell ?? d.alternateShell,
             consoleSession: consoleSession ?? d.consoleSession,
             dropDrive: dropDrive ?? d.dropDrive, dropFolder: dropFolder)
     }
