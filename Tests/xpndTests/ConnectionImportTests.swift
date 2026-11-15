@@ -97,22 +97,22 @@ struct ConnectionImportTests {
         #expect(Set(r.allConnections.map(\.id)).count == 4)
     }
 
-    /// The hosts of what a merge adds, as the preview lists them.
+    /// The addresses of what a merge adds, as the preview lists them.
     private func hostsAdded(_ incoming: ConnectionLibrary, _ existing: ConnectionLibrary, _ choice: ConflictChoice) -> [String] {
-        Set(ConnectionImport.preview(incoming: incoming, existing: existing, choice: choice).added.map(\.host)).sorted()
+        Set(ConnectionImport.preview(incoming: incoming, existing: existing, choice: choice).added.map(\.address)).sorted()
     }
 
     @Test func thePreviewListsOnlyWhatTheMergeAdds() {
         let existing = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [conn("x", host: "old")])])
         let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [
             conn("1", host: "zeta"), conn("2", host: "alpha"), conn("3", host: "alpha")])])
-        #expect(hostsAdded(incoming, existing, .replace) == ["alpha", "zeta"])
+        #expect(hostsAdded(incoming, existing, .replace) == ["alpha:22", "zeta:22"])
         let clash = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [
             conn("x", host: "old", act: ";k")])])
         let inc2 = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [
             conn("1", host: "skipped", act: ";k"), conn("2", host: "kept")])])
-        #expect(hostsAdded(inc2, clash, .skip) == ["kept"])
-        #expect(hostsAdded(inc2, clash, .replace) == ["kept", "skipped"])
+        #expect(hostsAdded(inc2, clash, .skip) == ["kept:22"])
+        #expect(hostsAdded(inc2, clash, .replace) == ["kept:22", "skipped:22"])
     }
 
     @Test func previewRowsShowWhatRunsOnConnect() {

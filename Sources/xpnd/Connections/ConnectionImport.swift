@@ -191,7 +191,6 @@ enum ConnectionImport {
     struct PreviewRow: Identifiable, Equatable {
         let id: Connection.ID
         let name: String
-        let host: String
         /// `user@host:port`, without `user@` when no user resolves.
         let address: String
         /// The text, or the saved connection's name; nil for none.
@@ -248,7 +247,7 @@ enum ConnectionImport {
             }
             let user = login.map { "\($0)@" } ?? ""
             let host = c.host.contains(":") && !c.host.hasPrefix("[") ? "[\(c.host)]" : c.host
-            return PreviewRow(id: c.id, name: c.name, host: c.host, address: "\(user)\(host):\(c.effectivePort)",
+            return PreviewRow(id: c.id, name: c.name, address: "\(user)\(host):\(c.effectivePort)",
                               jumpHost: jump, gateway: c.type == .rdp ? c.rdp?.gateway.flatMap { $0.host.isEmpty ? nil : $0.host } : nil, sshOptions: c.sshOptions)
         }
         return Preview(added: added, removed: removed, rejumped: rejumped)

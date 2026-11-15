@@ -54,7 +54,7 @@ struct OnePasswordProvider: CredentialProvider {
     }
 
     func search(_ query: String, account: String) async throws(CredentialError) -> [CredentialItem] {
-        guard CredentialRef.isSafe(account) else { throw Self.invalidRef }
+        guard CredentialRef.isSafe(account) else { throw CredentialError.invalidRef }
         let out = try await check(Self.listArguments(account: account), title: "")
         guard let data = out.stdout.data(using: .utf8),
               let rows = try? JSONDecoder().decode([Row].self, from: data) else { throw .failed("1Password returned an unexpected response.") }
@@ -71,15 +71,13 @@ struct OnePasswordProvider: CredentialProvider {
 
     // MARK: helpers
 
-    static let invalidRef = CredentialError.invalidRef
-
     private func exec(_ args: [String]) async -> ProcessOutput? {
         guard let path = Self.findOP(override: opPath) else { return nil }
         return await run(URL(fileURLWithPath: path), args)
     }
 
     private func field(_ ref: CredentialRef, _ label: String) async throws(CredentialError) -> String {
-        guard CredentialRef.isSafe(ref.item), CredentialRef.isSafe(ref.vault), CredentialRef.isSafe(ref.account) else { throw Self.invalidRef }
+        guard CredentialRef.isSafe(ref.item), CredentialRef.isSafe(ref.vault), CredentialRef.isSafe(ref.account) else { throw CredentialError.invalidRef }
         let out = try await check(Self.fieldArguments(ref, label: label), title: ref.title)
         struct Field: Decodable { let value: String? }
         let data = Data(out.stdout.utf8)

@@ -142,10 +142,10 @@ private final class Calls: @unchecked Sendable {
         for r in [CredentialRef(account: "ACC1", vault: "v1", item: bad, title: "T", category: .login),
                   CredentialRef(account: "ACC1", vault: bad, item: "i1", title: "T", category: .login),
                   CredentialRef(account: bad, vault: "v1", item: "i1", title: "T", category: .login)] {
-            await #expect(throws: OnePasswordProvider.invalidRef) { try await p.password(for: r) }
-            await #expect(throws: OnePasswordProvider.invalidRef) { try await p.publicKey(for: r) }
+            await #expect(throws: CredentialError.invalidRef) { try await p.password(for: r) }
+            await #expect(throws: CredentialError.invalidRef) { try await p.publicKey(for: r) }
         }
-        await #expect(throws: OnePasswordProvider.invalidRef) { try await p.search("", account: bad) }
+        await #expect(throws: CredentialError.invalidRef) { try await p.search("", account: bad) }
         #expect(calls.all.isEmpty)
     }
 
