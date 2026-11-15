@@ -126,8 +126,9 @@ struct SnippetGroupDetails: View {
 
     var body: some View {
         Form {
-            TextField("Group", text: editing.groupBinding(group, \.name))
-            TextField("Description", text: editing.groupBinding(group, \.description))
+            CommittingTextField("Group", text: group.name) { editing.groupBinding(group, \.name).wrappedValue = $0 }.id(group.id)
+            CommittingTextField("Description", text: group.description) { editing.groupBinding(group, \.description).wrappedValue = $0 }
+                .id(group.id)
             Toggle("Enabled", isOn: editing.groupBinding(group, \.enabled))
             HStack {
                 Button("Add Snippet", systemImage: "plus") {

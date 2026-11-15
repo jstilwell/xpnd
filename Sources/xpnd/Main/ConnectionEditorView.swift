@@ -32,21 +32,22 @@ struct ConnectionEditorView: View {
         VStack(spacing: 0) {
             Form {
                 Section {
-                    TextField("Name", text: binding(\.name)).focused($focused, equals: .name)
+                    CommittingTextField("Name", text: connection.name) { name in editing.edit(connection: connection.id) { $0.name = name } }
+                        .focused($focused, equals: .name)
                     Picker("Type", selection: binding(\.type)) {
                         Text("SSH").tag(ConnectionType.ssh)
                         Text("VNC").tag(ConnectionType.vnc)
                         Text("RDP").tag(ConnectionType.rdp)
                     }
                     field(problem: connection.host.trimmingCharacters(in: .whitespaces).isEmpty ? "A host is required." : nil) {
-                        TextField("Host", text: binding(\.host))
+                        CommittingTextField("Host", text: connection.host) { host in editing.edit(connection: connection.id) { $0.host = host } }
                     }
                     field(problem: EditorRules.parsePort(portText, type: connection.type).problem) {
                         TextField("Port", text: Binding(get: { portText }, set: editPort), prompt: Text(String(connection.type.defaultPort)))
                     }
-                    TextField("Username", text: Binding(get: { connection.username ?? "" }, set: { name in
+                    CommittingTextField("Username", text: connection.username ?? "", prompt: Text(login?.ref.username ?? "")) { name in
                         editing.edit(connection: connection.id) { $0.username = name.isEmpty ? nil : name }
-                    }), prompt: Text(login?.ref.username ?? ""))
+                    }
                     if connection.type == .rdp {
                         // A username like CORP\me or me@corp.local carries its domain, so the field would mislead.
                         if let carried = RDPLogin.carriedDomain(in: connection.username ?? login?.ref.username ?? "") {
@@ -54,9 +55,9 @@ struct ConnectionEditorView: View {
                                 Text(carried.isEmpty ? "Part of the username" : carried).foregroundStyle(.secondary)
                             }
                         } else {
-                            TextField("Domain", text: Binding(get: { connection.domain ?? "" }, set: { text in
+                            CommittingTextField("Domain", text: connection.domain ?? "") { text in
                                 editing.edit(connection: connection.id) { $0.domain = text.isEmpty ? nil : text }
-                            }))
+                            }
                         }
                     }
                     field(problem: activationProblem(namespace),
@@ -141,14 +142,14 @@ struct ConnectionEditorView: View {
     private var gatewaySection: some View {
         let gateway = connection.rdp?.gateway
         return Section("Gateway") {
-            TextField("Gateway host", text: Binding(get: { gateway?.host ?? "" }, set: { host in
+            CommittingTextField("Gateway host", text: gateway?.host ?? "", prompt: Text("None")) { host in
                 editing.edit(connection: connection.id) {
                     var options = $0.rdp ?? RDPOptions()
                     if options.gateway == nil { options.gateway = .init(host: host) } else { options.gateway?.host = host }
                     if host.isEmpty, options.gateway == .init(host: "") { options.gateway = nil }
                     $0.rdp = options
                 }
-            }), prompt: Text("None"))
+            }
             if let gateway {
                 TextField("Gateway port", value: Binding(get: { gateway.port }, set: { port in
                     editing.edit(connection: connection.id) { $0.rdp?.gateway?.port = min(max(1, port), 65535) }
@@ -178,15 +179,16 @@ struct ConnectionEditorView: View {
                 }
             }
             if jumpChoice == .other {
-                TextField("Jump host address", text: Binding(get: {
-                    if case .text(let text)? = connection.jumpHost { text } else { "" }
-                }, set: { text in
+                CommittingTextField("Jump host address", text: { if case .text(let text)? = connection.jumpHost { text } else { "" } }(),
+                                    prompt: Text("user@host:port")) { text in
                     otherChosen = true
                     editing.edit(connection: connection.id) { $0.jumpHost = text.isEmpty ? nil : .text(text) }
-                }), prompt: Text("user@host:port"))
+                }
             }
             field(problem: (try? ShellQuote.split(connection.sshOptions)) == nil ? SSHCommandError.unbalancedQuote.message : nil) {
-                TextField("SSH options", text: binding(\.sshOptions), prompt: Text("-o ServerAliveInterval=30"))
+                CommittingTextField("SSH options", text: connection.sshOptions, prompt: Text("-o ServerAliveInterval=30")) { options in
+                    editing.edit(connection: connection.id) { $0.sshOptions = options }
+                }
             }
             Toggle("Auto-sudo", isOn: binding(\.autoSudo))
         }

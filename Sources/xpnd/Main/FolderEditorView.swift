@@ -20,7 +20,7 @@ struct FolderEditorView: View {
         let namespace = editing.namespace
         let library = editing.library
         Form {
-            TextField("Name", text: Binding(get: { folder.name }, set: { name in editing.edit(folder: folder.id) { $0.name = name } }))
+            CommittingTextField("Name", text: folder.name) { name in editing.edit(folder: folder.id) { $0.name = name } }
                 .focused($focused, equals: .name)
             ColorChoice(own: folder.color,
                         inherited: library.folderPath(of: folder.id).dropLast().last.flatMap { library.color(for: .folder($0.id)) }) { color in

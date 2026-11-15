@@ -69,7 +69,7 @@ struct RDPFields: View {
             toggle("Connect to console session", \.consoleSession, d?.consoleSession)
             RDPOptionRow(value: Binding(get: { options.alternateShell }, set: { options.alternateShell = $0?.isEmpty == true ? nil : $0 }),
                          defaultValue: d?.alternateShell, describe: { $0.isEmpty ? "None" : $0 }) { shell in
-                TextField("Alternate shell", text: shell, prompt: Text("None"))
+                CommittingTextField("Alternate shell", text: shell.wrappedValue, prompt: Text("None")) { shell.wrappedValue = $0 }
             }
         }
     }

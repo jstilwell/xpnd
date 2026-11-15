@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 0.3.2 - Unreleased
 
 ### Changed
+- The Details fields (names, host, username, domain, SSH options, jump host, gateway host, alternate shell, a group's name and description) save when typing pauses, on Return, or when you leave them, not on every key, like a snippet's text since 0.3.1.
 - A keyword or activation string that starts another one (`;d` and `;db`) gets a warning in its editor: typing the longer one fires the shorter first.
 - **Send automatically** types a built-in tab's password by itself only for 15 seconds; after that **Send Password** sends it, for the rest of the minute. A later prompt may be another login's, such as `ssh` to a second server from a root shell that needed no sudo password.
 
