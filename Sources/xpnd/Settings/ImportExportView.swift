@@ -46,7 +46,7 @@ private struct SnippetImportExport: View {
         Form {
             Section("Export") {
                 ForEach(store.library.groups) { group in
-                    Toggle(group.name.isEmpty ? "Untitled" : group.name, isOn: Binding(
+                    Toggle(EditorRules.displayName(group.name), isOn: Binding(
                         get: { !excluded.contains(group.id) },
                         set: { if $0 { excluded.remove(group.id) } else { excluded.insert(group.id) } }))
                 }
@@ -242,7 +242,7 @@ private struct ConnectionImportExport: View {
         Form {
             Section("Export") {
                 ForEach(store.library.folders) { folder in
-                    Toggle(folder.name.isEmpty ? "Untitled" : folder.name, isOn: Binding(
+                    Toggle(EditorRules.displayName(folder.name), isOn: Binding(
                         get: { !excluded.contains(folder.id) },
                         set: { if $0 { excluded.remove(folder.id) } else { excluded.insert(folder.id) } }))
                 }

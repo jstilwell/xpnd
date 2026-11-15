@@ -40,6 +40,9 @@ enum EditorRules {
         }
     }
 
+    /// How an item with no name shows: in the sidebar, in questions about it, in the export list.
+    static func displayName(_ name: String) -> String { name.isEmpty ? "Untitled" : name }
+
     /// What to ask before deleting `item`, since nothing can bring it back. nil when there is nothing to
     /// lose (an empty folder or group) or the item is gone, and the delete just goes ahead.
     static func deleteQuestion(for item: SidebarItem, connections: ConnectionLibrary, snippets: SnippetLibrary) -> (title: String, message: String)? {
@@ -49,17 +52,17 @@ enum EditorRules {
             guard let connection = connections.connection(id) else { return nil }
             let users = connections.allConnections.filter { $0.jumpHost == .connection(id) }.count
             let lost = users == 0 ? "" : "\(count(users, "connection")) use\(users == 1 ? "s" : "") it as a jump host and will lose it. "
-            return ("Delete “\(connection.name)”?", lost + final)
+            return ("Delete “\(displayName(connection.name))”?", lost + final)
         case .folder(let id):
             guard let folder = connections.folder(id), !(folder.connections.isEmpty && folder.folders.isEmpty) else { return nil }
-            return ("Delete “\(folder.name)” and everything in it?",
+            return ("Delete “\(displayName(folder.name))” and everything in it?",
                     "\(count(folder.allConnections.count, "connection")) and \(count(folder.allFolders.count - 1, "folder")). \(final)")
         case .snippet(let id):
             guard let snippet = snippets.groups.lazy.flatMap(\.snippets).first(where: { $0.id == id }) else { return nil }
-            return ("Delete “\(snippet.name)”?", "Its keyword is \(snippet.keyword). \(final)")
+            return ("Delete “\(displayName(snippet.name))”?", "Its keyword is \(snippet.keyword). \(final)")
         case .snippetGroup(let id):
             guard let group = snippets.groups.first(where: { $0.id == id }), !group.snippets.isEmpty else { return nil }
-            return ("Delete “\(group.name)” and its \(count(group.snippets.count, "snippet"))?", final)
+            return ("Delete “\(displayName(group.name))” and its \(count(group.snippets.count, "snippet"))?", final)
         }
     }
 

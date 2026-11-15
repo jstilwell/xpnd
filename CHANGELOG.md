@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 - **Send automatically** types a built-in tab's password by itself only for 15 seconds; after that **Send Password** sends it, for the rest of the minute. A later prompt may be another login's, such as `ssh` to a second server from a root shell that needed no sudo password.
 
 ### Fixed
+- A gateway with no login of its own says it uses the connection's login, instead of looking as if one were set.
+- A nameless item is "Untitled" everywhere, including the question before deleting it; a group's **+** and switch name the group for VoiceOver; and an empty Connections or Snippets list says what to add first.
 - Changing a connection's type with its old default port in the Port field (22, then VNC) clears the field to show the new default, instead of showing 22 and connecting on 5900.
 - Sending a password into a built-in tab works at a sudo or login prompt in German, French, Spanish, Japanese and other languages, not only English.
 - A built-in tab's LANG is always one a server accepts (`zh_CN.UTF-8`, not `zh-Hans_CN.UTF-8`), which ssh passes on and which made servers print "cannot change locale".

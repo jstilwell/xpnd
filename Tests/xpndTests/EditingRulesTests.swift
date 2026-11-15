@@ -54,6 +54,12 @@ import Testing
         #expect(q?.message == "This can't be undone.")
     }
 
+    /// The sidebar shows a nameless item as "Untitled", so the question does too, not "Delete “”?".
+    @Test func deletingANamelessItemAsksAboutUntitled() {
+        let library = library { $0.connections[0].name = "" }
+        #expect(question(.connection(web.id), in: library)?.title == "Delete “Untitled”?")
+    }
+
     @Test func deletingAJumpHostSaysWhoUsesIt() {
         let library = library { $0.folders[0].connections[0].jumpHost = .connection(web.id) }
         #expect(question(.connection(web.id), in: library)?.message == "1 connection uses it as a jump host and will lose it. This can't be undone.")
