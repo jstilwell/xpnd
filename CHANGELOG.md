@@ -2,36 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.3.2 - Unreleased
+## 0.4.0 - 11-15-2026
 
 ### Changed
-- A Windows desktop tab shows **Connecting…** while it connects and while it reconnects by itself, instead of a black tab.
-- The Details fields (names, host, username, domain, SSH options, jump host, gateway host, alternate shell, a group's name and description) save when typing pauses, on Return, or when you leave them, not on every key, like a snippet's text since 0.3.1.
-- A keyword or activation string that starts another one (`;d` and `;db`) gets a warning in its editor: typing the longer one fires the shorter first.
 - **Send automatically** types a built-in tab's password by itself only for 15 seconds; after that **Send Password** sends it, for the rest of the minute. A later prompt may be another login's, such as `ssh` to a second server from a root shell that needed no sudo password.
+- A keyword or activation string that starts another one (`;d` and `;db`) gets a warning in its editor: typing the longer one fires the shorter first.
+- The Details fields (names, host, username, domain, SSH options, jump host, gateway host, alternate shell, a group's name and description) save when typing pauses, on Return, or when you leave them, not on every key, like a snippet's text since 0.3.1.
+- A Windows desktop tab shows **Connecting…** while it connects and while it reconnects by itself, instead of a black tab.
 
 ### Fixed
-- A gateway with no login of its own says it uses the connection's login, instead of looking as if one were set.
-- A nameless item is "Untitled" everywhere, including the question before deleting it; a group's **+** and switch name the group for VoiceOver; and an empty Connections or Snippets list says what to add first.
-- Changing a connection's type with its old default port in the Port field (22, then VNC) clears the field to show the new default, instead of showing 22 and connecting on 5900.
-- Sending a password into a built-in tab works at a sudo or login prompt in German, French, Spanish, Japanese and other languages, not only English.
-- A built-in tab's LANG is always one a server accepts (`zh_CN.UTF-8`, not `zh-Hans_CN.UTF-8`), which ssh passes on and which made servers print "cannot change locale".
-- More of the reasons a Windows login is refused are said in words (an account that isn't in Remote Desktop Users, an expired account, missing permission, a server that's still starting...), instead of names like `ERRCONNECT_LOGON_TYPE_NOT_GRANTED`.
-- ⌘C, ⌘V, ⌘X, ⌘Z and ⌘A reach a Windows desktop as Ctrl shortcuts with a Russian, Greek or other non-Latin input source too, instead of going to xpnd's Edit menu.
-- A mistake in a hand-edited snippets or connections file is described in a sentence ("groups › item 1 › snippets › item 2 has no “text”.") instead of Swift's error dump, and a credential written without `provider:` is read as 1Password instead of making the whole file unreadable.
-- Typing a snippet as keystrokes (Screen Sharing, VNC, Windows desktops) uses the main keys for `*` and `+`, not the keypad's, which terminals in keypad mode read as escape codes; and on layouts with dead keys (US International's `'` and `"`) those characters reach the remote machine instead of an "a".
-- Picking a snippet while another one is still running says so, instead of closing the picker and doing nothing; turning expansion off while a snippet waits says that, not that you left the app.
-- A snippet with `#{runShortcut:}` or `#{openApp:}` naming a Shortcut or app that isn't there fails before anything changes, as the README says, instead of deleting the keyword and typing half the snippet.
-- The end of a gentle downward scroll on a trackpad no longer jumps a Windows desktop two notches.
-- After a Windows desktop reconnects, pasting in Windows no longer gives what you copied on the Mac before something you copied in Windows since, and files dropped earlier aren't offered to Windows again.
-- The snippet import preview lists snippets whose text has a new line, which presses Return when typed as keystrokes, and the message after an import says when snippets went into a group that's turned off.
-- Importing no longer brings in a snippet keyword a connection or folder already answers to, or the other way round, which left both doing nothing. The preview lists what's left out: such snippets aren't imported, and such connections come without their string.
-- Importing connections keeps the logins the file gave them. The file's global and folder credentials were dropped, so imported connections used this Mac's credential for a folder of the same name, or none; now they fill levels that have none here, and a connection that would inherit a different one keeps the file's as its own.
-- Clearing a Windows desktop's **Gateway host** to retype it no longer deletes the gateway's port and login.
-- A snippet script that prints without end (`yes`, a runaway loop) is stopped once it has printed 8 MB, instead of filling memory until it times out, or forever with no timeout.
-- A snippet or connection file that is a symlink to a folder that's offline (Dropbox, iCloud) now shows an error instead of an empty library, and editing no longer replaces the link with a new file.
-- "Password copied" shows over the tab that just connected, not another tab of the same connection that may sit at a shell prompt, where pasting would run the password as a command.
 - ⌥⌫ (delete a word) no longer leaves xpnd's idea of what you typed out of step, which could make a later keyword delete text you had typed before it.
+- "Password copied" shows over the tab that just connected, not another tab of the same connection that may sit at a shell prompt, where pasting would run the password as a command.
+- A snippet or connection file that is a symlink to a folder that's offline (Dropbox, iCloud) now shows an error instead of an empty library, and editing no longer replaces the link with a new file.
+- A snippet script that prints without end (`yes`, a runaway loop) is stopped once it has printed 8 MB, instead of filling memory until it times out, or forever with no timeout.
+- Clearing a Windows desktop's **Gateway host** to retype it no longer deletes the gateway's port and login.
+- Importing connections keeps the logins the file gave them. The file's global and folder credentials were dropped, so imported connections used this Mac's credential for a folder of the same name, or none; now they fill levels that have none here, and a connection that would inherit a different one keeps the file's as its own.
+- Importing no longer brings in a snippet keyword a connection or folder already answers to, or the other way round, which left both doing nothing. The preview lists what's left out: such snippets aren't imported, and such connections come without their string.
+- The snippet import preview lists snippets whose text has a new line, which presses Return when typed as keystrokes, and the message after an import says when snippets went into a group that's turned off.
+- After a Windows desktop reconnects, pasting in Windows no longer gives what you copied on the Mac before something you copied in Windows since, and files dropped earlier aren't offered to Windows again.
+- The end of a gentle downward scroll on a trackpad no longer jumps a Windows desktop two notches.
+- A snippet with `#{runShortcut:}` or `#{openApp:}` naming a Shortcut or app that isn't there fails before anything changes, as the README says, instead of deleting the keyword and typing half the snippet.
+- Picking a snippet while another one is still running says so, instead of closing the picker and doing nothing; turning expansion off while a snippet waits says that, not that you left the app.
+- Typing a snippet as keystrokes (Screen Sharing, VNC, Windows desktops) uses the main keys for `*` and `+`, not the keypad's, which terminals in keypad mode read as escape codes; and on layouts with dead keys (US International's `'` and `"`) those characters reach the remote machine instead of an "a".
+- A mistake in a hand-edited snippets or connections file is described in a sentence ("groups › item 1 › snippets › item 2 has no “text”.") instead of Swift's error dump, and a credential written without `provider:` is read as 1Password instead of making the whole file unreadable.
+- ⌘C, ⌘V, ⌘X, ⌘Z and ⌘A reach a Windows desktop as Ctrl shortcuts with a Russian, Greek or other non-Latin input source too, instead of going to xpnd's Edit menu.
+- More of the reasons a Windows login is refused are said in words (an account that isn't in Remote Desktop Users, an expired account, missing permission, a server that's still starting...), instead of names like `ERRCONNECT_LOGON_TYPE_NOT_GRANTED`.
+- A built-in tab's LANG is always one a server accepts (`zh_CN.UTF-8`, not `zh-Hans_CN.UTF-8`), which ssh passes on and which made servers print "cannot change locale".
+- Sending a password into a built-in tab works at a sudo or login prompt in German, French, Spanish, Japanese and other languages, not only English.
+- Changing a connection's type with its old default port in the Port field (22, then VNC) clears the field to show the new default, instead of showing 22 and connecting on 5900.
+- A nameless item is "Untitled" everywhere, including the question before deleting it; a group's **+** and switch name the group for VoiceOver; and an empty Connections or Snippets list says what to add first.
+- A gateway with no login of its own says it uses the connection's login, instead of looking as if one were set.
 
 ## 0.3.1 - 11-10-2026
 
