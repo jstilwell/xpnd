@@ -43,6 +43,8 @@ struct SnippetEditorView: View {
                 TextField("Keyword", text: $keyword)
                 if let keywordProblem {
                     Text(keywordProblem).font(.callout).foregroundStyle(.red)
+                } else if let note = namespace.hidingNote(keyword, for: .snippet(snippet.id)) {
+                    Text(note).font(.callout).foregroundStyle(.orange)
                 }
             }
             Picker("Matching", selection: binding(\.matching)) {

@@ -127,3 +127,16 @@ private func snippets(_ list: Snippet...) -> SnippetLibrary {
         #expect(namespace.crossFileDuplicates.isEmpty)
     }
 }
+
+/// Typing `;db` fires `;d` at its second key, so `;db` never works.
+@Test func aStringThatStartsAnotherIsNoted() {
+    let snippet = Snippet(name: "Date", keyword: ";d", text: "x")
+    let connection = Connection(name: "DB", host: "h", activation: ";db")
+    let namespace = KeywordNamespace(
+        snippets: SnippetLibrary(groups: [SnippetGroup(name: "g", snippets: [snippet])]),
+        connections: ConnectionLibrary(folders: [ConnectionFolder(name: "f", activation: "", connections: [connection])]))
+    #expect(namespace.hidingNote(";db", for: .connection(connection.id)) == "“;d” (the snippet “Date”) fires first, so typing “;db” won't work.")
+    #expect(namespace.hidingNote(";d", for: .snippet(snippet.id)) == "Typing “;db” (connection “DB”) will fire “;d” first, so it won't work.")
+    #expect(namespace.hidingNote(";x", for: nil) == nil)
+    #expect(namespace.problem(";db", for: .connection(connection.id)) == nil) // a note, never a refusal
+}

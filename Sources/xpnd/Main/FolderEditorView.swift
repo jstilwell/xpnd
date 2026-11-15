@@ -54,6 +54,8 @@ struct FolderEditorView: View {
                             .focused($focused, equals: .custom)
                         if let problem = customProblem(namespace) {
                             Text(problem).font(.callout).foregroundStyle(.red)
+                        } else if !customText.isEmpty, let note = namespace.hidingNote(customText, for: .folder(folder.id)) {
+                            Text(note).font(.callout).foregroundStyle(.orange)
                         }
                     }
                 case .none:

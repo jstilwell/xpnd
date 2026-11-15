@@ -59,7 +59,8 @@ struct ConnectionEditorView: View {
                             }))
                         }
                     }
-                    field(problem: activationProblem(namespace)) {
+                    field(problem: activationProblem(namespace),
+                          note: activationText.isEmpty ? nil : namespace.hidingNote(activationText, for: .connection(connection.id))) {
                         TextField("Activation string", text: Binding(get: { activationText }, set: editActivation), prompt: Text("None"))
                             .focused($focused, equals: .activation)
                     }
@@ -191,10 +192,13 @@ struct ConnectionEditorView: View {
         }
     }
 
-    private func field(problem: String?, @ViewBuilder _ content: () -> some View) -> some View {
+    /// `note`: shown when there's no problem, as a warning that doesn't stop the save.
+    private func field(problem: String?, note: String? = nil, @ViewBuilder _ content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             content()
-            if let problem { Text(problem).font(.callout).foregroundStyle(.red) }
+            if let problem { Text(problem).font(.callout).foregroundStyle(.red) } else if let note {
+                Text(note).font(.callout).foregroundStyle(.orange)
+            }
         }
     }
 
