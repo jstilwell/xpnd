@@ -19,6 +19,19 @@ enum RDPErrorText {
         "ERRCONNECT_ACCOUNT_LOCKED_OUT": "the account is locked out",
         "ERRCONNECT_ACCOUNT_DISABLED": "the account is disabled",
         "ERRCONNECT_AUTHENTICATION_FAILED": "authentication failed",
+        "ERRCONNECT_ACCOUNT_EXPIRED": "the account has expired",
+        "ERRCONNECT_ACCOUNT_RESTRICTION": "the account's restrictions don't allow this sign-in (a blank password, logon hours or allowed computers)",
+        "ERRCONNECT_LOGON_TYPE_NOT_GRANTED": "the account may not sign in remotely to this computer (it needs to be in Remote Desktop Users)",
+        "ERRCONNECT_INSUFFICIENT_PRIVILEGES": "the account doesn't have permission to connect",
+        "ERRINFO_SERVER_INSUFFICIENT_PRIVILEGES": "the account doesn't have permission to connect",
+        "ERRCONNECT_NO_OR_MISSING_CREDENTIALS": "no login was given",
+        "ERRCONNECT_CLIENT_REVOKED": "the account's sign-in was revoked",
+        "ERRCONNECT_KDC_UNREACHABLE": "the domain controller couldn't be reached",
+        "ERRCONNECT_NTLM_BLOCKED": "the server doesn't allow NTLM sign-in",
+        "ERRCONNECT_HYBRID_REQUIRED_BY_SERVER": "the server requires Network Level Authentication (turn it on for this connection)",
+        "ERRCONNECT_ACTIVATION_TIMEOUT": "the server took too long to start the session",
+        "ERRCONNECT_TARGET_BOOTING": "the computer is still starting up",
+        "ERRCONNECT_DNS_ERROR": "the host name could not be resolved",
         "ERRCONNECT_CONNECT_TRANSPORT_FAILED": "the connection timed out",
         "ERRCONNECT_CONNECT_FAILED": "the server refused the connection",
         "ERRCONNECT_TLS_CONNECT_FAILED": "the secure connection failed",
@@ -57,7 +70,8 @@ enum RDPErrorText {
         guard let name else { return "the server closed the session" }
         if afterConnect, transportErrors.contains(name) { return "the network connection was lost" }
         if let reason = reasons[name] { return reason }
-        return name.hasPrefix("ERRINFO_") ? "the server closed the session (\(name))" : name
+        if name.hasPrefix("ERRINFO_") { return "the server closed the session (\(name))" }
+        return name.hasPrefix("ERRCONNECT_") ? "the connection failed (\(name))" : name
     }
 }
 

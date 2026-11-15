@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - **Send automatically** types a built-in tab's password by itself only for 15 seconds; after that **Send Password** sends it, for the rest of the minute. A later prompt may be another login's, such as `ssh` to a second server from a root shell that needed no sudo password.
 
 ### Fixed
+- More of the reasons a Windows login is refused are said in words (an account that isn't in Remote Desktop Users, an expired account, missing permission, a server that's still starting...), instead of names like `ERRCONNECT_LOGON_TYPE_NOT_GRANTED`.
 - ⌘C, ⌘V, ⌘X, ⌘Z and ⌘A reach a Windows desktop as Ctrl shortcuts with a Russian, Greek or other non-Latin input source too, instead of going to xpnd's Edit menu.
 - A mistake in a hand-edited snippets or connections file is described in a sentence ("groups › item 1 › snippets › item 2 has no “text”.") instead of Swift's error dump, and a credential written without `provider:` is read as 1Password instead of making the whole file unreadable.
 - Typing a snippet as keystrokes (Screen Sharing, VNC, Windows desktops) uses the main keys for `*` and `+`, not the keypad's, which terminals in keypad mode read as escape codes; and on layouts with dead keys (US International's `'` and `"`) those characters reach the remote machine instead of an "a".
