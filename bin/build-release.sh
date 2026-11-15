@@ -157,9 +157,19 @@ if [ "$UPLOAD" = true ] && [ -n "$(git status --porcelain)" ]; then
     echo "Commit them (including any Info.plist sync made just now) and run this again."
     exit 1
 fi
-# The release is tagged at the commit that was built, which GitHub must already have.
-if [ "$UPLOAD" = true ] && [ -z "$(git branch -r --contains HEAD 2>/dev/null)" ]; then
-    echo -e "${RED}Error: the commit to release isn't on GitHub yet. Push it, then run this again.${NC}"
+# The release is tagged at the commit that was built, which must already be on GitHub's main (merged, not just pushed).
+if [ "$UPLOAD" = true ]; then
+    git fetch --quiet origin main
+    if ! git merge-base --is-ancestor HEAD origin/main; then
+        echo -e "${RED}Error: the commit to release isn't on GitHub's main yet. Merge its PR, pull main, then run this again.${NC}"
+        exit 1
+    fi
+fi
+# A draft is what a run that failed after creating it leaves: never offered, so the version isn't used up.
+if command -v gh &> /dev/null \
+    && [ "$(gh release view "v${VERSION}" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null)" = true ]; then
+    echo -e "${RED}Error: v${VERSION} is a draft left by an earlier run that didn't finish. Nothing offered it yet.${NC}"
+    echo "Delete it (gh release delete v${VERSION} --repo $REPO), then run this again."
     exit 1
 fi
 if git rev-parse -q --verify "refs/tags/v${VERSION}" > /dev/null \
