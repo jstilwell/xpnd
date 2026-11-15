@@ -60,8 +60,12 @@ extension TerminalHost {
 /// A password waiting to go into a tab. Ends once: sent, cancelled, superseded, or after `lifetime`.
 @MainActor @Observable final class PasswordOffer {
     static let lifetime: Duration = .seconds(60)
+    /// How long an automatic offer types at a prompt by itself; after that it waits for a click. The prompt it's for
+    /// is normally up by then, and a later one may be another login's (`ssh other` in a NOPASSWD root shell).
+    static let automaticWindow: Duration = .seconds(15)
     let label: String
-    let automatic: Bool
+    /// True while it sends by itself at the next prompt.
+    fileprivate(set) var automatic: Bool
     let until = Date.now + TimeInterval(lifetime.components.seconds)
     /// Why the last click didn't send.
     var problem: String?
@@ -166,25 +170,29 @@ extension TerminalHost {
         return id
     }
 
-    /// Over the connection's running tab, for as long as the clipboard keeps the password.
-    func showCopied(_ text: String, for connectionID: Connection.ID) {
-        guard let session = session(for: connectionID), session.isLive else { return }
+    /// Over the tab `id` (the one the connect opened), for as long as the clipboard keeps the password. Another tab of
+    /// the same connection may sit at a shell prompt, where a paste would run the password and keep it in the history.
+    func showCopied(_ text: String, in id: TerminalSession.ID) {
+        guard let session = sessions.first(where: { $0.id == id }), session.isLive else { return }
         session.copiedNotice = (text, .now + TimeInterval(SecretClipboard.clearAfter.components.seconds))
     }
 
     /// Offers `password` over the tab `id` and returns whether it went in: the tab the connect opened, since a
-    /// connection can have several. Automatic offers send as soon as a password prompt shows; either kind ends
-    /// after `PasswordOffer.lifetime`, or with its tab.
-    func offer(_ label: String, password: String, in id: TerminalSession.ID, automatic: Bool) async -> Bool {
+    /// connection can have several. Automatic offers send as soon as a password prompt shows, for `automaticWindow`,
+    /// then wait for a click; either kind ends after `PasswordOffer.lifetime`, or with its tab.
+    func offer(_ label: String, password: String, in id: TerminalSession.ID, automatic: Bool,
+               automaticWindow: Duration = PasswordOffer.automaticWindow) async -> Bool {
         guard let session = sessions.first(where: { $0.id == id }), session.isLive else { return false }
         session.passwordOffer?.finish(sent: false)
         let offer = PasswordOffer(label: label, password: password, automatic: automatic)
         session.passwordOffer = offer
         // shortcut: polls the screen 4×/s while an offer is open; upgrade to SwiftTerm's output handler if it shows in profiles
         let watch = Task { @MainActor [weak session] in
-            let deadline = ContinuousClock.now + PasswordOffer.lifetime
-            while ContinuousClock.now < deadline, !offer.isFinished, let session, session.isLive {
-                if automatic { offer.send(through: session.host) }
+            let start = ContinuousClock.now
+            while ContinuousClock.now < start + PasswordOffer.lifetime, !offer.isFinished, let session, session.isLive {
+                if offer.automatic {
+                    if ContinuousClock.now < start + automaticWindow { offer.send(through: session.host) } else { offer.automatic = false }
+                }
                 try? await Task.sleep(for: .milliseconds(250))
             }
             offer.finish(sent: false)

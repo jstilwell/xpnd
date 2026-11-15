@@ -285,6 +285,22 @@ import Testing
         #expect(sessions.sessions[0].passwordOffer == nil)
     }
 
+    /// A prompt that shows up later may be another login's, such as `ssh other` in a root shell that needed no sudo password.
+    @Test func anAutomaticOfferStopsSendingByItselfAfterItsWindow() async throws {
+        open("a")
+        let host = hosts.all[0]
+        let id = sessions.sessions[0].id
+        let offer = Task { await sessions.offer("Password", password: "pw", in: id, automatic: true, automaticWindow: .milliseconds(100)) }
+        try await Task.sleep(for: .milliseconds(600))
+        host.atPrompt = true
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(host.sent.isEmpty)
+        let pending = try #require(sessions.sessions[0].passwordOffer)
+        #expect(!pending.automatic)
+        #expect(pending.send(through: host))
+        #expect(await offer.value)
+    }
+
     @Test func clickOfferWaitsForTheClickAndCancelSendsNothing() async throws {
         open("a")
         let host = hosts.all[0]
@@ -309,6 +325,17 @@ import Testing
         let pending = try #require(sessions.sessions[1].passwordOffer)
         pending.finish(sent: false)
         #expect(await offer.value == false)
+    }
+
+    /// "⌘V at the prompt" over another tab of the connection, sitting at a shell prompt, would paste the password as a command.
+    @Test func theCopiedNoticeShowsOverTheTabThatAsked() {
+        let connection = Connection(name: "a", host: "a")
+        let older = sessions.open(.terminal(SSHCommand(arguments: ["ssh", "a"])), for: connection, color: nil)
+        let newer = sessions.open(.terminal(SSHCommand(arguments: ["ssh", "a"])), for: connection, color: nil)
+        sessions.selected = older
+        sessions.showCopied("Password copied", in: newer)
+        #expect(sessions.sessions[0].copiedNotice == nil)
+        #expect(sessions.sessions[1].copiedNotice?.0 == "Password copied")
     }
 
     /// Otherwise the password waits in memory, and the watcher keeps trying the dead tab, for a minute.

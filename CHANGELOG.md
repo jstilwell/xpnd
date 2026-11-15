@@ -4,7 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## 0.3.2 - Unreleased
 
+### Changed
+- **Send automatically** types a built-in tab's password by itself only for 15 seconds; after that **Send Password** sends it, for the rest of the minute. A later prompt may be another login's, such as `ssh` to a second server from a root shell that needed no sudo password.
+
 ### Fixed
+- "Password copied" shows over the tab that just connected, not another tab of the same connection that may sit at a shell prompt, where pasting would run the password as a command.
 - ⌥⌫ (delete a word) no longer leaves xpnd's idea of what you typed out of step, which could make a later keyword delete text you had typed before it.
 
 ## 0.3.1 - 11-10-2026
