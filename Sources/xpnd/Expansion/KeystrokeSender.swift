@@ -77,6 +77,7 @@ enum SyntheticEvent {
                 post(KeyName.enter.keyCode, flags: [], times: 1)
             } else if let key = keys[character] {
                 post(key.code, flags: key.flags, times: 1)
+                if key.dead { post(CGKeyCode(kVK_Space), flags: [], times: 1) } // a dead key and Space type its character
             } else {
                 let units = Array(String(character).utf16)
                 for down in [true, false] {
