@@ -21,6 +21,12 @@ struct TerminalWorkspace: View {
                 // A little room around the text; the margin matches the terminal's own background. A
                 // desktop fills the tab, with its notch: inside the id, so a tab switch resets the hover.
                 TerminalHostView(view: session.host.view)
+                    .overlay {
+                        // A desktop draws black until it's up, and through an automatic retry.
+                        if session.kind == .remoteDesktop, session.state == .running, !session.host.isEstablished {
+                            ProgressView("Connecting…").controlSize(.large).foregroundStyle(.white).colorScheme(.dark)
+                        }
+                    }
                     .overlay(alignment: .top) { notch(session) }
                     .overlay(alignment: .top) {
                         if let offer = session.passwordOffer { offerBanner(offer, session) } else { copiedBanner(session) }
