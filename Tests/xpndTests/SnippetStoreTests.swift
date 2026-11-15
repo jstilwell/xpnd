@@ -88,6 +88,21 @@ struct SnippetStoreTests {
         }
     }
 
+    /// Its folder is offline (Dropbox, iCloud): an empty library would show, and a save would replace the link.
+    @Test func aSymlinkToAMissingFileIsUnreadableNotEmpty() async throws {
+        try await withTempDir { dir in
+            let real = dir.appending(path: "offline/snippets.yaml")
+            let link = dir.appending(path: "snippets.yaml")
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+            let store = SnippetStore(fileURL: link)
+            store.load()
+            #expect(store.loadError?.contains("isn't there") == true)
+            #expect(throws: StoreError.fileUnreadable) { try store.update { $0.groups.append(group(";a")) } }
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == real.path)
+            #expect(!FileManager.default.fileExists(atPath: real.path))
+        }
+    }
+
     @Test func malformedFileIsNeverOverwritten() async throws {
         try await withTempDir { dir in
             let url = dir.appending(path: "snippets.yaml")

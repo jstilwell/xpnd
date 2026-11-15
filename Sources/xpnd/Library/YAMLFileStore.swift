@@ -42,16 +42,22 @@ final class YAMLFileStore<Value: Sendable & Equatable> {
         return true
     }
 
-    private enum Disk { case missing, text(String), unreadable }
+    private enum Disk { case missing, text(String), unreadable(String) }
 
     private func readDisk() -> Disk {
         do {
-            guard let text = String(data: try Data(contentsOf: fileURL), encoding: .utf8) else { return .unreadable }
+            guard let text = String(data: try Data(contentsOf: fileURL), encoding: .utf8) else {
+                return .unreadable("\(fileURL.lastPathComponent) isn't UTF-8 text.")
+            }
             return .text(text)
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            // A symlink into an offline Dropbox or iCloud folder: not a new library, and a save would replace the link.
+            if let target = try? FileManager.default.destinationOfSymbolicLink(atPath: fileURL.path) {
+                return .unreadable("\(fileURL.lastPathComponent) links to \(target), which isn't there.")
+            }
             return .missing
         } catch {
-            return .unreadable
+            return .unreadable("Could not read \(fileURL.lastPathComponent)")
         }
     }
 
@@ -61,7 +67,7 @@ final class YAMLFileStore<Value: Sendable & Equatable> {
             value = empty
             loadError = nil
             lastText = nil
-        case .unreadable: loadError = "Could not read \(fileURL.lastPathComponent)"
+        case .unreadable(let reason): loadError = reason
         case .text(let text):
             lastText = text
             do {
