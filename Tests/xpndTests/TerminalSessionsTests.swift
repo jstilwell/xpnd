@@ -370,7 +370,8 @@ import Testing
     }
 
     @Test func passwordPrompts() {
-        for line in ["[sudo] password for jesse:", "jesse@web1's password: ", "Password:", "Enter password:"] {
+        for line in ["[sudo] password for jesse:", "jesse@web1's password: ", "Password:", "Enter password:",
+                     "[sudo] Passwort für jesse:", "Mot de passe :", "[sudo] jesse のパスワード:", "Пароль:"] {
             #expect(LiveTerminalHost.isPasswordPrompt(line), "\(line)")
         }
         for line in ["jesse@web1:~$ ", "Enter passphrase for key '/id':", "password", "$ cat password.txt"] {

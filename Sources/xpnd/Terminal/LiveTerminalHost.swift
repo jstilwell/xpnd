@@ -28,10 +28,19 @@ import SwiftTerm
         var env = parent
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
-        if env["LANG"] == nil {
-            env["LANG"] = "\(locale.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false)[0]).UTF-8"
-        }
+        if env["LANG"] == nil { env["LANG"] = posixLocale(locale) }
         return env.map { "\($0.key)=\($0.value)" }
+    }
+
+    /// `ll_CC.UTF-8` from a Mac locale identifier. ssh sends LANG on, and a server rejects `zh-Hans_CN` or `es_419`
+    /// ("setlocale: cannot change locale"), so a script or a region that isn't two letters falls back to en_US.
+    static func posixLocale(_ identifier: String) -> String {
+        let parts = identifier.split(separator: "@", maxSplits: 1)[0].split(separator: "_")
+        let language = parts.first?.split(separator: "-").first ?? ""
+        let region = parts.count > 1 ? parts[parts.count - 1] : ""
+        let ok = (2...3).contains(language.count) && language.allSatisfy { $0.isASCII && $0.isLowercase }
+            && region.count == 2 && region.allSatisfy { $0.isASCII && $0.isUppercase }
+        return ok ? "\(language)_\(region).UTF-8" : "en_US.UTF-8"
     }
 
     func terminate() { terminal.terminate() }
@@ -49,12 +58,18 @@ import SwiftTerm
         return true
     }
 
-    /// "[sudo] password for jesse:", "jesse@host's password:", "Password:". Anything else (a shell
-    /// prompt above all) would run the password as a command and keep it in the shell's history.
+    /// "[sudo] password for jesse:", "jesse@host's password:", "Password:", and the same in the languages sudo and
+    /// PAM speak (LANG goes to the server). Anything else (a shell prompt above all) would run the password as a
+    /// command and keep it in the shell's history.
     static func isPasswordPrompt(_ line: String) -> Bool {
         let line = line.trimmingCharacters(in: .whitespaces).lowercased()
-        return line.hasSuffix(":") && line.contains("password")
+        return (line.hasSuffix(":") || line.hasSuffix("：")) && passwordWords.contains { line.contains($0) }
     }
+
+    private static let passwordWords = [
+        "password", "passwort", "mot de passe", "contraseña", "senha", "wachtwoord", "lösenord", "adgangskode",
+        "passord", "salasana", "hasło", "heslo", "parola", "jelszó", "пароль", "κωδικός", "パスワード", "密码", "密碼", "암호",
+    ]
 
     func apply(_ settings: BuiltInTerminalSettings) {
         terminal.font = settings.nsFont
