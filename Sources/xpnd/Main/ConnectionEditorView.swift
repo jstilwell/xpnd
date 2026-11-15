@@ -160,8 +160,8 @@ struct ConnectionEditorView: View {
                     editing.edit(connection: connection.id) { $0.rdp?.gateway?.port = min(max(1, port), 65535) }
                 }), format: .number.grouping(.never))
                 CredentialRow(title: "Gateway login", editing: editing,
-                              resolved: (gateway.credential ?? editing.library.loginCredential(for: connection.id)?.ref)
-                                  .map { ResolvedCredential(ref: $0, source: .connection) },
+                              resolved: gateway.credential.map { ResolvedCredential(ref: $0, source: .connection) }
+                                  ?? editing.library.loginCredential(for: connection.id).map { ResolvedCredential(ref: $0.ref, source: .login) },
                               own: gateway.credential) { ref in
                     editing.edit(connection: connection.id) { $0.rdp?.gateway?.credential = ref }
                 }
