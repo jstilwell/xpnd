@@ -13,10 +13,14 @@ enum ConnectionImport {
     }
 
     /// Folders merge by exact name, recursively. `.replace` removes the existing owner of a
-    /// conflicting string (a folder owner keeps its contents but loses its string).
+    /// conflicting string (a folder owner keeps its contents but loses its string). The file's global and folder
+    /// credentials fill levels that have none here; an incoming connection that would then inherit another
+    /// credential than the file gave it keeps the file's as its own.
     static func merge(_ incoming: ConnectionLibrary, into existing: ConnectionLibrary, choice: ConflictChoice) -> ConnectionLibrary {
         let existingIDs = Set(existing.allFolders.flatMap { [$0.id] + $0.connections.map(\.id) })
         var renamed: [UUID: UUID] = [:]
+        /// Each incoming connection's ID in the result -> its ID in `incoming`.
+        var origin: [UUID: UUID] = [:]
         func fresh(_ id: UUID) -> UUID {
             guard existingIDs.contains(id) else { return id }
             let new = UUID()
@@ -26,7 +30,11 @@ enum ConnectionImport {
         func reid(_ f: ConnectionFolder) -> ConnectionFolder {
             var f = f
             f.id = fresh(f.id)
-            for i in f.connections.indices { f.connections[i].id = fresh(f.connections[i].id) }
+            for i in f.connections.indices {
+                let old = f.connections[i].id
+                f.connections[i].id = fresh(old)
+                origin[f.connections[i].id] = old
+            }
             f.folders = f.folders.map(reid)
             return f
         }
@@ -67,6 +75,8 @@ enum ConnectionImport {
             for f in new {
                 if let i = target.firstIndex(where: { $0.name == f.name }) {
                     target[i].connections += dropBlocked(f.connections)
+                    if target[i].credential == nil { target[i].credential = f.credential }
+                    if target[i].sudoCredential == nil { target[i].sudoCredential = f.sudoCredential }
                     if let a = custom(f.activation), custom(target[i].activation) != a {
                         let clashes = activations(existing).contains(a)
                         if clashes ? choice == .replace : custom(target[i].activation) == nil {
@@ -81,6 +91,8 @@ enum ConnectionImport {
             }
         }
         var result = existing
+        if result.credential == nil { result.credential = incoming.credential }
+        if result.sudoCredential == nil { result.sudoCredential = incoming.sudoCredential }
         mergeFolders(&result.folders, incomingFolders)
 
         if choice == .replace {
@@ -117,6 +129,24 @@ enum ConnectionImport {
             for i in f.folders.indices { repoint(&f.folders[i]) }
         }
         if !redirect.isEmpty { for i in result.folders.indices { repoint(&result.folders[i]) } }
+
+        // Otherwise a connection whose file gave it one password would get this Mac's for its folder, or none.
+        let merged = result
+        func pin(_ f: inout ConnectionFolder) {
+            for i in f.connections.indices {
+                let id = f.connections[i].id
+                guard let old = origin[id] else { continue }
+                if let want = incoming.loginCredential(for: old)?.ref, merged.loginCredential(for: id)?.ref != want {
+                    f.connections[i].credential = want
+                }
+                if let want = incoming.sudoCredential(for: old), want.source != .login,
+                   merged.sudoCredential(for: id)?.ref != want.ref {
+                    f.connections[i].sudoCredential = want.ref
+                }
+            }
+            for i in f.folders.indices { pin(&f.folders[i]) }
+        }
+        for i in result.folders.indices { pin(&result.folders[i]) }
         return result
     }
 

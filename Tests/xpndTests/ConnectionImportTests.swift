@@ -45,6 +45,35 @@ struct ConnectionImportTests {
         #expect(r.folders[0].activation == "")
     }
 
+    /// A full export carries the global and folder credentials its connections inherit.
+    @Test func importedConnectionsKeepTheCredentialsTheirFileGaveThem() {
+        func ref(_ item: String) -> CredentialRef {
+            CredentialRef(account: "a", vault: "v", item: item, title: item, category: .login)
+        }
+        let incoming = ConnectionLibrary(credential: ref("file-global"), folders: [
+            ConnectionFolder(name: "prod", credential: ref("file-prod"), connections: [conn("p")]),
+            ConnectionFolder(name: "web", connections: [conn("w")]),
+        ])
+        // Nothing here at either level: the file's fill them, and nothing needs pinning.
+        let empty = ConnectionLibrary(folders: [ConnectionFolder(name: "prod")])
+        let filled = ConnectionImport.merge(incoming, into: empty, choice: .skip)
+        #expect(filled.credential == ref("file-global"))
+        #expect(filled.folders[0].credential == ref("file-prod"))
+        #expect(filled.allConnections.allSatisfy { $0.credential == nil })
+
+        // Different ones here: each imported connection keeps the file's, and this Mac's stay as they were.
+        let mine = ConnectionLibrary(credential: ref("mine"), folders: [
+            ConnectionFolder(name: "prod", credential: ref("my-prod"), connections: [conn("mp")])])
+        let r = ConnectionImport.merge(incoming, into: mine, choice: .skip)
+        let p = r.allConnections.first { $0.name == "p" }!
+        let w = r.allConnections.first { $0.name == "w" }!
+        let mp = r.allConnections.first { $0.name == "mp" }!
+        #expect(r.loginCredential(for: p.id)?.ref == ref("file-prod"))
+        #expect(r.loginCredential(for: w.id)?.ref == ref("file-global"))
+        #expect(r.loginCredential(for: mp.id)?.ref == ref("my-prod"))
+        #expect(r.credential == ref("mine"))
+    }
+
     @Test func idsKeptUnlessColliding() {
         let shared = conn("shared")
         let existing = ConnectionLibrary(folders: [ConnectionFolder(name: "a", connections: [shared])])
