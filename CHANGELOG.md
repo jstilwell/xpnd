@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - **Send automatically** types a built-in tab's password by itself only for 15 seconds; after that **Send Password** sends it, for the rest of the minute. A later prompt may be another login's, such as `ssh` to a second server from a root shell that needed no sudo password.
 
 ### Fixed
+- A mistake in a hand-edited snippets or connections file is described in a sentence ("groups › item 1 › snippets › item 2 has no “text”.") instead of Swift's error dump, and a credential written without `provider:` is read as 1Password instead of making the whole file unreadable.
 - Typing a snippet as keystrokes (Screen Sharing, VNC, Windows desktops) uses the main keys for `*` and `+`, not the keypad's, which terminals in keypad mode read as escape codes; and on layouts with dead keys (US International's `'` and `"`) those characters reach the remote machine instead of an "a".
 - Picking a snippet while another one is still running says so, instead of closing the picker and doing nothing; turning expansion off while a snippet waits says that, not that you left the app.
 - A snippet with `#{runShortcut:}` or `#{openApp:}` naming a Shortcut or app that isn't there fails before anything changes, as the README says, instead of deleting the keyword and typing half the snippet.

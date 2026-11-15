@@ -81,6 +81,13 @@ groups:
     }
 }
 
+/// A banner reading `keyNotFound(CodingKeys(stringValue: "text"…` tells a person nothing.
+@Test func aMissingKeyIsNamedInASentence() {
+    #expect(throws: SnippetYAMLError.malformed("groups › item 1 › snippets › item 2 has no “text”.")) {
+        try SnippetYAML.decode("groups:\n  - name: G\n    snippets:\n      - {name: a, keyword: ';a', text: x}\n      - {name: b, keyword: ';b'}\n")
+    }
+}
+
 @Test func futureVersionThrows() {
     #expect(throws: SnippetYAMLError.unsupportedVersion(2)) { try SnippetYAML.decode("version: 2\ngroups: []") }
 }

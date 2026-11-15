@@ -120,6 +120,16 @@ import Testing
         #expect(throws: ConnectionYAMLError.unsupportedVersion(2)) { try ConnectionYAML.decode("version: 2\n") }
     }
 
+    /// Written by hand, a 1Password ref needn't say which provider it is.
+    @Test func aCredentialWithoutAProviderIsOnePassword() throws {
+        let lib = try ConnectionYAML.decode("""
+        credential: {account: a, vault: v, item: i, title: t, category: login}
+        folders: []
+        """)
+        #expect(lib.credential?.provider == "1password")
+        #expect(lib.credential?.item == "i")
+    }
+
     @Test func duplicateIDsThrow() {
         let id = "7f1c0000-0000-4000-8000-000000000009"
         let yaml = """
