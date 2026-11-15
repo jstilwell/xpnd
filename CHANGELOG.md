@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.2 - Unreleased
+
+### Fixed
+- ⌥⌫ (delete a word) no longer leaves xpnd's idea of what you typed out of step, which could make a later keyword delete text you had typed before it.
+
 ## 0.3.1 - 11-10-2026
 
 ### Changed
