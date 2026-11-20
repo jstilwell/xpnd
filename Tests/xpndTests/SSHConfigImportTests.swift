@@ -80,4 +80,18 @@ import Testing
         #expect(result.library.allConnections.map(\.name) == ["db"])
         #expect(result.notes == ["Skipped 1 host already in your connections."])
     }
+
+    @Test func aHostWithOptionsXpndDoesntMapConnectsByItsAlias() throws {
+        let result = SSHConfigImport.parse("""
+        Host prod
+          HostName 10.0.0.5
+          ProxyCommand cloudflared access ssh --hostname %h
+          LocalForward 8080 localhost:80
+          ForwardAgent yes
+          ProxyCommand second
+        """)
+        let c = try #require(result.library.allConnections.first)
+        #expect(c.host == "prod")
+        #expect(result.notes == ["prod connects as “prod”, so ssh also reads its ProxyCommand, LocalForward and ForwardAgent from ~/.ssh/config."])
+    }
 }

@@ -8,6 +8,8 @@ enum SSHConfigImport {
     private struct Block {
         let name: String
         var values: [String: String] = [:]
+        /// Keywords xpnd doesn't map, as written, each once.
+        var others: [String] = []
     }
 
     /// One folder of connections, one per `Host` block, and notes for the preview about what was left out. A host
@@ -38,8 +40,14 @@ enum SSHConfigImport {
             case "include":
                 sawInclude = true
             default:
+                guard let index = current else { continue }
+                guard wanted.contains(keyword) else {
+                    let written = String(line.prefix { !$0.isWhitespace && $0 != "=" })
+                    if !blocks[index].others.contains(where: { $0.lowercased() == keyword }) { blocks[index].others.append(written) }
+                    continue
+                }
                 // ssh keeps the first value it reads for an option.
-                guard let index = current, wanted.contains(keyword), blocks[index].values[keyword] == nil else { continue }
+                guard blocks[index].values[keyword] == nil else { continue }
                 guard !value.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
                     notes.append("Skipped a \(display(keyword)) for \(blocks[index].name): it has a control character.")
                     blocks[index].values[keyword] = ""
@@ -64,7 +72,14 @@ enum SSHConfigImport {
                 }
             }
             let jump = value("proxyjump").flatMap { $0.lowercased() == "none" ? nil : JumpHost.text($0) }
-            return Connection(name: block.name, host: value("hostname") ?? block.name, port: port, username: value("user"),
+            // ssh applies a Host block to the name typed, so with options xpnd can't carry it connects by the alias,
+            // and ssh reads the whole block (HostName included) itself.
+            if !block.others.isEmpty {
+                let list = block.others.count == 1 ? block.others[0]
+                    : block.others.dropLast().joined(separator: ", ") + " and " + block.others.last!
+                notes.append("\(block.name) connects as “\(block.name)”, so ssh also reads its \(list) from ~/.ssh/config.")
+            }
+            return Connection(name: block.name, host: block.others.isEmpty ? value("hostname") ?? block.name : block.name, port: port, username: value("user"),
                               jumpHost: jump, sshOptions: value("identityfile").map { "-i " + ShellQuote.quote($0) } ?? "")
         }
         let connections = parsed.filter { !have.contains([$0.name, $0.host]) }
