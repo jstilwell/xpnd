@@ -89,7 +89,13 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
   options, `sudo -i`; `ShellQuote` quotes it), has `LaunchPlanner` choose a `LaunchPlan` (type into a
   front terminal, AppleScript, `open`, a custom template checked by `templateProblem`, or a `vnc://`
   URL), and `LiveLaunchExecutor` runs it. Only then does the `CredentialProvider` fetch passwords, which go
-  to `SecretClipboard` (concealed and transient markers, cleared after 30 s or on quit). The provider is
+  to `SecretClipboard` (concealed and transient markers, cleared after 30 s or on quit). That runs after `connect`
+  returns, outside the engine's claim: `passwordPhase` (the clipboard's) is cancelled by the next connect, while
+  `tabPhase` (offers into a built-in tab, and an RDP fetch then its tab) belongs to its tab and isn't. A connect
+  that launched records the id for the launcher's Recent list (`ConnectionFilter.recording`, `AppSettings`);
+  `ConnectionFilter.shortlist` puts favorites and recents over the tree. With Settings → Terminal's toggle on,
+  `SSHCommandBuilder.connectDefaults` follow the connection's own options. `SSHConfigImport` reads
+  `~/.ssh/config` as text (no `ssh -G`) into the usual import preview. The provider is
   `OnePasswordProvider`, or `KeychainProvider` (the login keychain's generic passwords, through Security; no SSH
   keys) when Settings → Password Manager says so.
   `OnePasswordProvider` shells out to `op` through `ProcessRunner` (`item list`, `item get`, `account
@@ -124,7 +130,8 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
   `TerminalHost` (`TerminalSession.kind` is `.remoteDesktop`), `RDPErrorText` words `ERRCONNECT_*`/`ERRINFO_*`,
   `RDPReconnectPolicy` decides auto-reconnect, and `RDPPrompts` and `RDPOptionLabels` serve the sheets
   and Settings → Remote Desktop. `ConnectionService` fetches the password before the `.rdpTab` plan opens
-  the tab; it goes into the session's memory, never the clipboard or a log. On close xpnd's copies are
+  the tab (in `tabPhase`, with a HUD while it waits); it goes into the session's memory, never the clipboard or a
+  log. A missing item or password leaves it unset, so FreeRDP asks. On close xpnd's copies are
   zeroed; FreeRDP frees its own.
   Snippets type as keystrokes in an RDP tab (`focusedSessionKind`).
   The notch: `RDPNotchModel` (main actor, observable) holds the toolbar's state and notices and calls
@@ -145,7 +152,8 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
   list queues on the channel while input goes straight to the transport. `XPRDPClipboard` counts the lists in
   flight, so the offer's response is the one that leaves none; a newer list on either side, the session ending
   or 2 seconds refuse the offer, and nothing is clicked or typed. One on the notch becomes
-  `copyIntoDropFolder`, which runs on `RDPDropFolder`'s serial queue, one drop at a time for the whole app.
+  `copyIntoDropFolder`, which runs on `RDPDropFolder`'s serial queue, one drop at a time for the whole app; the
+  policy's clears (`clearInTurn`, and at launch `applyLaunchCleanupInTurn`) run on it too.
   ⌘ held on a desktop is decided by the next key, so `TerminalSessions.shortcut` (every hidden shortcut) and
   `RDPHost.restoreFocus` (every notch action) call `noteCommandUsed`, or its release would tap the Windows key.
   `RDPDropFolder` owns `<Application Support>/xpnd/drop/<connection id>` (mode 0700): `copyIn` (sanitised
