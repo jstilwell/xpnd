@@ -95,6 +95,16 @@ enum PlayStep: Equatable, Sendable {
     case moveLeft(Int)
 }
 
+extension PlayStep {
+    /// Opens an app or runs a Shortcut, either of which can take the typing somewhere else.
+    var isAction: Bool {
+        switch self {
+        case .openApp, .runShortcut: true
+        default: false
+        }
+    }
+}
+
 extension [PlayStep] {
     /// Nothing, text, or text with the caret moved back into it: what typed keys may follow.
     var endsInText: Bool {

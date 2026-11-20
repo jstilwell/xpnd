@@ -62,13 +62,14 @@ enum Matcher {
     static func strict(word: String, boundary: Character, in snippets: [Snippet]) -> Snippet? {
         guard isBoundary(boundary) else { return nil }
         let strict = snippets.filter { $0.matching == .strict && !$0.keyword.isEmpty }
+        let all = snippets.filter { !$0.keyword.isEmpty }
         return strict
             .filter { snippet in
                 guard word.hasSuffix(snippet.keyword) else { return false }
                 let before = word.dropLast(snippet.keyword.count)
                 return before.allSatisfy(opening.contains)
             }
-            .filter { candidate in !strict.contains { $0.keyword.hasPrefix(candidate.keyword + String(boundary)) } }
+            .filter { candidate in !all.contains { $0.keyword.hasPrefix(candidate.keyword + String(boundary)) } }
             .max { $0.keyword.count < $1.keyword.count }
     }
 

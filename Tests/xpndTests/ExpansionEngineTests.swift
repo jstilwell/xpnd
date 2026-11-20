@@ -147,7 +147,8 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         #expect(h.sender.log == ["bs 7", "paste Hi Ann ab"])
     }
 
-    @Test func otherKeyDuringExpansionStopsKeeping() async throws {
+    /// An arrow or Return may have moved the caret, so what to delete is unknown: nothing changes.
+    @Test func otherKeyDuringExpansionCancelsIt() async throws {
         let h = try Harness([snip(";sig", "Hi #{input:N}")])
         h.type(";", "s", "i", "g", " ")
         #expect(await eventually { h.gate.continuation != nil })
@@ -156,17 +157,71 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         h.type("b")
         h.gate.continuation?.resume(returning: ["N": "Ann"])
         await h.settle()
-        #expect(h.sender.log == ["bs 5", "paste Hi Ann "])
+        #expect(h.sender.log.isEmpty)
+        #expect(h.notes == [ExpansionError.typedDuringExpansion.message])
     }
 
-    @Test func keptKeysAreCapped() async throws {
+    @Test func tooManyKeptKeysCancelsIt() async throws {
         let h = try Harness([snip(";sig", "Hi #{input:N}")])
         h.type(";", "s", "i", "g", " ")
         #expect(await eventually { h.gate.continuation != nil })
         for _ in 0..<65 { h.type("a") }
         h.gate.continuation?.resume(returning: ["N": "Ann"])
         await h.settle()
-        #expect(h.sender.log == ["bs 5", "paste Hi Ann "])
+        #expect(h.sender.log.isEmpty)
+        #expect(h.notes == [ExpansionError.typedDuringExpansion.message])
+    }
+
+    @Test func backspaceDuringExpansionTakesBackAKeptKey() async throws {
+        let h = try Harness([snip(";sig", "Hi #{input:N}")])
+        h.type(";", "s", "i", "g", " ")
+        #expect(await eventually { h.gate.continuation != nil })
+        h.type("a", "b")
+        h.engine.handle(.backspace)
+        h.gate.continuation?.resume(returning: ["N": "Ann"])
+        await h.settle()
+        #expect(h.sender.log == ["bs 6", "paste Hi Ann a"])
+    }
+
+    @Test func backspacePastTheKeptKeysCancels() async throws {
+        let h = try Harness([snip(";sig", "Hi #{input:N}")])
+        h.type(";", "s", "i", "g", " ")
+        #expect(await eventually { h.gate.continuation != nil })
+        h.engine.handle(.backspace) // deleted the space in the app
+        h.gate.continuation?.resume(returning: ["N": "Ann"])
+        await h.settle()
+        #expect(h.sender.log.isEmpty)
+        #expect(h.notes == [ExpansionError.typedDuringExpansion.message])
+    }
+
+    @Test func keptKeysFollowATrailingKeyStep() async throws {
+        let h = try Harness([snip(";s", "#{input:N}#{key:enter}")])
+        h.type(";", "s", " ")
+        #expect(await eventually { h.gate.continuation != nil })
+        h.type("a", "b")
+        h.gate.continuation?.resume(returning: ["N": "Hi"])
+        await h.settle()
+        #expect(h.sender.log == ["bs 5", "paste Hi", "key enter x1", "paste ab"])
+    }
+
+    /// Opening an app moves the typing elsewhere, so kept keys can't be put back after it.
+    @Test func keptKeysWithAnActionCancel() async throws {
+        let h = try Harness([snip(";s", "#{input:N}#{openApp:/X.app}")])
+        h.type(";", "s", " ")
+        #expect(await eventually { h.gate.continuation != nil })
+        h.type("a")
+        h.gate.continuation?.resume(returning: ["N": "Hi"])
+        await h.settle()
+        #expect(h.sender.log.isEmpty)
+        #expect(h.notes == [ExpansionError.typedDuringExpansion.message])
+    }
+
+    @Test func aLongerActivationWinsOverAStrictKeyword() async throws {
+        let aws = Connection(name: "s", host: "h", activation: ";sig.")
+        let h = try Harness([snip(";sig", "Best")], folders: [ConnectionFolder(name: "f", activation: "", connections: [aws])])
+        h.type(";", "s", "i", "g", ".")
+        await h.settle()
+        #expect(h.activated == [Activation(target: .connection(aws.id), pid: 100, typed: 5)])
     }
 
     @Test func boundaryGoesBeforeTheCursorMove() async throws {

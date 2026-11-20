@@ -43,6 +43,11 @@ import Testing
         #expect(Matcher.strict(word: ";sig.", boundary: " ", in: s)?.keyword == ";sig.")
     }
 
+    @Test func strictYieldsToALooseKeywordThatContinuesWithTheBoundary() {
+        let s = [snip(";sig", .strict), snip(";sig.", .loose)]
+        #expect(Matcher.strict(word: ";sig", boundary: ".", in: s) == nil)
+    }
+
     @Test func strictIgnoresLooseSnippets() {
         #expect(Matcher.strict(word: ";sig", boundary: " ", in: [snip(";sig", .loose)]) == nil)
     }

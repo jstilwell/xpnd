@@ -55,6 +55,22 @@ private struct FakeActions: ActionRunning {
         #expect(sender.log == ["paste a", "key tab x1", "paste b", "restore", "paste c", "restore"])
     }
 
+    /// A keyboard shortcut may be ⌘V or ⌘C, which must see the user's clipboard.
+    @Test func clipboardComesBackBeforeAShortcut() async throws {
+        let sender = FakeSender()
+        let paste = KeyCombo(command: true, option: false, control: false, shift: false, keyCode: 9)
+        try await Player(sender: sender, actions: FakeActions()).play([.paste("a"), .shortcut(paste), .paste("b")], deletingCharacters: 0)
+        #expect(sender.log == ["paste a", "restore", "combo", "paste b", "restore"])
+    }
+
+    @Test func nilTailCancelsBeforeDeleting() async {
+        let sender = FakeSender()
+        await #expect(throws: ExpansionError.typedDuringExpansion) {
+            try await Player(sender: sender, actions: FakeActions()).play([.paste("a")], deletingCharacters: 3) { nil }
+        }
+        #expect(sender.log.isEmpty)
+    }
+
     @Test func nothingPastedNothingRestored() async throws {
         let sender = FakeSender()
         try await Player(sender: sender, actions: FakeActions()).play([.key(.tab, count: 1)], deletingCharacters: 0)

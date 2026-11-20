@@ -20,8 +20,9 @@ import Foundation
     /// The snippet being evaluated, so leaving its app can stop its scripts. Playing isn't
     /// cancelled: a paste cut short would restore the clipboard before the app read it.
     private var evaluation: Task<Result<[PlayStep], ExpansionError>, Never>?
-    /// Characters typed into the app since a typed keyword fired; nil when not keeping (see `keep`).
-    private var kept: String?
+    /// Keys typed into the app since a typed keyword fired (see `keep`). Never log them.
+    private enum Kept { case off, keeping(String), lost }
+    private var kept = Kept.off
 
     private let store: SnippetStore
     private let connections: ConnectionStore
@@ -69,9 +70,11 @@ import Foundation
         guard isEnabled, !isExpanding, snippetsOK || connectionsOK else { return buffer.apply(.reset) }
         refreshNamespace()
         // A strict keyword fires on the space or punctuation after it, which is already in the app.
+        // A longer string that continues with this character is still being typed.
         if snippetsOK, let boundary = Self.boundary(of: input),
-           let snippet = Matcher.strict(word: buffer.text, boundary: boundary, in: candidates) {
-            kept = ""
+           let snippet = Matcher.strict(word: buffer.text, boundary: boundary, in: candidates),
+           !activations.keys.contains(where: { $0.hasPrefix(buffer.text + String(boundary)) }) {
+            kept = .keeping("")
             let typed = String(boundary)
             return start { await self.run(snippet, deletingCharacters: snippet.keyword.count + 1, boundary: typed, into: $0) }
         }
@@ -81,7 +84,7 @@ import Foundation
         if connectionsOK, let target = activations[text], text.count > snippet?.keyword.count ?? 0 {
             start { await self.activate(target, deletingCharacters: text.count, in: $0) }
         } else if let snippet {
-            kept = ""
+            kept = .keeping("")
             start { await self.run(snippet, deletingCharacters: snippet.keyword.count, into: $0) }
         }
     }
@@ -97,15 +100,19 @@ import Foundation
     }
 
     /// Typed into the app while a typed keyword's expansion is in flight. They land after the keyword, so the
-    /// delete takes them too and they're typed again after the expansion. Anything else means the caret may
-    /// have moved, so nothing more is kept. Never log `kept`.
+    /// delete takes them too and they're typed again after the expansion. A backspace takes back the last one; any
+    /// other key may have moved the caret, and then the expansion is cancelled rather than deleting a guess.
     private func keep(_ input: KeyInput) {
-        guard let current = kept else { return }
+        guard case .keeping(let current) = kept else { return }
         switch input {
         case .characters(let s), .boundary(let s):
-            kept = current.count + s.count <= Self.keptLimit ? current + s : nil
-        default:
-            kept = nil
+            kept = current.count + s.count <= Self.keptLimit ? .keeping(current + s) : .lost
+        case .backspace:
+            kept = current.isEmpty ? .lost : .keeping(String(current.dropLast()))
+        case .ignore:
+            break // a dead key: its character comes with the next key
+        case .reset:
+            kept = .lost
         }
     }
 
@@ -173,7 +180,7 @@ import Foundation
     private func run(_ snippet: Snippet, deletingCharacters: Int, boundary: String? = nil, into target: pid_t?) async {
         defer {
             isExpanding = false
-            kept = nil
+            kept = .off
         }
         do throws(ExpansionError) {
             // Evaluation fails before anything on screen changes, so the keyword stays.
@@ -188,11 +195,16 @@ import Foundation
             guard !evaluation.isCancelled, frontmostPID() == target else { throw isEnabled ? .targetAppChanged : .expansionTurnedOff }
             let steps = try result.get()
             try await player.play(steps, deletingCharacters: deletingCharacters) { [self] in
-                defer { kept = nil }
-                // After a key or an action (a trailing Enter), the boundary and kept keys would land in the wrong place.
-                guard steps.endsInText else { return ("", 0) }
-                let typed = kept ?? ""
-                return ((boundary ?? "") + typed, typed.count)
+                defer { kept = .off }
+                switch kept {
+                case .off: return ("", 0)
+                case .lost: return nil
+                case .keeping(let typed):
+                    // Opening an app or running a Shortcut may move the typing elsewhere: nowhere to put them back.
+                    if !typed.isEmpty, steps.contains(where: \.isAction) { return nil }
+                    // After a trailing key (Enter), the boundary would land past it; the user's own keys still follow.
+                    return ((steps.endsInText ? boundary ?? "" : "") + typed, typed.count)
+                }
             }
         } catch {
             notify(error.message)
