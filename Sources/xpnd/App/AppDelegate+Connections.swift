@@ -18,7 +18,8 @@ extension AppDelegate {
             },
             copySecret: { [weak self] secret in await self?.engine.whenIdle { SecretClipboard.copy(secret) } },
             prompt: PasswordPrompt(),
-            keysDirectory: keysDirectory
+            keysDirectory: keysDirectory,
+            sshConnectDefaults: { AppSettings.shared.sshConnectDefaults }
         )
     }
 

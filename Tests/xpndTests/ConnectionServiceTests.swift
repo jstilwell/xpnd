@@ -130,6 +130,7 @@ private let sudo = ref("sudo", .password)
     var tabPasswords = TabPasswordMode.clipboard
     /// What a tab's offer answers: true as if the password went in.
     var offerAccepted = true
+    var connectDefaults = false
 
     init(library: ConnectionLibrary) throws {
         provider = FakeProvider(log: log)
@@ -171,7 +172,7 @@ private let sudo = ref("sudo", .password)
                 onCopy()
                 log.events.append("copy \(secret)")
             },
-            prompt: prompt, keysDirectory: keys)
+            prompt: prompt, keysDirectory: keys, sshConnectDefaults: { [unowned self] in connectDefaults })
     }
 
     func connect(_ connection: Connection, typedInto target: pid_t? = terminalPID, deleting: Int = 0, sudo: Bool = false,
@@ -770,5 +771,14 @@ struct ConnectionServiceTests {
         await moved.connect(win)
         #expect(moved.log.events == ["password login", "notify \(ExpansionError.targetAppChanged.message)"])
         #expect(moved.opened.isEmpty)
+    }
+
+    @Test func connectDefaultsSettingReachesTheCommand() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3")
+        let h = try Harness(aws)
+        h.connectDefaults = true
+        await h.connect(aws, typedInto: nil, preferBuiltIn: true)
+        let expected = try SSHCommandBuilder.build(aws.id, in: h.store.library, keysDirectory: h.keys, connectDefaults: true)
+        #expect(h.opened.count == 1 && h.opened[0].0 == .terminal(expected))
     }
 }

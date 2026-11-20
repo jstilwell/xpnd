@@ -28,6 +28,7 @@ import Foundation
     private let copySecret: @MainActor (String) async -> Void
     private let prompt: any PasswordPrompting
     private let keysDirectory: URL
+    private let sshConnectDefaults: @MainActor () -> Bool
     /// Runs after `connect` returns, so Touch ID and the sudo offer never hold the engine's one-action claim.
     private(set) var passwordPhase: Task<Void, Never>?
 
@@ -38,7 +39,8 @@ import Foundation
         notify: @escaping @MainActor (String) -> Void, showCopied: @escaping @MainActor (String, TerminalSession.ID) -> Void = { _, _ in },
         tabPasswords: @escaping @MainActor () -> TabPasswordMode = { .clipboard },
         offerInTab: @escaping @MainActor (String, String, TerminalSession.ID, Bool) async -> Bool = { _, _, _, _ in false },
-        copySecret: @escaping @MainActor (String) async -> Void, prompt: any PasswordPrompting, keysDirectory: URL
+        copySecret: @escaping @MainActor (String) async -> Void, prompt: any PasswordPrompting, keysDirectory: URL,
+        sshConnectDefaults: @escaping @MainActor () -> Bool = { false }
     ) {
         self.connections = connections
         self.provider = provider
@@ -55,6 +57,7 @@ import Foundation
         self.copySecret = copySecret
         self.prompt = prompt
         self.keysDirectory = keysDirectory
+        self.sshConnectDefaults = sshConnectDefaults
     }
 
     /// Where a connect went: a built-in tab (which its passwords can be sent into), or another app.
@@ -121,7 +124,8 @@ import Foundation
             }
             let command: SSHCommand
             do throws(SSHCommandError) {
-                command = try SSHCommandBuilder.build(connection.id, in: library, keysDirectory: keysDirectory)
+                command = try SSHCommandBuilder.build(connection.id, in: library, keysDirectory: keysDirectory,
+                                                       connectDefaults: sshConnectDefaults())
             } catch {
                 notify(error.message)
                 return nil

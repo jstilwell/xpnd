@@ -28,6 +28,9 @@ enum SSHCommandBuilder {
     static let agentSocket = "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
     /// Each hop roughly quadruples the quoting, so a long hand-edited chain would hang the main thread.
     static let maxJumpHops = 5
+    /// Settings → Terminal's "Add a connect timeout and keepalive". After the connection's own options, since ssh keeps
+    /// the first value it's given; they do beat `~/.ssh/config`, which ssh reads after the command line.
+    static let connectDefaults = ["-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=30"]
 
     static func keyFile(_ ref: CredentialRef, in keysDirectory: URL) -> URL {
         keysDirectory.appendingPathComponent("\(ref.item).pub")
@@ -42,12 +45,15 @@ enum SSHCommandBuilder {
     }
 
     /// A connection that no longer exists also throws `.notSSH`: the error set has no closer case.
-    static func build(_ id: Connection.ID, in library: ConnectionLibrary, keysDirectory: URL) throws(SSHCommandError) -> SSHCommand {
+    /// `connectDefaults`: add `connectDefaults` (the first hop only; a jump's own ssh keeps its settings).
+    static func build(_ id: Connection.ID, in library: ConnectionLibrary, keysDirectory: URL,
+                      connectDefaults: Bool = false) throws(SSHCommandError) -> SSHCommand {
         guard let connection = library.connection(id), connection.type == .ssh else { throw .notSSH }
         // ssh would otherwise report "Could not resolve hostname :", which doesn't name the connection.
         guard !connection.host.trimmingCharacters(in: .whitespaces).isEmpty else { throw .emptyHost(connection.name) }
         var arguments = ["ssh"]
         arguments += try options(for: connection, visited: [id], library, keysDirectory)
+        if connectDefaults { arguments += Self.connectDefaults }
         if connection.autoSudo { arguments.append("-t") }
         arguments += target(of: connection, library)
         if connection.autoSudo { arguments += ["sudo", "-i"] }
