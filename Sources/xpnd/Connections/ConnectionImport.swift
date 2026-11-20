@@ -253,6 +253,50 @@ enum ConnectionImport {
         return Preview(added: added, removed: removed, rejumped: rejumped)
     }
 
+    /// Undoes the import that turned `before` into `after`, in `current` (the library as it is now): each connection
+    /// it added goes, each existing one it changed or removed comes back as it was, a folder's own settings it changed
+    /// (a string it took) go back, and a folder it added goes once empty. Anything edited since is left alone.
+    static func undo(before: ConnectionLibrary, after: ConnectionLibrary, in current: ConnectionLibrary) -> ConnectionLibrary {
+        var result = current
+        let oldConnections = Set(before.allConnections.map(\.id)), oldFolders = Set(before.allFolders.map(\.id))
+        for added in after.allConnections where !oldConnections.contains(added.id) && result.connection(added.id) == added {
+            result.remove(.connection(added.id))
+        }
+        for old in before.allConnections {
+            let imported = after.connection(old.id)
+            guard imported != old else { continue }
+            if let imported {
+                if result.connection(old.id) == imported { result.editConnection(old.id) { $0 = old } }
+            } else if result.connection(old.id) == nil, let place = before.placement(of: .connection(old.id)) {
+                result.restore(.connection(old), at: place)
+            }
+        }
+        /// A folder without its contents: what the import may have changed in it.
+        func own(_ f: ConnectionFolder) -> ConnectionFolder {
+            var f = f
+            f.connections = []
+            f.folders = []
+            return f
+        }
+        for old in before.allFolders {
+            guard let imported = after.folder(old.id), own(imported) != own(old),
+                  let now = result.folder(old.id), own(now) == own(imported) else { continue }
+            result.editFolder(old.id) { f in
+                let kept = (f.connections, f.folders)
+                f = own(old)
+                (f.connections, f.folders) = kept
+            }
+        }
+        // Innermost first, so a nested added folder empties its parent.
+        for added in after.allFolders.reversed() where !oldFolders.contains(added.id) {
+            if let now = result.folder(added.id), now.connections.isEmpty, now.folders.isEmpty { result.remove(.folder(added.id)) }
+        }
+        if result.credential == after.credential { result.credential = before.credential }
+        if result.sudoCredential == after.sudoCredential { result.sudoCredential = before.sudoCredential }
+        if result.sudoUsesLogin == after.sudoUsesLogin { result.sudoUsesLogin = before.sudoUsesLogin }
+        return result
+    }
+
     /// `folders == nil` exports everything; selected folders keep their whole subtree.
     static func export(_ library: ConnectionLibrary, folders: Set<ConnectionFolder.ID>?) -> String {
         guard let folders else { return ConnectionYAML.encode(library) }

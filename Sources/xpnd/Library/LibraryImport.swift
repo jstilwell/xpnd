@@ -59,6 +59,39 @@ enum LibraryImport {
         return result
     }
 
+    /// Undoes the import that turned `before` into `after`, in `current` (the library as it is now): each snippet it
+    /// added goes, each one it replaced comes back where it was, and a group it added goes once empty. A snippet
+    /// edited since is left alone. Snippets are matched by keyword, since a reload gives them new ids.
+    static func undo(before: SnippetLibrary, after: SnippetLibrary, in current: SnippetLibrary) -> SnippetLibrary {
+        func same(_ a: Snippet, _ b: Snippet) -> Bool {
+            var b = b
+            b.id = a.id
+            return a == b
+        }
+        func find(_ keyword: String, in library: SnippetLibrary) -> Snippet? { library.groups.lazy.flatMap(\.snippets).first { $0.keyword == keyword } }
+        var result = current
+        func removeUnedited(_ imported: Snippet) -> Bool {
+            guard let now = find(imported.keyword, in: result), same(now, imported) else { return false }
+            for gi in result.groups.indices { result.groups[gi].snippets.removeAll { $0.id == now.id } }
+            return true
+        }
+        let old = Dictionary(before.groups.flatMap(\.snippets).map { ($0.keyword, $0) }, uniquingKeysWith: { a, _ in a })
+        for imported in after.groups.flatMap(\.snippets) {
+            guard let was = old[imported.keyword] else {
+                _ = removeUnedited(imported)
+                continue
+            }
+            // Replaced: put the old one back, unless the new one was edited since.
+            if !same(was, imported), removeUnedited(imported), let place = before.placement(ofSnippet: was.id) {
+                result.restoreSnippet(was, at: place)
+            }
+        }
+        let oldGroups = Set(before.groups.map(\.name))
+        let added = Set(after.groups.map(\.id))
+        result.groups.removeAll { !oldGroups.contains($0.name) && $0.snippets.isEmpty && added.contains($0.id) }
+        return result
+    }
+
     static func riskyActions(in library: SnippetLibrary) -> [RiskyAction] {
         var found: [RiskyAction] = []
         for snippet in library.groups.flatMap(\.snippets) {

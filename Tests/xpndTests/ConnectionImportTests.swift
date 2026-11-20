@@ -231,4 +231,49 @@ struct ConnectionImportRDPTests {
         #expect(p.added.first?.address == "CORP\\me@win:3389")
         #expect(p.added.first?.gateway == "gw")
     }
+
+    // MARK: Undoing an import
+
+    @Test func undoImportRemovesAddedAndRestoresReplaced() {
+        let old = conn("old", act: ";x"), keep = conn("keep")
+        let before = ConnectionLibrary(folders: [ConnectionFolder(name: "prod", connections: [old, keep])])
+        let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "prod", connections: [conn("new", act: ";x")]),
+                                                   ConnectionFolder(name: "extra", connections: [conn("n")])])
+        let after = ConnectionImport.merge(incoming, into: before, choice: .replace)
+        #expect(after.connection(old.id) == nil)
+        let undone = ConnectionImport.undo(before: before, after: after, in: after)
+        #expect(undone == before)
+    }
+
+    @Test func undoImportKeepsAnEditedImport() throws {
+        let before = ConnectionLibrary(folders: [ConnectionFolder(name: "prod", connections: [conn("a")])])
+        let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "prod", connections: [conn("b"), conn("c")])])
+        let after = ConnectionImport.merge(incoming, into: before, choice: .skip)
+        var current = after
+        let b = try #require(current.allConnections.first { $0.name == "b" })
+        current.editConnection(b.id) { $0.host = "edited" }
+        let undone = ConnectionImport.undo(before: before, after: after, in: current)
+        #expect(undone.allConnections.map(\.name) == ["a", "b"])
+        #expect(undone.connection(b.id)?.host == "edited")
+    }
+
+    @Test func undoImportRevertsAFolderStringItTook() {
+        let before = ConnectionLibrary(folders: [ConnectionFolder(name: "prod", activation: ";p")])
+        let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "other", connections: [conn("c", act: ";p")])])
+        let after = ConnectionImport.merge(incoming, into: before, choice: .replace)
+        #expect(after.folders[0].activation != ";p")
+        #expect(ConnectionImport.undo(before: before, after: after, in: after) == before)
+    }
+
+    @Test func undoImportRemovesAddedFoldersOnlyIfEmpty() throws {
+        let before = ConnectionLibrary(folders: [ConnectionFolder(name: "prod")])
+        let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "new", connections: [conn("n")])])
+        let after = ConnectionImport.merge(incoming, into: before, choice: .skip)
+        var current = after
+        let new = try #require(current.folders.last)
+        current.editFolder(new.id) { $0.connections.append(conn("mine")) }
+        let undone = ConnectionImport.undo(before: before, after: after, in: current)
+        #expect(undone.folders.map(\.name) == ["prod", "new"])
+        #expect(undone.folders[1].connections.map(\.name) == ["mine"])
+    }
 }

@@ -40,6 +40,7 @@ private struct SnippetImportExport: View {
     @State private var taken: [String] = []
     @State private var conflicts: [String] = []
     @State private var previewing = false
+    @Environment(\.undoManager) private var undoManager
     @State private var resolvingConflicts = false
 
     var body: some View {
@@ -74,8 +75,8 @@ private struct SnippetImportExport: View {
         }
         .alert(conflicts.count == 1 ? "1 keyword already exists" : "\(conflicts.count) keywords already exist",
                isPresented: $resolvingConflicts) {
-            Button("Skip") { merge(.skip) }
-            Button("Replace") { merge(.replace) }
+            Button("Skip") { merge(.skip) }.keyboardShortcut(.defaultAction)
+            Button("Replace", role: .destructive) { merge(.replace) }
             Button("Cancel", role: .cancel, action: cancelImport)
         } message: {
             Text("Skip keeps your snippets; Replace uses the imported ones.\n" + conflicts.joined(separator: ", "))
@@ -143,7 +144,13 @@ private struct SnippetImportExport: View {
             return
         }
         do {
+            let before = store.library
             try store.update { $0 = LibraryImport.merge(incoming, into: $0, choice: choice) }
+            let after = store.library
+            undoManager?.registerUndo(withTarget: store) { store in
+                MainActor.assumeIsolated { try? store.update { $0 = LibraryImport.undo(before: before, after: after, in: $0) } }
+            }
+            undoManager?.setActionName("Import")
             message = taken.isEmpty ? outcome
                 : outcome + " Skipped \(EditorRules.count(taken.count, "snippet")) whose keyword a connection or folder uses."
         } catch {
@@ -237,6 +244,7 @@ private struct ConnectionImportExport: View {
     @State private var conflicts: [String] = []
     @State private var resolvingConflicts = false
     @State private var preview: ConnectionImport.Preview?
+    @Environment(\.undoManager) private var undoManager
     /// What an SSH config import left out, for the preview.
     @State private var notes: [String] = []
 
@@ -268,8 +276,8 @@ private struct ConnectionImportExport: View {
         .frame(minHeight: 320)
         .alert(conflicts.count == 1 ? "1 activation string already exists" : "\(conflicts.count) activation strings already exist",
                isPresented: $resolvingConflicts) {
-            Button("Skip") { showPreview(.skip) }
-            Button("Replace") { showPreview(.replace) }
+            Button("Skip") { showPreview(.skip) }.keyboardShortcut(.defaultAction)
+            Button("Replace", role: .destructive) { showPreview(.replace) }
             Button("Cancel", role: .cancel, action: cancelImport)
         } message: {
             Text("Skip keeps your connections; Replace uses the imported ones.\n" + conflicts.joined(separator: ", "))
@@ -355,7 +363,13 @@ private struct ConnectionImportExport: View {
         self.incoming = nil
         preview = nil
         do {
+            let before = store.library
             try store.update { $0 = ConnectionImport.merge(incoming, into: $0, choice: choice) }
+            let after = store.library
+            undoManager?.registerUndo(withTarget: store) { store in
+                MainActor.assumeIsolated { try? store.update { $0 = ConnectionImport.undo(before: before, after: after, in: $0) } }
+            }
+            undoManager?.setActionName("Import")
             message = added == 0 ? "Imported the folders; no connections were added." : "Imported \(EditorRules.count(added, "connection"))."
             if !taken.isEmpty { message! += " Snippets use \(taken.joined(separator: ", ")), so those came without their string." }
         } catch {
