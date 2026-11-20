@@ -19,7 +19,8 @@ extension AppDelegate {
             copySecret: { [weak self] secret in await self?.engine.whenIdle { SecretClipboard.copy(secret) } },
             prompt: PasswordPrompt(),
             keysDirectory: keysDirectory,
-            sshConnectDefaults: { AppSettings.shared.sshConnectDefaults }
+            sshConnectDefaults: { AppSettings.shared.sshConnectDefaults },
+            waiting: { text, shown in if shown { hud.show(text) } else { hud.hide(ifShowing: text) } }
         )
     }
 
