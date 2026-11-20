@@ -379,4 +379,35 @@ import Testing
         }
     }
 
+    @Test func openReplacingAnEndedTabKeepsItsPosition() {
+        let a = open("a"), b = open("b"), c = open("c")
+        hosts.all[1].exit(255)
+        let new = sessions.open(.terminal(SSHCommand(arguments: ["ssh", "b"])), for: Connection(name: "b", host: "b"), color: nil,
+                                replacing: b)
+        #expect(sessions.sessions.map(\.id) == [a, new, c])
+        #expect(sessions.selected == new)
+    }
+
+    @Test func openReplacingALiveTabAppends() {
+        let a = open("a")
+        let new = sessions.open(.terminal(SSHCommand(arguments: ["ssh", "a"])), for: Connection(name: "a", host: "a"), color: nil,
+                                replacing: a)
+        #expect(sessions.sessions.map(\.id) == [a, new])
+        #expect(sessions.liveCount == 2)
+    }
+
+    @Test func endedTextNamesWhatHappened() {
+        #expect(TerminalSessions.endedText(255) == "ssh couldn't connect (see the message above)")
+        #expect(TerminalSessions.endedText(1) == "Session ended (exit 1)")
+        #expect(TerminalSessions.endedText(nil) == "Session ended (signal)")
+    }
+
+    @Test func reconnectOpensTheNextConnectInTheEndedTabsPlace() {
+        let x = open(connectionX), y = open(connectionY)
+        hosts.all[0].exit(255)
+        sessions.replaceOnNextOpen(x)
+        let other = open(connectionY) // another connection's connect leaves the ended tab alone
+        let again = open(connectionX)
+        #expect(sessions.sessions.map(\.id) == [again, y, other])
+    }
 }
