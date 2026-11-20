@@ -287,6 +287,10 @@ struct Sidebar: View {
                 Button("Connect") { connections.connect(id, false) }
             }
             Group {
+                let favorite = connections.library.connection(id)?.favorite == true
+                Button(favorite ? "Remove from Favorites" : "Add to Favorites") {
+                    _ = connections.edit(connection: id) { $0.favorite = !favorite }
+                }
                 Button("Duplicate") { select(connections.duplicate(id).map(SidebarItem.connection), focus: .name, else: .connection(id)) }
                 moveMenu(.connection(id))
                 Divider()

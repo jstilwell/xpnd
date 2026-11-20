@@ -23,7 +23,7 @@ enum ConnectionFilter {
     }
 
     /// Empty query: tree order. Otherwise 0: name starts with it; 1: name, activation string or host
-    /// contains it; 2: folder path contains it. Ties by name.
+    /// contains it; 2: folder path or notes contain it. Ties by name.
     static func filter(_ entries: [ConnectionEntry], query: String) -> [ConnectionEntry] {
         let query = query.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return entries }
@@ -32,7 +32,7 @@ enum ConnectionFilter {
         func rank(_ e: ConnectionEntry) -> Int? {
             if e.connection.name.range(of: query, options: options.union(.anchored)) != nil { return 0 }
             if has(e.connection.name) || has(e.connection.activation ?? "") || has(e.connection.host) { return 1 }
-            return has(e.pathText) ? 2 : nil
+            return has(e.pathText) || has(e.connection.notes ?? "") ? 2 : nil
         }
         let ranked = entries.compactMap { e in rank(e).map { (entry: e, rank: $0) } }
         let sorted = ranked.sorted { a, b in

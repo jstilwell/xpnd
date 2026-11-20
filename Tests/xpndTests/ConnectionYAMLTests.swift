@@ -148,4 +148,22 @@ import Testing
         #expect(s.folders.allSatisfy { $0.activation == nil && $0.connections.isEmpty })
         #expect(s.folders[0].id != s.folders[1].id)
     }
+
+    @Test func notesAndFavoriteRoundTrip() throws {
+        var c = Connection(name: "aws", host: "54.1.2.3")
+        c.notes = "Ask Sam before rebooting.\nVPN first."
+        c.favorite = true
+        let yaml = ConnectionYAML.encode(ConnectionLibrary(folders: [ConnectionFolder(name: "prod", connections: [c])]))
+        #expect(yaml.contains("favorite: true"))
+        let back = try #require(try ConnectionYAML.decode(yaml).connection(c.id))
+        #expect(back.notes == c.notes && back.favorite)
+    }
+
+    @Test func notesAndFavoriteAreLeftOutWhenUnset() throws {
+        let c = Connection(name: "aws", host: "54.1.2.3")
+        let yaml = ConnectionYAML.encode(ConnectionLibrary(folders: [ConnectionFolder(name: "prod", connections: [c])]))
+        #expect(!yaml.contains("favorite") && !yaml.contains("notes"))
+        let back = try #require(try ConnectionYAML.decode(yaml).connection(c.id))
+        #expect(back.notes == nil && !back.favorite)
+    }
 }

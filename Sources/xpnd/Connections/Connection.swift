@@ -92,6 +92,10 @@ struct Connection: Identifiable, Hashable, Sendable {
     var rdp: RDPOptions?
     /// nil inherits the nearest folder's.
     var color: ItemColor?
+    /// Free text for the user; searched by the launcher, never run.
+    var notes: String?
+    /// Listed first in the launcher.
+    var favorite = false
 
     var effectivePort: Int { port ?? type.defaultPort }
 }

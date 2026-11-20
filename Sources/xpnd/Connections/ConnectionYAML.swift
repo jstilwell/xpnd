@@ -55,6 +55,8 @@ enum ConnectionYAML {
         var sudoCredential: CredentialRef?
         var color: ItemColor?
         var rdp: RDPOptions?
+        var favorite: Bool?
+        var notes: String?
         var advanced: Advanced?
     }
 
@@ -108,7 +110,7 @@ enum ConnectionYAML {
                     username: c.username, domain: c.domain, activation: c.activation, credential: c.credential,
                     sudoCredential: c.sudoCredential, jumpHost: jump,
                     sshOptions: c.advanced?.sshOptions ?? "", autoSudo: c.advanced?.autoSudo ?? false,
-                    rdp: c.rdp, color: c.color)
+                    rdp: c.rdp, color: c.color, notes: c.notes, favorite: c.favorite ?? false)
             },
             folders: (f.folders ?? []).map(model), color: f.color,
             icon: f.icon.flatMap(FolderIcon.init(rawValue:)))
@@ -131,6 +133,7 @@ enum ConnectionYAML {
                 return Item(id: c.id, name: c.name, type: c.type, host: c.host, port: c.port,
                             username: c.username, domain: c.domain, activation: c.activation, credential: c.credential,
                             sudoCredential: c.sudoCredential, color: c.color, rdp: c.rdp,
+                            favorite: c.favorite ? true : nil, notes: c.notes.flatMap { $0.isEmpty ? nil : $0 },
                             advanced: hasAdvanced ? advanced : nil)
             },
             folders: f.folders.isEmpty ? nil : f.folders.map(dto))

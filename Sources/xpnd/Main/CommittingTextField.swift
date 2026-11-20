@@ -9,20 +9,23 @@ struct CommittingTextField: View {
     /// The saved value; a change from outside shows unless typing is waiting to be saved.
     let text: String
     var prompt: Text?
+    /// `.vertical` grows to more lines as text is typed.
+    var axis: Axis = .horizontal
     let commit: (String) -> Void
 
     @State private var draft: String?
     @State private var pending: Task<Void, Never>?
 
-    init(_ title: String, text: String, prompt: Text? = nil, commit: @escaping (String) -> Void) {
+    init(_ title: String, text: String, prompt: Text? = nil, axis: Axis = .horizontal, commit: @escaping (String) -> Void) {
         self.title = title
         self.text = text
         self.prompt = prompt
+        self.axis = axis
         self.commit = commit
     }
 
     var body: some View {
-        TextField(title, text: Binding(get: { draft ?? text }, set: edit), prompt: prompt)
+        TextField(title, text: Binding(get: { draft ?? text }, set: edit), prompt: prompt, axis: axis)
             .onSubmit(flush)
             .onDisappear(perform: flush)
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in flush() }

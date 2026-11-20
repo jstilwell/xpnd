@@ -67,4 +67,11 @@ struct ConnectionFilterTests {
         #expect(ConnectionTreeRow.parent(of: 3, in: rows2) == 0)
         #expect(ConnectionTreeRow.parent(of: 0, in: rows2) == nil)
     }
+
+    @Test func filterFindsNotesWithTheFolderPath() {
+        var noted = conn("zed")
+        noted.notes = "Behind the office VPN"
+        let lib = ConnectionLibrary(folders: [ConnectionFolder(name: "f", connections: [noted, conn("vpn-box")])])
+        #expect(names(lib, "vpn") == ["vpn-box", "zed"])
+    }
 }
