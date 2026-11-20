@@ -115,6 +115,16 @@ final class SnippetEditing {
         return save(at: group) { $0.groups[$1].snippets.append(new) } ? new.id : nil
     }
 
+    /// A copy just after the original: the next free name, and the first free keyword of `keyword2`, `keyword3`….
+    func duplicateSnippet(_ snippet: Snippet, connections: ConnectionLibrary) -> Snippet.ID? {
+        let namespace = KeywordNamespace(snippets: store.library, connections: connections)
+        var copy = snippet
+        copy.id = UUID()
+        copy.keyword = (2...).lazy.map { "\(snippet.keyword)\($0)" }.first { namespace.problem($0, for: nil) == nil }!
+        copy.name = EditorRules.uniqueName(snippet.name, taken: Set(store.library.groups.flatMap(\.snippets).map(\.name)))
+        return save(at: snippet) { $0.groups[$1].snippets.insert(copy, at: $2 + 1) } ? copy.id : nil
+    }
+
     func moveSnippet(_ id: Snippet.ID, to group: SnippetGroup.ID, at index: Int?, undo: UndoManager? = nil) -> Bool {
         guard let moved = snippet(id), let place = store.library.placement(ofSnippet: id),
               save({ $0.moveSnippet(id, to: group, at: index) }) else { return false }
@@ -155,12 +165,16 @@ struct SnippetGroupDetails: View {
     let group: SnippetGroup
     let connections: ConnectionLibrary
     @Binding var selection: SidebarItem?
+    /// The sidebar's Rename asks for `.name`; consumed here.
+    @Binding var focus: EditorFocus?
     /// Asks (when the group holds snippets), then deletes it.
     let delete: () -> Void
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         Form {
             CommittingTextField("Group", text: group.name) { editing.groupBinding(group, \.name).wrappedValue = $0 }.id(group.id)
+                .focused($nameFocused)
             CommittingTextField("Description", text: group.description) { editing.groupBinding(group, \.description).wrappedValue = $0 }
                 .id(group.id)
             Toggle("Enabled", isOn: editing.groupBinding(group, \.enabled))
@@ -174,6 +188,11 @@ struct SnippetGroupDetails: View {
         }
         .formStyle(.grouped)
         .disabled(editing.readOnly)
+        .onChange(of: focus, initial: true) {
+            guard focus == .name else { return }
+            focus = nil
+            Task { nameFocused = true } // the next turn, once this view is in the window
+        }
     }
 }
 

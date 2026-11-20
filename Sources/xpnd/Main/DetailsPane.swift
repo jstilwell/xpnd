@@ -31,7 +31,7 @@ struct DetailsPane: View {
             } else { nothingSelected }
         case .snippetGroup(let id):
             if let group = editing.group(id) {
-                chrome(editing.store.loadError, editing.saveProblem, file: "snippets.yaml") { SnippetGroupDetails(editing: editing, group: group, connections: connections.library, selection: $selection) { delete(.snippetGroup(id)) } }
+                chrome(editing.store.loadError, editing.saveProblem, file: "snippets.yaml") { SnippetGroupDetails(editing: editing, group: group, connections: connections.library, selection: $selection, focus: $focus) { delete(.snippetGroup(id)) } }
             } else { nothingSelected }
         case .snippet(let id):
             if let snippet = editing.snippet(id) {

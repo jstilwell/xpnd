@@ -299,17 +299,41 @@ struct Sidebar: View {
             }
             .disabled(readOnly)
         case .snippetGroup(let id)?:
-            Group {
-                Button("New Snippet") {
-                    if let group = editing.store.library.groups.first(where: { $0.id == id }) { addSnippet(to: group) }
+            if let group = editing.group(id) {
+                Group {
+                    Button("New Snippet") { addSnippet(to: group) }
+                    Button("Rename") { select(.snippetGroup(id), focus: .name) }
+                    Button(group.enabled ? "Disable" : "Enable") { editing.save(at: group) { $0.groups[$1].enabled.toggle() } }
+                    Divider()
+                    Button("Delete…", role: .destructive) { delete(.snippetGroup(id)) }
+                }
+                .disabled(editing.readOnly)
+            }
+        case .snippet(let id)?:
+            if let snippet = editing.snippet(id) {
+                Group {
+                    Button("Duplicate") {
+                        if let copy = editing.duplicateSnippet(snippet, connections: connections.library) { selection = .snippet(copy) }
+                    }
+                    Button(snippet.enabled ? "Disable" : "Enable") { editing.save(at: snippet) { $0.groups[$1].snippets[$2].enabled.toggle() } }
+                    let others = editing.store.library.groups.filter { $0.id != editing.group(containing: id)?.id }
+                    Menu("Move to Group") {
+                        ForEach(others) { group in
+                            Button(EditorRules.displayName(group.name)) { _ = editing.moveSnippet(id, to: group.id, at: nil, undo: undoManager) }
+                        }
+                    }
+                    .disabled(others.isEmpty)
+                }
+                .disabled(editing.readOnly)
+                // The keyword only, never the snippet's text.
+                Button("Copy Keyword") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(snippet.keyword, forType: .string)
                 }
                 Divider()
-                Button("Delete…", role: .destructive) { delete(.snippetGroup(id)) }
+                Button("Delete", role: .destructive) { delete(.snippet(id)) }
+                    .disabled(editing.readOnly)
             }
-            .disabled(editing.readOnly)
-        case .snippet(let id)?:
-            Button("Delete", role: .destructive) { delete(.snippet(id)) }
-                .disabled(editing.readOnly)
         default:
             if items.isEmpty {
                 Button("New Folder") { select(connections.addFolder(in: nil).map(SidebarItem.folder), focus: .name) }

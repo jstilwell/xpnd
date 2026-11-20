@@ -466,4 +466,19 @@ private struct TwoAccountProvider: CredentialProvider {
         undo.undo()
         #expect(editing.store.library.groups.map(\.id) == [a, b, c])
     }
+
+    @MainActor @Test func duplicateSnippetGetsAFreeKeywordAfterTheOriginal() throws {
+        let (editing, directory) = snippetEditing()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let g = try #require(editing.addGroup())
+        let group = try #require(editing.group(g))
+        let a = try #require(editing.addSnippet(to: group, connections: .empty))
+        let again = try #require(editing.group(g))
+        _ = try #require(editing.addSnippet(to: again, connections: .empty)) // takes ;new2
+        let original = try #require(editing.snippet(a))
+        let copy = try #require(editing.duplicateSnippet(original, connections: .empty))
+        #expect(editing.group(g)?.snippets.map(\.keyword) == [";new", ";new3", ";new2"])
+        #expect(editing.snippet(copy)?.name == "New Snippet 2")
+        #expect(editing.snippet(copy)?.text == original.text)
+    }
 }
