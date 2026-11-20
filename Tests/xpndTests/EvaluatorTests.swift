@@ -82,11 +82,35 @@ struct EvaluatorTests {
         await #expect(throws: ExpansionError.missingCombo(";zz")) { try await run("#{upper:;zz}") }
     }
 
-    @Test func comboCycleLeftLiteral() async throws {
+    @Test func comboCycleThrows() async throws {
         let ctx = FakeContext()
-        let a = snip("a", "x#{combo:b}")
-        ctx.snippets = [a, snip("b", "y#{combo:a}")]
-        #expect(try await Evaluator.evaluate(a, context: ctx) == [.paste("xy#{combo:a}")])
+        let a = snip(";a", "x#{combo:;b}")
+        ctx.snippets = [a, snip(";b", "y#{upper:;a}")]
+        await #expect(throws: ExpansionError.comboCycle(";a")) { try await Evaluator.evaluate(a, context: ctx) }
+    }
+
+    /// `count` snippets, each including the next: `count - 1` levels of nesting.
+    private func chain(_ count: Int, _ ctx: FakeContext) -> Snippet {
+        ctx.snippets = (0..<count).map { i in snip(";k\(i)", i == count - 1 ? "end" : "#{combo:;k\(i + 1)}") }
+        return ctx.snippets[0]
+    }
+
+    @Test func sixteenLevelsExpand() async throws {
+        let ctx = FakeContext()
+        #expect(try await Evaluator.evaluate(chain(17, ctx), context: ctx) == [.paste("end")])
+    }
+
+    @Test func deeperNestingThrows() async {
+        let ctx = FakeContext()
+        let top = chain(18, ctx)
+        await #expect(throws: ExpansionError.comboTooDeep) { try await Evaluator.evaluate(top, context: ctx) }
+    }
+
+    @Test func explodingNestingThrows() async {
+        let ctx = FakeContext()
+        ctx.snippets = (0..<15).map { i in snip(";x\(i)", i == 14 ? "leaf" : "#{combo:;x\(i + 1)}#{combo:;x\(i + 1)}") }
+        let top = ctx.snippets[0]
+        await #expect(throws: ExpansionError.comboTooDeep) { try await Evaluator.evaluate(top, context: ctx) }
     }
 
     @Test func inputsAskedOnceInOrder() async throws {

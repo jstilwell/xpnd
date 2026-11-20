@@ -42,7 +42,7 @@ Written `#{name}` or `#{name:value}`. Names are case-sensitive, and unknown ones
 | `#{date}` `#{time}` `#{dateTime}` | The current date and time |
 | `#{dateTime:<format>}` | A custom format, such as `yyyy-MM-dd` |
 | `#{dateTime:<shift>:<format>}` | Shifted by `y M w d h m s`, signed, such as `+1d-2h` |
-| `#{combo:<keyword>}` | Another snippet's text |
+| `#{combo:<keyword>}` | Another snippet's text (up to 16 levels deep; a snippet can't include itself) |
 | `#{upper:<keyword>}` `#{lower:<keyword>}` | Another snippet's text, in upper or lower case |
 | `#{cursor}` | Where the caret ends up |
 | `#{input:<label>}` | Asks for a value |

@@ -1,5 +1,7 @@
 enum ExpansionError: Error, Equatable, Sendable {
     case missingCombo(String)
+    case comboCycle(String)
+    case comboTooDeep
     case scriptNotFound(path: String)
     case scriptFailed(path: String, status: Int32)
     case scriptTimedOut(path: String)
@@ -16,6 +18,8 @@ enum ExpansionError: Error, Equatable, Sendable {
     var message: String {
         switch self {
         case .missingCombo(let k): "No snippet has the keyword “\(k)”."
+        case .comboCycle(let k): "The snippet “\(k)” includes itself, so it can't expand."
+        case .comboTooDeep: "Snippets include each other too deeply to expand (over 16 levels or 10,000 pieces)."
         case .scriptNotFound(let path): "No script was found at “\(path)”."
         case .scriptFailed(let path, let status): "The script “\(path)” failed with exit status \(status)."
         case .scriptTimedOut(let path): "The script “\(path)” took too long and was stopped."
