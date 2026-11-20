@@ -319,6 +319,64 @@ extension ConnectionLibrary {
     }
 }
 
+/// Where a connection or folder sat, for undo: its folder (nil: the top level) and its index among its kind there.
+struct ConnectionPlacement: Equatable {
+    let parent: ConnectionFolder.ID?
+    /// For a connection whose folder is gone by the time it comes back: a new folder of this name holds it.
+    let parentName: String?
+    let index: Int
+}
+
+extension ConnectionLibrary {
+    func placement(of item: SidebarItem) -> ConnectionPlacement? {
+        switch item {
+        case .connection(let id):
+            guard let parent = path(of: id).last, let index = parent.connections.firstIndex(where: { $0.id == id }) else { return nil }
+            return ConnectionPlacement(parent: parent.id, parentName: parent.name, index: index)
+        case .folder(let id):
+            let path = folderPath(of: id)
+            guard !path.isEmpty else { return nil }
+            let parent = path.dropLast().last
+            guard let index = (parent?.folders ?? folders).firstIndex(where: { $0.id == id }) else { return nil }
+            return ConnectionPlacement(parent: parent?.id, parentName: parent?.name, index: index)
+        default:
+            return nil
+        }
+    }
+
+    /// Puts `removed` back at `place`, its index clamped. If that folder is gone, a folder goes last at the top level
+    /// and a connection into a new top-level folder named like the old one. False, and no change, if any of its ids
+    /// is already here (it came back some other way).
+    @discardableResult
+    mutating func restore(_ removed: Removed, at place: ConnectionPlacement) -> Bool {
+        let have = Set(allFolders.map(\.id) + allConnections.map(\.id))
+        let parent = place.parent.flatMap { folder($0) == nil ? nil : $0 }
+        switch removed {
+        case .connection(let c):
+            guard !have.contains(c.id) else { return false }
+            if let parent { return editFolder(parent) { $0.connections.insert(c, at: min(place.index, $0.connections.count)) } }
+            folders.append(ConnectionFolder(name: place.parentName ?? "Restored", connections: [c]))
+        case .folder(let f):
+            guard have.isDisjoint(with: f.allFolders.map(\.id) + f.allConnections.map(\.id)) else { return false }
+            if let parent { return editFolder(parent) { $0.folders.insert(f, at: min(place.index, $0.folders.count)) } }
+            if place.parent == nil { folders.insert(f, at: min(place.index, folders.count)) } else { folders.append(f) }
+        }
+        return true
+    }
+
+    /// Undoes a move: `item` goes back to `place`. False, and no change, if it or that folder is gone.
+    @discardableResult
+    mutating func moveBack(_ item: SidebarItem, to place: ConnectionPlacement) -> Bool {
+        var next = self
+        guard let removed = next.remove(item) else { return false }
+        // Checked after the removal: a folder can't go back into what is now its own subtree.
+        if let parent = place.parent, next.folder(parent) == nil { return false }
+        guard next.restore(removed, at: place) else { return false }
+        self = next
+        return true
+    }
+}
+
 /// Connection saving for the main window's sidebar and Details pane. Every edit saves at once
 /// through `store.update`; ids are persisted, so a save finds its item by id.
 @MainActor @Observable
