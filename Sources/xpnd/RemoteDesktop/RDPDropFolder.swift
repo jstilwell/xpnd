@@ -99,6 +99,17 @@ enum RDPDropFolder {
         try FileManager.default.removeItem(at: folder)
     }
 
+    /// `clear` on the copy queue: after any copy already queued (which would make the folder again), and off the
+    /// main thread, since a big folder or a slow disk takes a while.
+    static func clearInTurn(folder: URL) async {
+        await withCheckedContinuation { continuation in
+            copies.async {
+                try? clear(folder: folder)
+                continuation.resume()
+            }
+        }
+    }
+
     static func clearAll() throws {
         guard FileManager.default.fileExists(atPath: root.path) else { return }
         try FileManager.default.removeItem(at: root)
@@ -113,6 +124,16 @@ enum RDPDropFolder {
     }
 
     // shortcut: a folder's modification date stands in for last use, so one still being read can look old and one with an unreadable date is never cleared; record real last use if that bites.
+    /// `applyLaunchCleanup` on the copy queue, off the main thread.
+    static func applyLaunchCleanupInTurn(policy: DropFolderCleanup, now: Date) async {
+        await withCheckedContinuation { continuation in
+            copies.async {
+                applyLaunchCleanup(policy: policy, now: now)
+                continuation.resume()
+            }
+        }
+    }
+
     /// At launch under `after7Days`: removes each connection's folder not touched for seven days.
     static func applyLaunchCleanup(policy: DropFolderCleanup, now: Date) {
         let fm = FileManager.default
