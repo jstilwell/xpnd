@@ -14,16 +14,36 @@
         let tail = tail()
         let deleting = deletingCharacters + tail.typedSince
         if deleting > 0 { await sender.backspace(times: deleting) }
-        for step in steps.appendingText(tail.text) {
-            switch step {
-            case .paste(let text): await sender.paste(text)
-            case .key(let key, let count): await sender.press(key, times: count)
-            case .shortcut(let combo): await sender.press(combo)
-            case .delay(let ms): try? await Task.sleep(for: .milliseconds(ms))
-            case .openApp(let path): try await actions.openApp(path: path)
-            case .runShortcut(let name): try await actions.runShortcut(name: name)
-            case .moveLeft(let n): await sender.press(.left, times: n)
-            }
+        // One clipboard capture across pastes and keys; it's put back before anything that may read it or take a while.
+        var pasted = false
+        func restore() async {
+            if pasted { await sender.restoreClipboard() }
+            pasted = false
         }
+        do throws(ExpansionError) {
+            for step in steps.appendingText(tail.text) {
+                switch step {
+                case .paste(let text):
+                    await sender.paste(text)
+                    pasted = true
+                case .key(let key, let count): await sender.press(key, times: count)
+                case .shortcut(let combo): await sender.press(combo)
+                case .delay(let ms):
+                    await restore()
+                    try? await Task.sleep(for: .milliseconds(ms))
+                case .openApp(let path):
+                    await restore()
+                    try await actions.openApp(path: path)
+                case .runShortcut(let name):
+                    await restore()
+                    try await actions.runShortcut(name: name)
+                case .moveLeft(let n): await sender.press(.left, times: n)
+                }
+            }
+        } catch {
+            await restore()
+            throw error
+        }
+        await restore()
     }
 }

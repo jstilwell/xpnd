@@ -12,6 +12,7 @@ import Testing
     func paste(_ text: String) async { log.append("paste \(text)") }
     func press(_ key: KeyName, times: Int) async { log.append("key \(key) x\(times)") }
     func press(_ combo: KeyCombo) async { log.append("combo") }
+    func restoreClipboard() async {}
 }
 
 private struct FakeActions: ActionRunning {

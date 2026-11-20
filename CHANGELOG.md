@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - The warning that one keyword starts another now appears only when the shorter one fires at once: a loose snippet, or a connection or folder string.
 
 ### Fixed
+- A snippet pasted into a slow app (Electron or Office under load) no longer pastes your old clipboard instead: xpnd now waits until the app has read the snippet, up to a second, before putting your clipboard back. Your clipboard is saved once per snippet rather than at each piece of text, and is put back before a delay, Open App or Run Shortcut, so a Shortcut never reads the snippet's text.
 - Keys typed while a snippet expands are no longer lost or put in front of it: typing `;sig` and carrying on quickly kept the space and let the backspaces eat the keyword's last letters instead.
 
 ## 0.4.0 - 11-15-2026

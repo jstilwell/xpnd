@@ -173,7 +173,8 @@ import Foundation
         }
         if case .typeIntoFrontTerminal(let line) = plan {
             await sender.paste(line)
-            guard stillInFront(target) else { return nil } // paste takes ~150 ms, and Return would go to whatever is in front
+            await sender.restoreClipboard()
+            guard stillInFront(target) else { return nil } // a paste waits for the app to read it, and Return would go to whatever is in front
             await sender.press(.enter, times: 1)
             return .elsewhere
         }

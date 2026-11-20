@@ -89,6 +89,7 @@ private let sudo = ref("sudo", .password)
     }
     func press(_ key: KeyName, times: Int) async { log.events.append("key \(key) x\(times)") }
     func press(_ combo: KeyCombo) async { log.events.append("combo") }
+    func restoreClipboard() async {}
 }
 
 @MainActor private final class FakePrompt: PasswordPrompting {
