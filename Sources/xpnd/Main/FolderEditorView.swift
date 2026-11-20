@@ -52,6 +52,8 @@ struct FolderEditorView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         TextField("String", text: Binding(get: { customText }, set: editCustom), prompt: Text("None"))
                             .focused($focused, equals: .custom)
+                            // Leaving Custom for Derived or None takes the field away: that's no save.
+                            .commitsOnPause(customText) { if mode == .custom { saveCustom() } }
                         if let problem = customProblem(namespace) {
                             Text(problem).font(.callout).foregroundStyle(.red)
                         } else if !customText.isEmpty, let note = namespace.hidingNote(customText, for: .folder(folder.id)) {
@@ -119,7 +121,6 @@ struct FolderEditorView: View {
     private func editCustom(_ text: String) {
         customText = text
         customChosen = true
-        saveCustom()
     }
 
     private func saveCustom() {

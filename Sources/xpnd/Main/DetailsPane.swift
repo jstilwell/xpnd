@@ -35,7 +35,7 @@ struct DetailsPane: View {
             } else { nothingSelected }
         case .snippet(let id):
             if let snippet = editing.snippet(id) {
-                chrome(editing.store.loadError, editing.saveProblem, file: "snippets.yaml") { SnippetDetails(editing: editing, snippet: snippet, connections: connections.library) { delete(.snippet(id)) } }
+                chrome(editing.store.loadError, editing.saveProblem, file: "snippets.yaml") { SnippetDetails(editing: editing, snippet: snippet, connections: connections.library) { delete(.snippet(id)) }.id(id) }
             } else { nothingSelected }
         case nil:
             nothingSelected

@@ -48,3 +48,18 @@ struct CommittingTextField: View {
         if draft != text { commit(draft) }
     }
 }
+
+extension View {
+    /// For a field with its own validation: runs `commit` once typing pauses (`value` unchanged for the save delay), on
+    /// Return, when the field goes away, and at quit, not on every key. A keyword saved per key would fire `;s` while
+    /// `;sig` is still being typed. `commit` must do nothing for a value that's already saved or has a problem.
+    func commitsOnPause<V: Equatable>(_ value: V, _ commit: @escaping () -> Void) -> some View {
+        task(id: value) {
+            try? await Task.sleep(for: TemplateTextView.Coordinator.saveDelay)
+            if !Task.isCancelled { commit() }
+        }
+        .onSubmit(commit)
+        .onDisappear(perform: commit)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in commit() }
+    }
+}
