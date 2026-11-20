@@ -22,7 +22,7 @@ off main, favourites and recents, Reconnect, `~/.ssh/config` import, FreeRDP pro
 status-menu launcher item, folder buttons, picker empty state, accessible disabled state, safer import, first-run help, tooltips.
 **Success Criteria**: `make test` and `make app` pass; ⌘Z after a delete restores the item without touching later edits.
 **Tests**: `MainWindowLogicTests`, `EditingRulesTests`, `SnippetStoreTests`, `ConnectionLibraryTests`, `LibraryImportTests`.
-**Status**: Not Started (`feature/main-window-ux`)
+**Status**: Complete (`feature/main-window-ux`, PR open)
 
 ## Stage 4: Snippet variables and designer
 **Goal**: New variables (input defaults, choice, longInput, selection, uuid, clipboard/selection transforms, date/time

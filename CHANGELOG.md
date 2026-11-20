@@ -9,9 +9,16 @@ All notable changes to this project will be documented in this file.
 - Notes on a connection: free text in its Details, which the launcher searches too.
 - Settings → Import/Export → Import from SSH Config… adds the hosts in `~/.ssh/config` (HostName, User, Port, IdentityFile, ProxyJump), through the same preview as any import. Patterns like `Host *`, `Include` and `Match` are left out and the preview says so.
 - A built-in tab whose ssh failed shows Reconnect, which connects again in the same tab position. Exit status 255 now reads "ssh couldn't connect" instead of a bare number.
+- Undo (⌘Z) for deleting, moving and importing snippets, groups, connections and folders. It puts back only what that action changed, so edits made since stay. Only a folder or group with things in it still asks before it goes.
+- Right-click a snippet to duplicate it, turn it on or off, move it to another group, or copy its keyword; right-click a group to rename it or turn it on or off. A folder's Details has New Connection and Delete buttons.
+- A File menu (New Snippet ⌘N, New Snippet Group, New Connection, Import…, Export…), Edit → Find (⌘F) for the sidebar search, About, Hide and Minimize. The menu bar menu has Open Connection Launcher, and both it and Open Picker show their shortcuts.
+- New installs start with a `;date` snippet, and the welcome screen shows the menu bar icon, both shortcuts, and where snippets are edited.
+- The picker shows each snippet's group, and says so when nothing matches or there are no snippets yet.
 - ssh connections get a 15-second connect timeout and a 30-second keepalive, after a connection's own SSH options. Turn it off in Settings → Terminal if you set them in `~/.ssh/config`.
 
 ### Changed
+- Importing with conflicts: Replace is marked as the destructive choice, and Skip is the default.
+- A disabled snippet, or one in a disabled group, shows dimmed, with a tooltip and "Off" for VoiceOver. Icon-only buttons have tooltips, and the drop drive and NLA options say what they do.
 - A strict snippet (the default) now expands when you finish the word, on the space or punctuation after its keyword, which is typed back after the text: `;sig ` becomes `Best `. It no longer fires inside a longer word (`the` in "then"), and a keyword can follow `(` or a quote. Return and Tab don't expand it. Loose snippets still expand the moment you type them.
 - The warning that one keyword starts another now appears only when the shorter one fires at once: a loose snippet, or a connection or folder string.
 
@@ -19,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - A snippet pasted into a slow app (Electron or Office under load) no longer pastes your old clipboard instead: xpnd now waits until the app has read the snippet, up to a second, before putting your clipboard back. Your clipboard is saved once per snippet rather than at each piece of text, and is put back before a keyboard shortcut, delay, Open App or Run Shortcut, so `#{shortcut:Cmd+V}` pastes your clipboard and a Shortcut never reads the snippet's text.
 - A snippet that includes itself, directly or through others, now says so instead of pasting `#{combo:…}` as text, and snippets nested too deeply (over 16 levels, or so many copies that they would freeze xpnd) stop with a message before anything is typed.
 - A Run Shortcut snippet lists your Shortcuts once instead of twice, and when the list can't be read it says so instead of claiming the Shortcut doesn't exist. A script without execute permission says to run `chmod +x` instead of "No script was found".
+- A keyword or activation string now saves when you pause typing or press Return, not on every key, so a half-typed `;s` can't fire while you type `;sig`.
 - While 1Password or the Keychain waits for Touch ID to open a Windows desktop, snippets and other connections keep working, and a HUD says what it's waiting for. If the item or its password is missing, the desktop opens and Windows asks for the password instead of stopping.
 - Connecting to a second host no longer cancels a password still waiting to be sent into the first host's tab.
 - Clearing a Windows desktop's drop folder no longer runs on the main thread, so a large folder can't stall the app, and a copy still in progress can't recreate it afterwards.
