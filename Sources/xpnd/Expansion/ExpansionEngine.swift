@@ -34,6 +34,10 @@ import Foundation
     /// `KeywordNamespace`'s answers are too slow to work out per key inside the event tap's callback,
     /// so they're kept until either library changes.
     private var namespace = KeywordNamespace(snippets: .empty, connections: .empty)
+    /// The libraries `namespace` was built from, as the stores last returned them: once an equal value is adopted, later
+    /// compares share its storage and return at once instead of comparing every snippet's text on each key.
+    private var seenSnippets = SnippetLibrary.empty
+    private var seenConnections = ConnectionLibrary.empty
     private var activations: [String: ActivationTarget] = [:]
     /// The snippets a typed keyword can match: enabled, and not also a connection's string.
     private var candidates: [Snippet] = []
@@ -106,11 +110,15 @@ import Foundation
     }
 
     private func refreshNamespace() {
-        guard namespace.snippets != store.library || namespace.connections != connections.library else { return }
-        namespace = KeywordNamespace(snippets: store.library, connections: connections.library)
+        let snippets = store.library, connections = connections.library
+        let changed = seenSnippets != snippets || seenConnections != connections
+        seenSnippets = snippets
+        seenConnections = connections
+        guard changed else { return }
+        namespace = KeywordNamespace(snippets: snippets, connections: connections)
         activations = namespace.activations
         let duplicates = namespace.crossFileDuplicates
-        candidates = store.library.activeSnippets.filter { !duplicates.contains($0.keyword) }
+        candidates = snippets.activeSnippets.filter { !duplicates.contains($0.keyword) }
     }
 
     /// `work` gets the app the string was typed in.
