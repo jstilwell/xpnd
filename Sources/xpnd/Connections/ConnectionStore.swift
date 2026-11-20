@@ -34,14 +34,8 @@ extension YAMLFileStore where Value == ConnectionLibrary {
 
     var library: ConnectionLibrary { value }
 
-    /// Writes the dev/prod starter folders once; deleting the file later never re-seeds.
+    /// The dev/prod starter folders, once.
     func seedIfFirstLaunch(defaults: UserDefaults) {
-        let key = "connectionsSeeded"
-        guard !defaults.bool(forKey: key) else { return }
-        if !fileExists {
-            // A failed write leaves the flag unset so the next launch retries.
-            do { try update { $0 = .starter() } } catch { return }
-        }
-        defaults.set(true, forKey: key)
+        seedIfFirstLaunch(defaults: defaults, key: "connectionsSeeded", with: .starter())
     }
 }

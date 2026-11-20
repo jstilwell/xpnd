@@ -15,4 +15,15 @@ extension YAMLFileStore where Value == SnippetLibrary {
     }
 
     var library: SnippetLibrary { value }
+
+    /// One starter snippet, once, so a new user has something to type.
+    func seedIfFirstLaunch(defaults: UserDefaults) {
+        seedIfFirstLaunch(defaults: defaults, key: "snippetsSeeded", with: .starter())
+    }
+}
+
+extension SnippetLibrary {
+    static func starter() -> SnippetLibrary {
+        SnippetLibrary(groups: [SnippetGroup(name: "Starter", snippets: [Snippet(name: "Today's date", keyword: ";date", text: "#{date}")])])
+    }
 }

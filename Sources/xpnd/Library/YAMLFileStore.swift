@@ -42,6 +42,16 @@ final class YAMLFileStore<Value: Sendable & Equatable> {
         return true
     }
 
+    /// Writes `starter` once, on the first launch with no file; deleting the file later never re-seeds.
+    func seedIfFirstLaunch(defaults: UserDefaults, key: String, with starter: Value) {
+        guard !defaults.bool(forKey: key) else { return }
+        if !fileExists {
+            // A failed write leaves the flag unset so the next launch retries.
+            do { try update { $0 = starter } } catch { return }
+        }
+        defaults.set(true, forKey: key)
+    }
+
     private enum Disk { case missing, text(String), unreadable(String) }
 
     private func readDisk() -> Disk {

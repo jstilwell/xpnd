@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installMainMenu()
 
         store.load()
+        store.seedIfFirstLaunch(defaults: .standard)
         store.startWatching()
         connections.load()
         connections.seedIfFirstLaunch(defaults: .standard)

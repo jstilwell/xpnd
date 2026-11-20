@@ -246,4 +246,22 @@ struct SnippetStoreTests {
         #expect(library.snippetID(id: UUID(), keyword: ";a") == s.id)
         #expect(library.snippetID(id: UUID(), keyword: ";zzz") == nil)
     }
+
+    @Test func snippetsSeedOnceOnFirstLaunch() async throws {
+        try await withTempDir { dir in
+            let suite = "SnippetSeed.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let url = dir.appending(path: "snippets.yaml")
+            let store = SnippetStore(fileURL: url)
+            store.seedIfFirstLaunch(defaults: defaults)
+            store.load()
+            #expect(store.library.groups.map(\.name) == ["Starter"])
+            #expect(store.library.groups.first?.snippets.map { [$0.name, $0.keyword, $0.text] } == [["Today's date", ";date", "#{date}"]])
+            #expect(defaults.bool(forKey: "snippetsSeeded"))
+            try FileManager.default.removeItem(at: url)
+            store.seedIfFirstLaunch(defaults: defaults)
+            #expect(!FileManager.default.fileExists(atPath: url.path))
+        }
+    }
 }
