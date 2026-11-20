@@ -363,4 +363,107 @@ private struct TwoAccountProvider: CredentialProvider {
         #expect(EditorRules.jumpHostProblem(hops[4].id, for: web.id, in: chain) == nil)
         #expect(EditorRules.jumpHostProblem(hops[5].id, for: web.id, in: chain) == SSHCommandError.jumpHostChainTooLong.message)
     }
+
+    // MARK: Undo
+
+    @MainActor private func undoManager() -> UndoManager {
+        let manager = UndoManager()
+        manager.groupsByEvent = false
+        return manager
+    }
+
+    /// One user action, as a run-loop event would group it.
+    @MainActor private func act(_ manager: UndoManager, _ body: () -> Bool) -> Bool {
+        manager.beginUndoGrouping()
+        defer { manager.endUndoGrouping() }
+        return body()
+    }
+
+    @MainActor private func snippetEditing() -> (SnippetEditing, URL) {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        return (SnippetEditing(store: SnippetStore(fileURL: directory.appending(path: "snippets.yaml"))), directory)
+    }
+
+    @MainActor @Test func undoDeleteConnectionPutsItBackWithoutTouchingLaterEdits() throws {
+        let (editing, directory) = editing(TwoAccountProvider())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let folder = try #require(editing.addFolder(in: nil))
+        let a = try #require(editing.addConnection(in: folder)), b = try #require(editing.addConnection(in: folder))
+        let undo = undoManager()
+        #expect(act(undo) { editing.delete(.connection(a), undo: undo) })
+        #expect(undo.undoActionName == "Delete “New Connection”")
+        editing.edit(connection: b) { $0.host = "later" }
+        undo.undo()
+        #expect(editing.library.folder(folder)?.connections.map(\.id) == [a, b])
+        #expect(editing.library.connection(b)?.host == "later")
+    }
+
+    @MainActor @Test func undoMoveConnection() throws {
+        let (editing, directory) = editing(TwoAccountProvider())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let one = try #require(editing.addFolder(in: nil)), two = try #require(editing.addFolder(in: nil))
+        let a = try #require(editing.addConnection(in: one))
+        let undo = undoManager()
+        #expect(act(undo) { editing.move(.connection(a), to: two, undo: undo) })
+        #expect(undo.undoActionName == "Move “New Connection”")
+        undo.undo()
+        #expect(editing.library.folder(one)?.connections.map(\.id) == [a])
+        #expect(editing.library.folder(two)?.connections.isEmpty == true)
+    }
+
+    @MainActor @Test func undoDeleteSnippetAfterAReload() throws {
+        let (editing, directory) = snippetEditing()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let groupID = try #require(editing.addGroup())
+        let group = try #require(editing.group(groupID))
+        let first = try #require(editing.addSnippet(to: group, connections: .empty))
+        let g_groupID_x = try #require(editing.group(groupID))
+        _ = try #require(editing.addSnippet(to: g_groupID_x, connections: .empty))
+        let undo = undoManager()
+        let snippet = try #require(editing.snippet(first))
+        #expect(act(undo) { editing.deleteSnippet(snippet, undo: undo) })
+        #expect(undo.undoActionName == "Delete “New Snippet”")
+        try editing.store.update { library in for i in library.groups.indices { library.groups[i].id = UUID() } } // a reload's new ids
+        undo.undo()
+        #expect(editing.store.library.groups.count == 1)
+        #expect(editing.store.library.groups[0].snippets.map(\.keyword) == [";new", ";new2"])
+    }
+
+    @MainActor @Test func undoDeleteGroup() throws {
+        let (editing, directory) = snippetEditing()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let a = try #require(editing.addGroup()), b = try #require(editing.addGroup())
+        let g_a_x = try #require(editing.group(a))
+        _ = try #require(editing.addSnippet(to: g_a_x, connections: .empty))
+        let undo = undoManager()
+        let group = try #require(editing.group(a))
+        #expect(act(undo) { editing.deleteGroup(group, undo: undo) })
+        undo.undo()
+        #expect(editing.store.library.groups.map(\.id) == [a, b])
+        #expect(editing.store.library.groups[0].snippets.count == 1)
+    }
+
+    @MainActor @Test func undoMoveSnippet() throws {
+        let (editing, directory) = snippetEditing()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let a = try #require(editing.addGroup()), b = try #require(editing.addGroup())
+        let g_a_s = try #require(editing.group(a))
+        let s = try #require(editing.addSnippet(to: g_a_s, connections: .empty))
+        let undo = undoManager()
+        #expect(act(undo) { editing.moveSnippet(s, to: b, at: nil, undo: undo) })
+        undo.undo()
+        #expect(editing.group(a)?.snippets.map(\.id) == [s])
+        #expect(editing.group(b)?.snippets.isEmpty == true)
+    }
+
+    @MainActor @Test func undoMoveGroup() throws {
+        let (editing, directory) = snippetEditing()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let a = try #require(editing.addGroup()), b = try #require(editing.addGroup()), c = try #require(editing.addGroup())
+        let undo = undoManager()
+        #expect(act(undo) { editing.moveGroup(a, to: 3, undo: undo) })
+        #expect(editing.store.library.groups.map(\.id) == [b, c, a])
+        undo.undo()
+        #expect(editing.store.library.groups.map(\.id) == [a, b, c])
+    }
 }

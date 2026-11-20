@@ -99,7 +99,7 @@ struct ConnectionEditorView: View {
             .disabled(editing.readOnly)
             HStack {
                 // Here as well as in the sidebar's menu, which a first look doesn't find.
-                Button("Delete Connection…", systemImage: "minus", role: .destructive, action: delete).disabled(editing.readOnly)
+                Button("Delete Connection", systemImage: "minus", role: .destructive, action: delete).disabled(editing.readOnly)
                 Spacer()
                 if hasSession { Button("Show Session") { editing.showSession(connection.id) } }
                 if live {

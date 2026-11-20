@@ -49,6 +49,7 @@ struct Sidebar: View {
     @State private var expandedFolders: Set<ConnectionFolder.ID> = []
     /// The group a drag is over (its "into" target), so it highlights.
     @State private var targetedGroup: SnippetGroup.ID?
+    @Environment(\.undoManager) private var undoManager
 
     private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -140,7 +141,7 @@ struct Sidebar: View {
                         case .snippetGroup(let id):
                             var probe = editing.store.library
                             guard !searching, probe.moveGroup(id, to: index), probe != editing.store.library else { continue }
-                            _ = editing.moveGroup(id, to: index)
+                            _ = editing.moveGroup(id, to: index, undo: undoManager)
                         // A snippet dropped under a group's row goes into that group.
                         case .snippet(let id):
                             if let group = EditorRules.aboveTheLine(index: index, siblings: library.groups.map(\.id), container: nil) {
@@ -216,13 +217,13 @@ struct Sidebar: View {
     private func drop(_ item: SidebarItem, to container: ConnectionFolder.ID?, at index: Int?) {
         var probe = connections.library
         guard !searching, probe.move(item, to: container, at: index), probe != connections.library else { return }
-        _ = connections.move(item, to: container, at: index)
+        _ = connections.move(item, to: container, at: index, undo: undoManager)
     }
 
     private func dropSnippet(_ id: Snippet.ID, into group: SnippetGroup.ID, at index: Int?) {
         var probe = editing.store.library
         guard !searching, probe.moveSnippet(id, to: group, at: index), probe != editing.store.library else { return }
-        _ = editing.moveSnippet(id, to: group, at: index)
+        _ = editing.moveSnippet(id, to: group, at: index, undo: undoManager)
     }
 
     private func snippetGroup(_ group: SnippetGroup, _ snippets: [Snippet], expanded: Binding<Bool>) -> some View {
@@ -294,7 +295,7 @@ struct Sidebar: View {
                 Button("Duplicate") { select(connections.duplicate(id).map(SidebarItem.connection), focus: .name, else: .connection(id)) }
                 moveMenu(.connection(id))
                 Divider()
-                Button("Delete…", role: .destructive) { delete(.connection(id)) }
+                Button("Delete", role: .destructive) { delete(.connection(id)) }
             }
             .disabled(readOnly)
         case .snippetGroup(let id)?:
@@ -307,7 +308,7 @@ struct Sidebar: View {
             }
             .disabled(editing.readOnly)
         case .snippet(let id)?:
-            Button("Delete…", role: .destructive) { delete(.snippet(id)) }
+            Button("Delete", role: .destructive) { delete(.snippet(id)) }
                 .disabled(editing.readOnly)
         default:
             if items.isEmpty {
@@ -351,7 +352,7 @@ struct Sidebar: View {
 
     /// On failure the item is selected, so its Details shows why.
     private func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?) {
-        if !connections.move(item, to: destination) { selection = item }
+        if !connections.move(item, to: destination, undo: undoManager) { selection = item }
     }
 
 }

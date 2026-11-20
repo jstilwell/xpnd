@@ -90,8 +90,21 @@ final class SnippetEditing {
         return save({ $0.groups.append(new) }) ? new.id : nil
     }
 
-    func deleteGroup(_ group: SnippetGroup) -> Bool {
-        save(at: group) { $0.groups.remove(at: $1) }
+    /// `undo`: the acting window's; ⌘Z then puts the group back at its place.
+    func deleteGroup(_ group: SnippetGroup, undo: UndoManager? = nil) -> Bool {
+        var removed: (group: SnippetGroup, index: Int)?
+        guard save(at: group, { removed = ($0.groups.remove(at: $1), $1) }), let removed else { return false }
+        register(undo, "Delete “\(EditorRules.displayName(group.name))”") { $0.restoreGroup(removed.group, at: removed.index) }
+        return true
+    }
+
+    /// Registers `change` as the undo of what was just saved.
+    private func register(_ undo: UndoManager?, _ name: String, _ change: @escaping @Sendable (inout SnippetLibrary) -> Void) {
+        guard let undo else { return }
+        undo.registerUndo(withTarget: self) { editing in
+            MainActor.assumeIsolated { _ = editing.save(change) }
+        }
+        undo.setActionName(name)
     }
 
     /// The new snippet's id, or nil if it wasn't saved. Its keyword is free in both files.
@@ -102,16 +115,37 @@ final class SnippetEditing {
         return save(at: group) { $0.groups[$1].snippets.append(new) } ? new.id : nil
     }
 
-    func moveSnippet(_ id: Snippet.ID, to group: SnippetGroup.ID, at index: Int?) -> Bool {
-        save { $0.moveSnippet(id, to: group, at: index) }
+    func moveSnippet(_ id: Snippet.ID, to group: SnippetGroup.ID, at index: Int?, undo: UndoManager? = nil) -> Bool {
+        guard let moved = snippet(id), let place = store.library.placement(ofSnippet: id),
+              save({ $0.moveSnippet(id, to: group, at: index) }) else { return false }
+        register(undo, "Move “\(EditorRules.displayName(moved.name))”") { library in
+            if let current = library.snippetID(id: id, keyword: moved.keyword) { library.moveSnippetBack(current, to: place) }
+        }
+        return true
     }
 
-    func moveGroup(_ id: SnippetGroup.ID, to index: Int) -> Bool {
-        save { $0.moveGroup(id, to: index) }
+    /// `index` counts before the move, as a drop reports it.
+    func moveGroup(_ id: SnippetGroup.ID, to index: Int, undo: UndoManager? = nil) -> Bool {
+        guard let moved = group(id), let from = store.library.groups.firstIndex(where: { $0.id == id }),
+              save({ $0.moveGroup(id, to: index) }) else { return false }
+        register(undo, "Move “\(EditorRules.displayName(moved.name))”") { library in
+            guard let now = library.groups.firstIndex(where: { $0.id == id }) ?? library.groups.firstIndex(where: { $0.name == moved.name })
+            else { return }
+            let group = library.groups.remove(at: now)
+            library.groups.insert(group, at: min(from, library.groups.count))
+        }
+        return true
     }
 
-    func deleteSnippet(_ snippet: Snippet) -> Bool {
-        save(at: snippet) { $0.groups[$1].snippets.remove(at: $2) }
+    /// `undo`: the acting window's; ⌘Z then puts the snippet back in its group (found by name after a reload).
+    func deleteSnippet(_ snippet: Snippet, undo: UndoManager? = nil) -> Bool {
+        var removed: (snippet: Snippet, place: SnippetPlacement)?
+        guard save(at: snippet, { library, gi, si in
+            let place = SnippetPlacement(groupID: library.groups[gi].id, groupName: library.groups[gi].name, index: si)
+            removed = (library.groups[gi].snippets.remove(at: si), place)
+        }), let removed else { return false }
+        register(undo, "Delete “\(EditorRules.displayName(snippet.name))”") { $0.restoreSnippet(removed.snippet, at: removed.place) }
+        return true
     }
 }
 
@@ -159,7 +193,7 @@ struct SnippetDetails: View {
             }
             HStack {
                 Spacer()
-                Button("Delete Snippet…", systemImage: "minus", role: .destructive, action: delete)
+                Button("Delete Snippet", systemImage: "minus", role: .destructive, action: delete)
                     .disabled(editing.readOnly)
             }
             .padding(8)

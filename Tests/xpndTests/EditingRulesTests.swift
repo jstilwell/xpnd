@@ -48,38 +48,31 @@ import Testing
         EditorRules.deleteQuestion(for: item, connections: library, snippets: snippets)
     }
 
-    @Test func deletingAConnectionAsks() {
-        let q = question(.connection(web.id), in: library())
-        #expect(q?.title == "Delete “web”?")
-        #expect(q?.message == "This can't be undone.")
+    /// Undo puts one back, so only a folder or group with things in it asks.
+    @Test func deletingAConnectionOrSnippetDoesntAsk() {
+        #expect(question(.connection(web.id), in: library()) == nil)
+        #expect(question(.snippet(snippets.groups[0].snippets[0].id), in: library()) == nil)
     }
 
     /// The sidebar shows a nameless item as "Untitled", so the question does too, not "Delete “”?".
     @Test func deletingANamelessItemAsksAboutUntitled() {
-        let library = library { $0.connections[0].name = "" }
-        #expect(question(.connection(web.id), in: library)?.title == "Delete “Untitled”?")
-    }
-
-    @Test func deletingAJumpHostSaysWhoUsesIt() {
-        let library = library { $0.folders[0].connections[0].jumpHost = .connection(web.id) }
-        #expect(question(.connection(web.id), in: library)?.message == "1 connection uses it as a jump host and will lose it. This can't be undone.")
+        let library = library { $0.name = "" }
+        #expect(question(.folder(library.folders[0].id), in: library)?.title == "Delete “Untitled” and everything in it?")
     }
 
     @Test func deletingAFolderAsksOnlyWhenItHoldsSomething() {
         let library = library()
         let q = question(.folder(library.folders[0].id), in: library)
         #expect(q?.title == "Delete “prod” and everything in it?")
-        #expect(q?.message == "2 connections and 1 folder. This can't be undone.")
+        #expect(q?.message == "2 connections and 1 folder. You can undo this.")
         #expect(question(.folder(library.folders[1].id), in: library) == nil)
     }
 
-    @Test func deletingASnippetAsksAndAGroupOnlyWhenItHoldsSomething() {
+    @Test func deletingAGroupAsksOnlyWhenItHoldsSomething() {
         let library = library()
-        let sig = question(.snippet(snippets.groups[0].snippets[0].id), in: library)
-        #expect(sig?.title == "Delete “Sig”?")
-        #expect(sig?.message == "Its keyword is ;sig. This can't be undone.")
         let work = question(.snippetGroup(snippets.groups[0].id), in: library)
         #expect(work?.title == "Delete “Work” and its 1 snippet?")
+        #expect(work?.message == "You can undo this.")
         #expect(question(.snippetGroup(snippets.groups[1].id), in: library) == nil)
     }
 

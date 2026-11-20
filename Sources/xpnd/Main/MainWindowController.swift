@@ -127,6 +127,7 @@ private struct MainView: View {
     @State private var selectedPath: [String]?
     /// An item with something to lose, waiting for its delete to be confirmed.
     @State private var deleting: SidebarItem?
+    @Environment(\.undoManager) private var undoManager
 
     var body: some View {
         let question = deleting.flatMap { EditorRules.deleteQuestion(for: $0, connections: connections.library, snippets: editing.store.library) }
@@ -168,8 +169,8 @@ private struct MainView: View {
                     delete: askDelete)
     }
 
-    /// The one way anything in the window is deleted: a delete can't be undone, so it asks first unless
-    /// there is nothing to lose (`EditorRules.deleteQuestion`).
+    /// The one way anything in the window is deleted. ⌘Z puts it back; a folder or group with things in it asks
+    /// first too (`EditorRules.deleteQuestion`).
     private func askDelete(_ item: SidebarItem) {
         let question = EditorRules.deleteQuestion(for: item, connections: connections.library, snippets: editing.store.library)
         if question == nil { delete(item) } else { deleting = item }
@@ -181,12 +182,12 @@ private struct MainView: View {
         let deleted: Bool
         switch item {
         case .folder, .connection:
-            deleted = connections.delete(item)
+            deleted = connections.delete(item, undo: undoManager)
         case .snippet(let id):
             next = editing.group(containing: id).map { .snippetGroup($0.id) }
-            deleted = editing.snippet(id).map(editing.deleteSnippet) ?? false
+            deleted = editing.snippet(id).map { editing.deleteSnippet($0, undo: undoManager) } ?? false
         case .snippetGroup(let id):
-            deleted = editing.group(id).map(editing.deleteGroup) ?? false
+            deleted = editing.group(id).map { editing.deleteGroup($0, undo: undoManager) } ?? false
         }
         if !deleted { model.selection = item } else if model.selection == item { model.selection = next }
     }

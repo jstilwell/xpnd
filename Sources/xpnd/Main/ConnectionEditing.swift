@@ -43,23 +43,18 @@ enum EditorRules {
     /// How an item with no name shows: in the sidebar, in questions about it, in the export list.
     static func displayName(_ name: String) -> String { name.isEmpty ? "Untitled" : name }
 
-    /// What to ask before deleting `item`, since nothing can bring it back. nil when there is nothing to
-    /// lose (an empty folder or group) or the item is gone, and the delete just goes ahead.
+    /// What to ask before deleting a folder or group with things in it. nil for anything else, which goes at once
+    /// (⌘Z brings it back), or when the item is gone.
     static func deleteQuestion(for item: SidebarItem, connections: ConnectionLibrary, snippets: SnippetLibrary) -> (title: String, message: String)? {
-        let final = "This can't be undone."
+        let final = "You can undo this."
         switch item {
-        case .connection(let id):
-            guard let connection = connections.connection(id) else { return nil }
-            let users = connections.allConnections.filter { $0.jumpHost == .connection(id) }.count
-            let lost = users == 0 ? "" : "\(count(users, "connection")) use\(users == 1 ? "s" : "") it as a jump host and will lose it. "
-            return ("Delete “\(displayName(connection.name))”?", lost + final)
+        // One item comes back with ⌘Z, so it goes without asking.
+        case .connection, .snippet:
+            return nil
         case .folder(let id):
             guard let folder = connections.folder(id), !(folder.connections.isEmpty && folder.folders.isEmpty) else { return nil }
             return ("Delete “\(displayName(folder.name))” and everything in it?",
                     "\(count(folder.allConnections.count, "connection")) and \(count(folder.allFolders.count - 1, "folder")). \(final)")
-        case .snippet(let id):
-            guard let snippet = snippets.groups.lazy.flatMap(\.snippets).first(where: { $0.id == id }) else { return nil }
-            return ("Delete “\(displayName(snippet.name))”?", "Its keyword is \(snippet.keyword). \(final)")
         case .snippetGroup(let id):
             guard let group = snippets.groups.first(where: { $0.id == id }), !group.snippets.isEmpty else { return nil }
             return ("Delete “\(displayName(group.name))” and its \(count(group.snippets.count, "snippet"))?", final)
@@ -477,12 +472,40 @@ final class ConnectionEditing {
         } ? copy.id : nil
     }
 
-    func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?, at index: Int? = nil) -> Bool {
-        save { $0.move(item, to: destination, at: index) }
+    /// `undo`: the acting window's; ⌘Z then moves it back to where it was.
+    func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?, at index: Int? = nil, undo: UndoManager? = nil) -> Bool {
+        let place = library.placement(of: item), name = displayName(of: item)
+        guard save({ $0.move(item, to: destination, at: index) }) else { return false }
+        if let undo, let place {
+            undo.registerUndo(withTarget: self) { editing in
+                MainActor.assumeIsolated { _ = editing.save { $0.moveBack(item, to: place) } }
+            }
+            undo.setActionName("Move “\(name)”")
+        }
+        return true
     }
 
-    func delete(_ item: SidebarItem) -> Bool {
-        save { $0.remove(item) != nil }
+    /// `undo`: the acting window's; ⌘Z then puts back what this removed, into the library as it is by then.
+    func delete(_ item: SidebarItem, undo: UndoManager? = nil) -> Bool {
+        let place = library.placement(of: item), name = displayName(of: item)
+        var removed: ConnectionLibrary.Removed?
+        guard save({ removed = $0.remove(item); return removed != nil }), let removed else { return false }
+        if let undo, let place {
+            undo.registerUndo(withTarget: self) { editing in
+                MainActor.assumeIsolated { _ = editing.save { $0.restore(removed, at: place) } }
+            }
+            undo.setActionName("Delete “\(name)”")
+        }
+        return true
+    }
+
+    private func displayName(of item: SidebarItem) -> String {
+        let name: String? = switch item {
+        case .connection(let id): library.connection(id)?.name
+        case .folder(let id): library.folder(id)?.name
+        default: nil
+        }
+        return EditorRules.displayName(name ?? "")
     }
 
     /// The account to search: the one chosen in Settings, or the only one. Never a guess.
