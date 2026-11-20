@@ -103,10 +103,10 @@ import Testing
         }
     }
 
-    @Test func nonExecutableIsNotFound() async throws {
+    @Test func nonExecutableSaysSoAndMissingIsNotFound() async throws {
         let (path, dir) = try script("echo hi", mode: 0o644)
         defer { try? FileManager.default.removeItem(at: dir) }
-        await #expect(throws: ExpansionError.scriptNotFound(path: path)) {
+        await #expect(throws: ExpansionError.scriptNotExecutable(path: path)) {
             try await ScriptRunner.run(path: path, timeoutMs: 0)
         }
         let missing = dir.appendingPathComponent("nope").path

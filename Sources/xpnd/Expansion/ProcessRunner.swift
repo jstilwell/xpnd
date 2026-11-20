@@ -155,11 +155,16 @@ enum ScriptRunner {
             case .timedOut: throw .scriptTimedOut(path: path)
             // Only the engine cancels an evaluation, when the user leaves the app they typed in.
             case .cancelled: throw .targetAppChanged
-            case .notExecutable: throw .scriptNotFound(path: path)
+            case .notExecutable: throw isFile(path) ? .scriptNotExecutable(path: path) : .scriptNotFound(path: path)
             case .tooMuchOutput: throw .scriptOutputTooLarge(path: path)
             }
         } catch let e as ExpansionError {
             throw e
         } catch { throw .scriptNotFound(path: path) }
+    }
+
+    private static func isFile(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && !isDirectory.boolValue
     }
 }

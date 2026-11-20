@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - A snippet pasted into a slow app (Electron or Office under load) no longer pastes your old clipboard instead: xpnd now waits until the app has read the snippet, up to a second, before putting your clipboard back. Your clipboard is saved once per snippet rather than at each piece of text, and is put back before a delay, Open App or Run Shortcut, so a Shortcut never reads the snippet's text.
 - A snippet that includes itself, directly or through others, now says so instead of pasting `#{combo:…}` as text, and snippets nested too deeply (over 16 levels, or so many copies that they would freeze xpnd) stop with a message before anything is typed.
+- A Run Shortcut snippet lists your Shortcuts once instead of twice, and when the list can't be read it says so instead of claiming the Shortcut doesn't exist. A script without execute permission says to run `chmod +x` instead of "No script was found".
 - Keys typed while a snippet expands are no longer lost or put in front of it: typing `;sig` and carrying on quickly kept the space and let the backspaces eat the keyword's last letters instead.
 
 ## 0.4.0 - 11-15-2026

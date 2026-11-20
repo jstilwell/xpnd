@@ -79,7 +79,7 @@ private struct FakeActions: ActionRunning {
     /// "Nothing changes and your keyword stays where it is" (README): a typo'd Shortcut or app fails first.
     @Test func aMissingShortcutOrAppFailsBeforeAnythingIsDeleted() async {
         let sender = FakeSender()
-        let names: @Sendable () async -> [String] = { ["Real"] }
+        let names: @Sendable () async -> [String]? = { ["Real"] }
         let player = Player(sender: sender, actions: ActionRunner(launch: { _ in }, shortcutNames: names))
         await #expect(throws: ExpansionError.unknownShortcut("Typo")) {
             try await player.play([.paste("Hi "), .runShortcut(name: "Typo"), .paste("there")], deletingCharacters: 3)
