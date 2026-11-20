@@ -40,6 +40,8 @@ struct Sidebar: View {
     let sessions: TerminalSessions
     @Binding var selection: SidebarItem?
     @Binding var focus: EditorFocus?
+    /// True puts the keyboard in the search field (Edit → Find).
+    @Binding var searchPresented: Bool
     let openSettings: () -> Void
     /// Deletes an item, asking first when there is something to lose.
     let delete: (SidebarItem) -> Void
@@ -58,7 +60,7 @@ struct Sidebar: View {
             connectionsSection
             snippetsSection
         }
-        .searchable(text: $search, placement: .sidebar)
+        .searchable(text: $search, isPresented: $searchPresented, placement: .sidebar)
         .contextMenu(forSelectionType: SidebarItem.self) { items in
             menu(for: items)
         } primaryAction: { items in

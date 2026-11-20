@@ -8,6 +8,8 @@ final class MainWindowModel {
     var focus: EditorFocus?
     /// The Details editor, as a card over the terminal while sessions are open.
     var editorShown = false
+    /// Edit → Find puts the keyboard in the sidebar's search field.
+    var searching = false
 
     /// Clears the selection too, so a click on the same sidebar row opens the card again.
     func hideEditor() {
@@ -23,6 +25,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let model: MainWindowModel
     let sessions: TerminalSessions
     private let cancelPasswordPhase: () -> Void
+    private let connectionEditing: ConnectionEditing
+    private let snippetEditing: SnippetEditing
 
     init(store: SnippetStore, connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider,
          preferredAccount: @escaping @MainActor () -> String?, keysDirectory: URL,
@@ -54,8 +58,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 model.hideEditor()
                 sessions.focusSelected()
             })
+        let snippetEditing = SnippetEditing(store: store)
+        connectionEditing = editing
+        self.snippetEditing = snippetEditing
         let host = NSHostingController(rootView: MainView(
-            model: model, connections: editing, editing: SnippetEditing(store: store), sessions: sessions,
+            model: model, connections: editing, editing: snippetEditing, sessions: sessions,
             duplicate: duplicate, openSettings: openSettings))
         // The SwiftUI minimum becomes the window's; the user sizes it from there.
         host.sizingOptions = [.minSize]
@@ -84,6 +91,36 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         model.hideEditor()
         show(selecting: nil)
         return sessions.open(request, for: connection, color: color)
+    }
+
+    // The File and Edit menus. On failure the save message shows in the Details of what's selected.
+
+    /// Into the selected group (or the selected snippet's), else the first; a group is made if there is none.
+    func newSnippet() {
+        guard let target = EditorRules.snippetTarget(for: model.selection, in: snippetEditing.store.library) ?? snippetEditing.addGroup(),
+              let group = snippetEditing.group(target),
+              let id = snippetEditing.addSnippet(to: group, connections: connectionEditing.library) else { return }
+        model.selection = .snippet(id)
+    }
+
+    func newSnippetGroup() {
+        guard let id = snippetEditing.addGroup() else { return }
+        model.selection = .snippetGroup(id)
+        model.focus = .name
+    }
+
+    /// Into the selected folder (or the selected connection's), else the first; a folder is made if there is none.
+    func newConnection() {
+        let library = connectionEditing.library
+        guard let folder = EditorRules.addTarget(for: model.selection, in: library) ?? library.folders.first?.id
+                ?? connectionEditing.addFolder(in: nil),
+              let id = connectionEditing.addConnection(in: folder) else { return }
+        model.selection = .connection(id)
+        model.focus = .name
+    }
+
+    func find() {
+        model.searching = true
     }
 
     /// Whether the keyboard is in a session's terminal or desktop.
@@ -133,7 +170,7 @@ private struct MainView: View {
         let question = deleting.flatMap { EditorRules.deleteQuestion(for: $0, connections: connections.library, snippets: editing.store.library) }
         NavigationSplitView {
             Sidebar(connections: connections, editing: editing, sessions: sessions, selection: $model.selection, focus: $model.focus,
-                    openSettings: openSettings, delete: askDelete)
+                    searchPresented: $model.searching, openSettings: openSettings, delete: askDelete)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
             Group {

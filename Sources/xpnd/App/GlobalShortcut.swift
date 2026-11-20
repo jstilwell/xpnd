@@ -50,6 +50,21 @@ struct Shortcut: Codable, Hashable, Sendable {
         return event.keyCode == keyCode
     }
 
+    /// The key as an `NSMenuItem.keyEquivalent`, so a menu can show the shortcut.
+    var menuKeyEquivalent: String {
+        let special: [String: Int] = [
+            "↩": 0x0D, "⇥": 0x09, "⌫": 0x08, "⌦": NSDeleteFunctionKey, "←": NSLeftArrowFunctionKey, "→": NSRightArrowFunctionKey,
+            "↓": NSDownArrowFunctionKey, "↑": NSUpArrowFunctionKey, "↖": NSHomeFunctionKey, "↘": NSEndFunctionKey,
+            "⇞": NSPageUpFunctionKey, "⇟": NSPageDownFunctionKey,
+        ]
+        if key == "Space" { return " " }
+        if let code = special[key] ?? (key.hasPrefix("F") ? Int(key.dropFirst()).map { NSF1FunctionKey + $0 - 1 } : nil),
+           let scalar = UnicodeScalar(code) {
+            return String(Character(scalar))
+        }
+        return key.lowercased()
+    }
+
     /// Keys whose characters don't name them.
     private static let keyNames: [UInt16: String] = [
         UInt16(kVK_Space): "Space", UInt16(kVK_Return): "↩", UInt16(kVK_Tab): "⇥", UInt16(kVK_Delete): "⌫",

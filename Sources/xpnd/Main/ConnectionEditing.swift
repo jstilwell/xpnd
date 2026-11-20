@@ -30,6 +30,15 @@ enum EditorRules {
         }
     }
 
+    /// The group a new snippet goes in: the selected group or the selected snippet's, else the first; nil with none.
+    static func snippetTarget(for selection: SidebarItem?, in library: SnippetLibrary) -> SnippetGroup.ID? {
+        switch selection {
+        case .snippetGroup(let id)? where library.groups.contains(where: { $0.id == id }): id
+        case .snippet(let id)?: library.groups.first { $0.snippets.contains { $0.id == id } }?.id ?? library.groups.first?.id
+        default: library.groups.first?.id
+        }
+    }
+
     /// The folders to open so the sidebar shows `selection`: every folder above it. A new connection
     /// lands in a closed (or until then empty) folder, and a selection made from outside may be nested.
     static func foldersToOpen(for selection: SidebarItem?, in library: ConnectionLibrary) -> Set<ConnectionFolder.ID> {

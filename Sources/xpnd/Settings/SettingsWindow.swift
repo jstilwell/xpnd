@@ -29,8 +29,11 @@ enum SettingsSection: String, CaseIterable, Sendable {
 /// The Settings window: a toolbar of sections, each a SwiftUI view. Adapted from HoverEnhance's.
 @MainActor
 final class SettingsWindowController: NSWindowController {
+    private let tabs: NSTabViewController
+
     init(settings: AppSettings, store: SnippetStore, connections: ConnectionEditing) {
         let tabs = NSTabViewController()
+        self.tabs = tabs
         tabs.tabStyle = .toolbar
         func host<Content: View>(_ view: Content) -> NSViewController {
             let host = NSHostingController(rootView: view)
@@ -64,7 +67,9 @@ final class SettingsWindowController: NSWindowController {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func show() {
+    /// `section`: the tab to show; nil keeps the last one.
+    func show(_ section: SettingsSection? = nil) {
+        if let section, let index = SettingsSection.allCases.firstIndex(of: section) { tabs.selectedTabViewItemIndex = index }
         window?.showFromMenuBar()
     }
 }

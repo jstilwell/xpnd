@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import xpnd
 
@@ -56,5 +56,12 @@ struct AppSettingsTests {
         let ids = [UUID(), UUID()]
         AppSettings(defaults: defaults).recentConnections = ids
         #expect(AppSettings(defaults: defaults).recentConnections == ids)
+    }
+
+    @Test func menuKeyEquivalentForLettersSpaceAndFunctionKeys() {
+        #expect(Shortcut(keyCode: 8, modifiers: [.command, .control], key: "C").menuKeyEquivalent == "c")
+        #expect(Shortcut(keyCode: 49, modifiers: [.command, .control], key: "Space").menuKeyEquivalent == " ")
+        #expect(Shortcut(keyCode: 96, modifiers: [.command], key: "F5").menuKeyEquivalent == String(Character(UnicodeScalar(NSF5FunctionKey)!)))
+        #expect(Shortcut(keyCode: 123, modifiers: [.command, .option], key: "←").menuKeyEquivalent == String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!)))
     }
 }

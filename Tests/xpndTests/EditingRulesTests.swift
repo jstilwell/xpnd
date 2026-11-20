@@ -80,4 +80,15 @@ import Testing
         #expect(question(.connection(UUID()), in: library()) == nil)
         #expect(question(.snippet(UUID()), in: library()) == nil)
     }
+
+    // MARK: Where New Snippet goes
+
+    @Test func snippetTargetIsTheSelectionsGroupElseTheFirst() {
+        let groups = snippets.groups
+        let sig = groups[0].snippets[0].id
+        #expect(EditorRules.snippetTarget(for: .snippet(sig), in: snippets) == groups[0].id)
+        #expect(EditorRules.snippetTarget(for: .snippetGroup(groups[1].id), in: snippets) == groups[1].id)
+        #expect(EditorRules.snippetTarget(for: .connection(UUID()), in: snippets) == groups[0].id)
+        #expect(EditorRules.snippetTarget(for: nil, in: .empty) == nil)
+    }
 }

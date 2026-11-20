@@ -211,12 +211,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and closing shortcuts.
     /// Adapted from HoverEnhance's.
     private func installMainMenu() {
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
-        settingsItem.target = self
+        func item(_ title: String, _ action: Selector, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command,
+                  target: AnyObject? = nil) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            item.target = target
+            return item
+        }
         let appMenu = NSMenu()
         appMenu.items = [
-            settingsItem, .separator(),
-            NSMenuItem(title: "Quit xpnd", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"),
+            item("About xpnd", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), target: NSApp), .separator(),
+            item("Settings…", #selector(showSettings), ",", target: self), .separator(),
+            item("Hide xpnd", #selector(NSApplication.hide(_:)), "h"),
+            item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            item("Show All", #selector(NSApplication.unhideAllApplications(_:))), .separator(),
+            item("Quit xpnd", #selector(NSApplication.terminate(_:)), "q"),
+        ]
+        // ⌘⇧N is the notch's in a desktop tab, so New Connection has no shortcut.
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.items = [
+            item("New Snippet", #selector(newSnippet), "n", target: self),
+            item("New Snippet Group", #selector(newSnippetGroup), target: self),
+            item("New Connection", #selector(newConnection), target: self), .separator(),
+            item("Import…", #selector(showImportExport), target: self),
+            item("Export…", #selector(showImportExport), target: self),
         ]
         let editMenu = NSMenu(title: "Edit")
         let redo = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
@@ -226,12 +244,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"),
             NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"),
             NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"),
-            NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"),
+            NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"), .separator(),
+            item("Find", #selector(findInMainWindow), "f", target: self),
         ]
         let windowMenu = NSMenu(title: "Window")
-        windowMenu.items = [NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")]
+        windowMenu.items = [
+            item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+            NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"),
+        ]
+        NSApp.windowsMenu = windowMenu
         let main = NSMenu()
-        for submenu in [appMenu, editMenu, windowMenu] {
+        for submenu in [appMenu, fileMenu, editMenu, windowMenu] {
             let item = NSMenuItem()
             item.submenu = submenu
             main.addItem(item)
@@ -289,9 +312,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggle.target = self
         toggle.state = settings.expansionEnabled ? .on : .off
         menu.addItem(toggle)
-        let open = NSMenuItem(title: "Open Picker", action: #selector(openPicker), keyEquivalent: "")
-        open.target = self
-        menu.addItem(open)
+        // Shown with their global shortcuts; the menu only displays them, the hotkeys do the work.
+        for (title, action, shortcut) in [("Open Picker", #selector(openPicker), settings.pickerShortcut),
+                                          ("Open Connection Launcher", #selector(openLauncher), settings.connectionLauncherShortcut)] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: shortcut?.menuKeyEquivalent ?? "")
+            item.keyEquivalentModifierMask = shortcut?.modifierFlags ?? []
+            item.target = self
+            menu.addItem(item)
+        }
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -316,6 +344,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openPicker() {
         picker.toggle()
+    }
+
+    @objc private func openLauncher() {
+        launcherHotKey.action?()
+    }
+
+    @objc private func newSnippet() {
+        showMainWindow(selecting: nil)
+        mainWindow?.newSnippet()
+    }
+
+    @objc private func newSnippetGroup() {
+        showMainWindow(selecting: nil)
+        mainWindow?.newSnippetGroup()
+    }
+
+    @objc private func newConnection() {
+        showMainWindow(selecting: nil)
+        mainWindow?.newConnection()
+    }
+
+    @objc private func findInMainWindow() {
+        showMainWindow(selecting: nil)
+        mainWindow?.find()
+    }
+
+    @objc private func showImportExport() {
+        showSettings()
+        settingsWindow?.show(.importExport)
     }
 
     @objc private func checkForUpdates() {
