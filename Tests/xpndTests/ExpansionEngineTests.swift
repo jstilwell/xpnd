@@ -82,8 +82,9 @@ private struct Activation: Equatable {
 
     deinit { try? FileManager.default.removeItem(at: dir) }
 
+    /// A space is the boundary that fires a strict keyword.
     func type(_ characters: String...) {
-        for c in characters { engine.handle(.characters(c)) }
+        for c in characters { engine.handle(c == " " ? .boundary(c) : .characters(c)) }
     }
 
     /// Waits for the expansion started by the last keystroke, if any.
@@ -114,14 +115,76 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
     @Test func matchTriggersExpansion() async throws {
         let h = try Harness([snip(";sig", "Best")])
         h.type(";", "s", "i", "g")
+        #expect(h.engine.pendingExpansion == nil) // strict: waits for the word to end
+        h.type(" ")
         await h.settle()
-        #expect(h.sender.log == ["bs 4", "paste Best"])
+        #expect(h.sender.log == ["bs 5", "paste Best "])
         #expect(h.notes.isEmpty)
+    }
+
+    @Test func strictFiresOnPunctuation() async throws {
+        let h = try Harness([snip(";sig", "Best")])
+        h.type(";", "s", "i", "g", ".")
+        await h.settle()
+        #expect(h.sender.log == ["bs 5", "paste Best."])
+    }
+
+    @Test func looseStillFiresInstantly() async throws {
+        let h = try Harness([Snippet(name: "a", keyword: "==>", matching: .loose, text: "→")])
+        h.type("=", "=", ">")
+        await h.settle()
+        #expect(h.sender.log == ["bs 3", "paste →"])
+    }
+
+    @Test func keysTypedDuringExpansionAreKept() async throws {
+        let h = try Harness([snip(";sig", "Hi #{input:N}")])
+        h.type(";", "s", "i", "g", " ")
+        #expect(await eventually { h.gate.continuation != nil })
+        h.type("a", "b")
+        h.gate.continuation?.resume(returning: ["N": "Ann"])
+        await h.settle()
+        #expect(h.sender.log == ["bs 7", "paste Hi Ann ab"])
+    }
+
+    @Test func otherKeyDuringExpansionStopsKeeping() async throws {
+        let h = try Harness([snip(";sig", "Hi #{input:N}")])
+        h.type(";", "s", "i", "g", " ")
+        #expect(await eventually { h.gate.continuation != nil })
+        h.type("a")
+        h.engine.handle(.reset)
+        h.type("b")
+        h.gate.continuation?.resume(returning: ["N": "Ann"])
+        await h.settle()
+        #expect(h.sender.log == ["bs 5", "paste Hi Ann "])
+    }
+
+    @Test func keptKeysAreCapped() async throws {
+        let h = try Harness([snip(";sig", "Hi #{input:N}")])
+        h.type(";", "s", "i", "g", " ")
+        #expect(await eventually { h.gate.continuation != nil })
+        for _ in 0..<65 { h.type("a") }
+        h.gate.continuation?.resume(returning: ["N": "Ann"])
+        await h.settle()
+        #expect(h.sender.log == ["bs 5", "paste Hi Ann "])
+    }
+
+    @Test func boundaryGoesBeforeTheCursorMove() async throws {
+        let h = try Harness([snip(";p", "(#{cursor})")])
+        h.type(";", "p", " ")
+        await h.settle()
+        #expect(h.sender.log == ["bs 3", "paste () ", "key left x2"])
+    }
+
+    @Test func trailingKeyStepDropsTheBoundary() async throws {
+        let h = try Harness([snip(";s", "Hi#{key:enter}")])
+        h.type(";", "s", " ")
+        await h.settle()
+        #expect(h.sender.log == ["bs 3", "paste Hi", "key enter x1"])
     }
 
     @Test func failedEvaluationLeavesKeyword() async throws {
         let h = try Harness([snip(";bad", "#{combo:;zz}")])
-        h.type(";", "b", "a", "d")
+        h.type(";", "b", "a", "d", " ")
         await h.settle()
         #expect(h.sender.log.isEmpty)
         #expect(h.notes == [ExpansionError.missingCombo(";zz").message])
@@ -129,12 +192,12 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
 
     @Test func typingDuringExpansionIsIgnored() async throws {
         let h = try Harness([snip(";sig", "Hi #{input:Name}")])
-        h.type(";", "s", "i", "g")
+        h.type(";", "s", "i", "g", " ")
         let first = try #require(h.engine.pendingExpansion)
         #expect(await eventually { h.gate.continuation != nil })
         #expect(h.engine.isExpanding)
 
-        h.type(";", "s", "i", "g")
+        h.type(";", "s", "i", "g", " ")
         // A direct call (as from the picker) is refused too, and says why.
         await h.engine.expand(snip(";x", "X"), deletingCharacters: 0)
         #expect(h.notes == [ExpansionError.busy.message])
@@ -142,15 +205,15 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         h.gate.continuation?.resume(returning: ["Name": "Ann"])
         await first.value
         #expect(!h.engine.isExpanding)
-        #expect(h.sender.log.filter { $0.hasPrefix("bs") } == ["bs 4"])
-        #expect(h.sender.log == ["bs 4", "paste Hi Ann"])
+        // The second `;sig ` started nothing; it's kept and typed after the expansion.
+        #expect(h.sender.log == ["bs 10", "paste Hi Ann ;sig "])
         #expect(h.engine.buffer.text.isEmpty)
     }
 
     @Test func disabledOrLoadErrorDoesNothing() async throws {
         let h = try Harness([snip(";sig", "Best")])
         h.engine.isEnabled = false
-        h.type(";", "s", "i", "g")
+        h.type(";", "s", "i", "g", " ")
         await h.settle()
         #expect(h.sender.log.isEmpty)
 
@@ -160,7 +223,7 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         try "groups: [".write(to: url, atomically: true, encoding: .utf8)
         h.store.load()
         #expect(h.store.loadError != nil)
-        h.type(";", "s", "i", "g")
+        h.type(";", "s", "i", "g", " ")
         await h.settle()
         #expect(h.sender.log.isEmpty)
 
@@ -174,7 +237,7 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         try good.write(to: url, atomically: true, encoding: .utf8)
         h.store.load()
         #expect(h.store.loadError == nil)
-        h.type("i", "g")
+        h.type("i", "g", " ")
         await h.settle()
         #expect(h.sender.log.isEmpty)
     }
@@ -183,6 +246,7 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         let h = try Harness([snip(";sig", "Best")])
         // Typed into xpnd's own Settings editor or picker search field.
         for c in [";", "s", "i", "g"] { h.engine.handle(.characters(c), targetsXpnd: true) }
+        h.engine.handle(.boundary(" "), targetsXpnd: true)
         await h.settle()
         #expect(h.sender.log.isEmpty)
         #expect(h.engine.buffer.text.isEmpty)
@@ -191,14 +255,14 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         h.type(";", "s", "i")
         h.engine.handle(.characters("g"), targetsXpnd: true)
         #expect(h.engine.buffer.text.isEmpty)
-        h.type("g")
+        h.type("g", " ")
         await h.settle()
         #expect(h.sender.log.isEmpty)
     }
 
     @Test func targetAppLeavingFrontCancels() async throws {
         let h = try Harness([snip(";tix", "Hi #{input:Name}")])
-        h.type(";", "t", "i", "x")
+        h.type(";", "t", "i", "x", " ")
         #expect(await eventually { h.gate.continuation != nil })
         h.front = 200 // the user clicked into another app while the form was open
         h.gate.continuation?.resume(returning: ["Name": "Ann"])
@@ -221,7 +285,7 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
 
     @Test func turningExpansionOffCancelsAndSaysSo() async throws {
         let h = try Harness([snip(";tix", "Hi #{input:Name}")])
-        h.type(";", "t", "i", "x")
+        h.type(";", "t", "i", "x", " ")
         #expect(await eventually { h.gate.continuation != nil })
         h.engine.isEnabled = false
         h.gate.continuation?.resume(returning: ["Name": "Ann"])
@@ -232,19 +296,19 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
 
     @Test func unchangedFrontAppStillExpands() async throws {
         let h = try Harness([snip(";tix", "Hi #{input:Name}")])
-        h.type(";", "t", "i", "x")
+        h.type(";", "t", "i", "x", " ")
         #expect(await eventually { h.gate.continuation != nil })
         h.gate.continuation?.resume(returning: ["Name": "Ann"])
         await h.settle()
-        #expect(h.sender.log == ["bs 4", "paste Hi Ann"])
+        #expect(h.sender.log == ["bs 5", "paste Hi Ann "])
         #expect(h.notes.isEmpty)
     }
 
     @Test func emojiKeywordDeletesByCharacter() async throws {
         let h = try Harness([snip("👍🏽!", "ok")])
-        h.type("👍🏽", "!")
+        h.type("👍🏽", "!", " ")
         await h.settle()
-        #expect(h.sender.log == ["bs 2", "paste ok"])
+        #expect(h.sender.log == ["bs 3", "paste ok "])
     }
 
     @Test func connectionStringActivates() async throws {
@@ -305,9 +369,9 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         #expect(h.sender.log.isEmpty)
         #expect(h.engine.buffer.text == ";dev")
         h.engine.resetBuffer()
-        h.type(";", "s", "i", "g")
+        h.type(";", "s", "i", "g", " ")
         await h.settle()
-        #expect(h.sender.log == ["bs 4", "paste Best"])
+        #expect(h.sender.log == ["bs 5", "paste Best "])
         #expect(h.activated.isEmpty)
 
         // Both broken: dropped keys reset the buffer.
@@ -336,7 +400,7 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         let shared = Connection(name: "s", host: "h", activation: ";x")
         let h = try Harness([snip(";x", "X")], folders: [ConnectionFolder(name: "f", activation: "", connections: [shared])])
         try h.breakFile("connections.yaml")
-        h.type(";", "x")
+        h.type(";", "x", " ")
         await h.settle()
         #expect(h.sender.log.isEmpty)
     }
@@ -369,10 +433,10 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
 
         // A new snippet takes the derived string away from the folder.
         try h.store.update { $0.groups = [SnippetGroup(name: "G", snippets: [snip(";prod", "P")])] }
-        h.type(";", "p", "r", "o", "d")
+        h.type(";", "p", "r", "o", "d", " ")
         await h.settle()
         #expect(h.activated.count == 1)
-        #expect(h.sender.log.last == "paste P")
+        #expect(h.sender.log.last == "paste P ")
     }
 
     @Test func activationWhileBusyIsIgnored() async throws {
@@ -380,7 +444,7 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         let h = try Harness(
             [snip(";sig", "Hi #{input:Name}")],
             folders: [ConnectionFolder(name: "f", activation: "", connections: [aws])])
-        h.type(";", "s", "i", "g")
+        h.type(";", "s", "i", "g", " ")
         let first = try #require(h.engine.pendingExpansion)
         #expect(await eventually { h.gate.continuation != nil })
 
@@ -392,7 +456,7 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         h.gate.continuation?.resume(returning: ["Name": "Ann"])
         await first.value
         #expect(h.activated.isEmpty)
-        #expect(h.sender.log == ["bs 4", "paste Hi Ann"])
+        #expect(h.sender.log == ["bs 9", "paste Hi Ann ;aws"]) // kept, not activated
         #expect(h.engine.buffer.text.isEmpty)
     }
 

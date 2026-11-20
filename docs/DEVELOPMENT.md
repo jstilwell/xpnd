@@ -45,7 +45,7 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
   `AppDelegate` runs the tap only while they are.
 - `KeyEventTap` listens (without changing anything) to key presses and clicks and hands them to
   `ExpansionEngine` as `KeyInput`. `TypingBuffer` is the rolling buffer, cleared by non-printing keys,
-  clicks, and app switches; `Matcher` picks the longest matching keyword in the library, strict or loose.
+  clicks, and app switches; `Matcher.instant` picks the longest loose keyword the buffer ends with, and `Matcher.strict` the strict keyword a space or punctuation just ended (checked before that key joins the buffer). Keys typed while an expansion runs are kept and handed to `Player` as its tail.
 - `ExpansionEngine` runs one expansion at a time in two phases. `Template` parses the snippet's text
   into `TemplateToken`s. `Evaluator` computes every value first (through an `EvaluationContext`:
   `LiveEvaluationContext` for the clipboard, dates, environment, `#{combo:}` against a library

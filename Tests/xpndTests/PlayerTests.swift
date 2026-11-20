@@ -25,6 +25,27 @@ private struct FakeActions: ActionRunning {
         #expect(sender.log == ["bs 4", "paste a", "key tab x3", "combo", "paste b", "key left x1"])
     }
 
+    @Test func appendingTextGoesBeforeTheCursorMove() {
+        #expect([PlayStep.paste("ab"), .moveLeft(1)].appendingText(" x") == [.paste("ab x"), .moveLeft(3)])
+        #expect([PlayStep.paste("ab")].appendingText(" ") == [.paste("ab ")])
+        #expect([PlayStep]().appendingText(" ") == [.paste(" ")])
+        #expect([PlayStep.key(.tab, count: 1)].appendingText(" ") == [.key(.tab, count: 1), .paste(" ")])
+    }
+
+    @Test func endsInTextOnlyAfterTextOrTheCursor() {
+        #expect([PlayStep]().endsInText)
+        #expect([PlayStep.paste("a")].endsInText)
+        #expect([PlayStep.paste("a"), .moveLeft(1)].endsInText)
+        #expect(![PlayStep.paste("a"), .key(.enter, count: 1)].endsInText)
+        #expect(![PlayStep.delay(milliseconds: 1)].endsInText)
+    }
+
+    @Test func tailIsDeletedAndTypedAfterTheText() async throws {
+        let sender = FakeSender()
+        try await Player(sender: sender, actions: FakeActions()).play([.paste("a")], deletingCharacters: 5) { (" xy", 2) }
+        #expect(sender.log == ["bs 7", "paste a xy"])
+    }
+
     @Test func zeroDeletionSkipsBackspace() async throws {
         let sender = FakeSender()
         try await Player(sender: sender, actions: FakeActions()).play([.paste("a")], deletingCharacters: 0)

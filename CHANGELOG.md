@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.0 - Unreleased
+
+### Changed
+- A strict snippet (the default) now expands when you finish the word, on the space or punctuation after its keyword, which is typed back after the text: `;sig ` becomes `Best `. It no longer fires inside a longer word (`the` in "then"), and a keyword can follow `(` or a quote. Return and Tab don't expand it. Loose snippets still expand the moment you type them.
+- The warning that one keyword starts another now appears only when the shorter one fires at once: a loose snippet, or a connection or folder string.
+
+### Fixed
+- Keys typed while a snippet expands are no longer lost or put in front of it: typing `;sig` and carrying on quickly kept the space and let the backspaces eat the keyword's last letters instead.
+
 ## 0.4.0 - 11-15-2026
 
 ### Changed

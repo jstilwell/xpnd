@@ -72,10 +72,4 @@ enum Matcher {
             .max { $0.keyword.count < $1.keyword.count }
     }
 
-    /// The snippet whose keyword the buffer matches; the longest keyword wins.
-    static func match(_ buffer: String, in snippets: [Snippet]) -> Snippet? {
-        snippets
-            .filter { !$0.keyword.isEmpty && ($0.matching == .strict ? buffer == $0.keyword : buffer.hasSuffix($0.keyword)) }
-            .max { $0.keyword.count < $1.keyword.count }
-    }
 }

@@ -9,6 +9,8 @@ import Foundation
     /// Tuning value: lets the keyword's last keystroke, which the listen-only tap sees before the
     /// target app does, land there before the backspaces that delete it.
     static let typedKeywordSettle: Duration = .milliseconds(20)
+    /// How many characters typed during an expansion are kept and typed again after it.
+    static let keptLimit = 64
 
     var isEnabled = true { didSet { if !isEnabled { cancelEvaluation() } } }
     private(set) var isExpanding = false
@@ -18,6 +20,8 @@ import Foundation
     /// The snippet being evaluated, so leaving its app can stop its scripts. Playing isn't
     /// cancelled: a paste cut short would restore the clipboard before the app read it.
     private var evaluation: Task<Result<[PlayStep], ExpansionError>, Never>?
+    /// Characters typed into the app since a typed keyword fired; nil when not keeping (see `keep`).
+    private var kept: String?
 
     private let store: SnippetStore
     private let connections: ConnectionStore
@@ -54,18 +58,50 @@ import Foundation
     /// there would edit xpnd's own fields, so it never does, and the buffer starts over.
     func handle(_ input: KeyInput, targetsXpnd: Bool = false) {
         guard !targetsXpnd else { return buffer.apply(.reset) }
+        if isExpanding { keep(input) }
         let snippetsOK = store.loadError == nil, connectionsOK = connections.loadError == nil
         // A dropped key breaks the run of typing, so a keyword can't span it. The in-flight expansion
         // doesn't read the buffer, so resetting it then is safe.
         guard isEnabled, !isExpanding, snippetsOK || connectionsOK else { return buffer.apply(.reset) }
-        buffer.apply(input)
         refreshNamespace()
+        // A strict keyword fires on the space or punctuation after it, which is already in the app.
+        if snippetsOK, let boundary = Self.boundary(of: input),
+           let snippet = Matcher.strict(word: buffer.text, boundary: boundary, in: candidates) {
+            kept = ""
+            let typed = String(boundary)
+            return start { await self.run(snippet, deletingCharacters: snippet.keyword.count + 1, boundary: typed, into: $0) }
+        }
+        buffer.apply(input)
         let text = buffer.text
-        let snippet = snippetsOK ? Matcher.match(text, in: candidates) : nil
+        let snippet = snippetsOK ? Matcher.instant(text, in: candidates) : nil
         if connectionsOK, let target = activations[text], text.count > snippet?.keyword.count ?? 0 {
             start { await self.activate(target, deletingCharacters: text.count, in: $0) }
         } else if let snippet {
+            kept = ""
             start { await self.run(snippet, deletingCharacters: snippet.keyword.count, into: $0) }
+        }
+    }
+
+    private static func boundary(of input: KeyInput) -> Character? {
+        switch input {
+        case .boundary(let s), .characters(let s):
+            guard s.count == 1, let c = s.first, Matcher.isBoundary(c) else { return nil }
+            return c
+        default:
+            return nil
+        }
+    }
+
+    /// Typed into the app while a typed keyword's expansion is in flight. They land after the keyword, so the
+    /// delete takes them too and they're typed again after the expansion. Anything else means the caret may
+    /// have moved, so nothing more is kept. Never log `kept`.
+    private func keep(_ input: KeyInput) {
+        guard let current = kept else { return }
+        switch input {
+        case .characters(let s), .boundary(let s):
+            kept = current.count + s.count <= Self.keptLimit ? current + s : nil
+        default:
+            kept = nil
         }
     }
 
@@ -125,8 +161,12 @@ import Foundation
 
     /// `target`: the app the keyword was typed in. If another app is in front once evaluation ends
     /// (the user switched while the form was open or a script ran), nothing is deleted or pasted.
-    private func run(_ snippet: Snippet, deletingCharacters: Int, into target: pid_t?) async {
-        defer { isExpanding = false }
+    /// `boundary`: the space or punctuation that fired a strict keyword, typed again after the text.
+    private func run(_ snippet: Snippet, deletingCharacters: Int, boundary: String? = nil, into target: pid_t?) async {
+        defer {
+            isExpanding = false
+            kept = nil
+        }
         do throws(ExpansionError) {
             // Evaluation fails before anything on screen changes, so the keyword stays.
             let context = makeContext()
@@ -139,7 +179,13 @@ import Foundation
             self.evaluation = nil
             guard !evaluation.isCancelled, frontmostPID() == target else { throw isEnabled ? .targetAppChanged : .expansionTurnedOff }
             let steps = try result.get()
-            try await player.play(steps, deletingCharacters: deletingCharacters)
+            try await player.play(steps, deletingCharacters: deletingCharacters) { [self] in
+                defer { kept = nil }
+                // After a key or an action (a trailing Enter), the boundary and kept keys would land in the wrong place.
+                guard steps.endsInText else { return ("", 0) }
+                let typed = kept ?? ""
+                return ((boundary ?? "") + typed, typed.count)
+            }
         } catch {
             notify(error.message)
         }
