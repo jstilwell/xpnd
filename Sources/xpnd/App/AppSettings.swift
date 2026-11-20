@@ -19,6 +19,7 @@ final class AppSettings {
         static let tabPasswords = "tabPasswords"
         static let typesKeystrokes = "typesKeystrokes"
         static let sshConnectDefaults = "sshConnectDefaults"
+        static let recentConnections = "recentConnections"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -72,6 +73,11 @@ final class AppSettings {
     /// Adds `SSHCommandBuilder.connectDefaults` to every ssh command.
     var sshConnectDefaults: Bool { didSet { defaults.set(sshConnectDefaults, forKey: Key.sshConnectDefaults) } }
 
+    /// Connection ids, newest first (`ConnectionFilter.recording`). Ids only: this Mac's, so not in the connections file.
+    var recentConnections: [Connection.ID] {
+        didSet { defaults.set(recentConnections.map(\.uuidString), forKey: Key.recentConnections) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [Key.expansionEnabled: true, Key.sshConnectDefaults: true])
@@ -93,6 +99,7 @@ final class AppSettings {
         onePasswordAccount = defaults.string(forKey: Key.onePasswordAccount)
         typesKeystrokes = defaults.bool(forKey: Key.typesKeystrokes)
         sshConnectDefaults = defaults.bool(forKey: Key.sshConnectDefaults)
+        recentConnections = (defaults.stringArray(forKey: Key.recentConnections) ?? []).compactMap(UUID.init(uuidString:))
         usesKeychain = defaults.bool(forKey: Key.usesKeychain)
         tabPasswords = defaults.string(forKey: Key.tabPasswords).flatMap(TabPasswordMode.init) ?? .clipboard
     }

@@ -22,9 +22,25 @@ enum ConnectionFilter {
         return library.folders.flatMap { walk($0, [], nil) }
     }
 
+    static let recentLimit = 10
+    static let recentShown = 5
+
+    /// `recents` with `id` first, each id once, only ids in `existing`, at most `recentLimit`.
+    static func recording(_ id: Connection.ID, in recents: [Connection.ID], keeping existing: Set<Connection.ID>) -> [Connection.ID] {
+        Array(([id] + recents.filter { $0 != id }).filter(existing.contains).prefix(recentLimit))
+    }
+
+    /// The launcher's lists over the tree: favorites in tree order, then up to `recentShown` recents (newest first)
+    /// that aren't favorites. Ids no longer in `entries` are skipped.
+    static func shortlist(_ entries: [ConnectionEntry], recents: [Connection.ID]) -> (favorites: [ConnectionEntry], recent: [ConnectionEntry]) {
+        let byID = Dictionary(entries.map { ($0.connection.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let recent = recents.compactMap { byID[$0] }.filter { !$0.connection.favorite }
+        return (entries.filter(\.connection.favorite), Array(recent.prefix(recentShown)))
+    }
+
     /// Empty query: tree order. Otherwise 0: name starts with it; 1: name, activation string or host
-    /// contains it; 2: folder path or notes contain it. Ties by name.
-    static func filter(_ entries: [ConnectionEntry], query: String) -> [ConnectionEntry] {
+    /// contains it; 2: folder path or notes contain it. Ties: favorites, then `recents` (newest first), then by name.
+    static func filter(_ entries: [ConnectionEntry], query: String, recents: [Connection.ID] = []) -> [ConnectionEntry] {
         let query = query.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return entries }
         let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
@@ -34,9 +50,14 @@ enum ConnectionFilter {
             if has(e.connection.name) || has(e.connection.activation ?? "") || has(e.connection.host) { return 1 }
             return has(e.pathText) || has(e.connection.notes ?? "") ? 2 : nil
         }
+        let recency = Dictionary(recents.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        /// Lower is earlier: a favorite, then a recent by recency, then the rest.
+        func preference(_ c: Connection) -> Int { c.favorite ? -1 : recency[c.id] ?? Int.max }
         let ranked = entries.compactMap { e in rank(e).map { (entry: e, rank: $0) } }
         let sorted = ranked.sorted { a, b in
             if a.rank != b.rank { return a.rank < b.rank }
+            let pa = preference(a.entry.connection), pb = preference(b.entry.connection)
+            if pa != pb { return pa < pb }
             return a.entry.connection.name.localizedStandardCompare(b.entry.connection.name) == .orderedAscending
         }
         return sorted.map(\.entry)

@@ -20,7 +20,12 @@ extension AppDelegate {
             prompt: PasswordPrompt(),
             keysDirectory: keysDirectory,
             sshConnectDefaults: { AppSettings.shared.sshConnectDefaults },
-            waiting: { text, shown in if shown { hud.show(text) } else { hud.hide(ifShowing: text) } }
+            waiting: { text, shown in if shown { hud.show(text) } else { hud.hide(ifShowing: text) } },
+            recordRecent: { [weak self] id in
+                guard let self else { return }
+                let existing = Set(connections.library.allConnections.map(\.id))
+                AppSettings.shared.recentConnections = ConnectionFilter.recording(id, in: AppSettings.shared.recentConnections, keeping: existing)
+            }
         )
     }
 

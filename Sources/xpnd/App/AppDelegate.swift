@@ -72,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             let preferBuiltIn = mainWindow?.terminalHasFocus == true
             launcher.toggle(
-                library: connections.library, onOpenApp: { [weak self] in self?.showMainWindow(selecting: nil) },
+                library: connections.library, recents: settings.recentConnections, onOpenApp: { [weak self] in self?.showMainWindow(selecting: nil) },
                 connect: { [weak self] id, pid, sudo in
                     await self?.connectExclusively(id, from: pid, sudo: sudo, preferBuiltIn: preferBuiltIn)
                 }

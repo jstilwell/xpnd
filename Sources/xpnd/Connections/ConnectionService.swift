@@ -31,6 +31,8 @@ import Foundation
     private let sshConnectDefaults: @MainActor () -> Bool
     /// Shows (true) or takes down (false, if it still shows) a message while a password manager is asked.
     private let waiting: @MainActor (String, Bool) -> Void
+    /// Once something launched or opened, for the launcher's Recent list.
+    private let recordRecent: @MainActor (Connection.ID) -> Void
     // Both run after `connect` returns, so Touch ID and the sudo offer never hold the engine's one-action claim.
     /// Copies to the clipboard: the next connect cancels it, since its own passwords take the clipboard.
     private(set) var passwordPhase: Task<Void, Never>?
@@ -48,7 +50,8 @@ import Foundation
         offerInTab: @escaping @MainActor (String, String, TerminalSession.ID, Bool) async -> Bool = { _, _, _, _ in false },
         copySecret: @escaping @MainActor (String) async -> Void, prompt: any PasswordPrompting, keysDirectory: URL,
         sshConnectDefaults: @escaping @MainActor () -> Bool = { false },
-        waiting: @escaping @MainActor (String, Bool) -> Void = { _, _ in }
+        waiting: @escaping @MainActor (String, Bool) -> Void = { _, _ in },
+        recordRecent: @escaping @MainActor (Connection.ID) -> Void = { _ in }
     ) {
         self.connections = connections
         self.provider = provider
@@ -67,6 +70,7 @@ import Foundation
         self.keysDirectory = keysDirectory
         self.sshConnectDefaults = sshConnectDefaults
         self.waiting = waiting
+        self.recordRecent = recordRecent
     }
 
     /// Where a connect went: a built-in tab (which its passwords can be sent into), or another app.
@@ -101,6 +105,7 @@ import Foundation
             return
         }
         guard let launched = await launch(plan, for: connection, into: target, deletingCharacters: deletingCharacters) else { return }
+        recordRecent(connection.id)
         if case .tab(let tab) = launched, tabPasswords() != .clipboard {
             let automatic = tabPasswords() == .sendAutomatically
             tabPhase = Task { await offerPasswords(for: connection, in: library, tab: tab, automatic: automatic) }
@@ -151,7 +156,7 @@ import Foundation
             notify(error.message)
         case .success(let (password, gateway)):
             if let missing { notify(missing + " Windows will ask for the password.") }
-            _ = openTab(.remoteDesktop(config, password: password, gatewayPassword: gateway), connection)
+            if openTab(.remoteDesktop(config, password: password, gatewayPassword: gateway), connection) != nil { recordRecent(connection.id) }
         }
     }
 

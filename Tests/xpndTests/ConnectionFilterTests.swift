@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import xpnd
 
@@ -73,5 +74,44 @@ struct ConnectionFilterTests {
         noted.notes = "Behind the office VPN"
         let lib = ConnectionLibrary(folders: [ConnectionFolder(name: "f", connections: [noted, conn("vpn-box")])])
         #expect(names(lib, "vpn") == ["vpn-box", "zed"])
+    }
+
+    @Test func recordingMovesToFrontPrunesAndCapsAtTen() {
+        let ids = (0..<10).map { _ in UUID() }
+        let existing = Set(ids)
+        #expect(ConnectionFilter.recording(ids[3], in: ids, keeping: existing) == [ids[3]] + ids.filter { $0 != ids[3] })
+        let new = UUID()
+        let after = ConnectionFilter.recording(new, in: ids, keeping: existing.union([new]))
+        #expect(after.count == 10 && after.first == new && !after.contains(ids[9]))
+        #expect(ConnectionFilter.recording(new, in: ids, keeping: [new, ids[0]]) == [new, ids[0]])
+    }
+
+    @Test func shortlistSkipsFavoritesInRecentAndDropsDeleted() {
+        var a = conn("a"), d = conn("d")
+        a.favorite = true
+        d.favorite = true
+        let b = conn("b"), c = conn("c")
+        let lib = ConnectionLibrary(folders: [ConnectionFolder(name: "f", connections: [d, a, b, c])])
+        let list = ConnectionFilter.shortlist(ConnectionFilter.entries(lib), recents: [c.id, UUID(), a.id, b.id])
+        #expect(list.favorites.map(\.connection.name) == ["d", "a"])
+        #expect(list.recent.map(\.connection.name) == ["c", "b"])
+    }
+
+    @Test func shortlistShowsFiveRecent() {
+        let all = (1...7).map { conn("c\($0)") }
+        let lib = ConnectionLibrary(folders: [ConnectionFolder(name: "f", connections: all)])
+        let list = ConnectionFilter.shortlist(ConnectionFilter.entries(lib), recents: all.reversed().map(\.id))
+        #expect(list.recent.map(\.connection.name) == ["c7", "c6", "c5", "c4", "c3"])
+        #expect(list.favorites.isEmpty)
+    }
+
+    @Test func queryTiesPreferFavoritesThenRecent() {
+        var web3 = conn("web3")
+        web3.favorite = true
+        let web1 = conn("web1"), web2 = conn("web2"), web4 = conn("web4")
+        let lib = ConnectionLibrary(folders: [ConnectionFolder(name: "f", connections: [web1, web2, web3, web4])])
+        let found = ConnectionFilter.filter(ConnectionFilter.entries(lib), query: "web", recents: [web4.id, web2.id])
+        #expect(found.map(\.connection.name) == ["web3", "web4", "web2", "web1"])
+        #expect(names(lib, "web") == ["web3", "web1", "web2", "web4"]) // no recents: favorites still first
     }
 }

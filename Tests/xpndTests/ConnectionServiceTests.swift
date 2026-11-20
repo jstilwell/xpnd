@@ -133,6 +133,7 @@ private let sudo = ref("sudo", .password)
     var connectDefaults = false
     /// The HUD's waiting messages: shown, then taken down.
     var waits: [String] = []
+    var recorded: [Connection.ID] = []
 
     init(library: ConnectionLibrary) throws {
         provider = FakeProvider(log: log)
@@ -175,7 +176,8 @@ private let sudo = ref("sudo", .password)
                 log.events.append("copy \(secret)")
             },
             prompt: prompt, keysDirectory: keys, sshConnectDefaults: { [unowned self] in connectDefaults },
-            waiting: { [unowned self] text, shown in waits.append((shown ? "show " : "hide ") + text) })
+            waiting: { [unowned self] text, shown in waits.append((shown ? "show " : "hide ") + text) },
+            recordRecent: { [unowned self] in recorded.append($0) })
     }
 
     func connect(_ connection: Connection, typedInto target: pid_t? = terminalPID, deleting: Int = 0, sudo: Bool = false,
@@ -842,5 +844,24 @@ struct ConnectionServiceTests {
         await service.tabPhase?.value
         #expect(h.log.events.contains("offer Password secret-a"))
         #expect(h.log.events.contains("offer Password secret-b"))
+    }
+
+    @Test func connectRecordsARecentOnlyOnceSomethingOpened() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3")
+        let h = try Harness(aws)
+        await h.connect(aws)
+        #expect(h.recorded == [aws.id])
+        let moved = try Harness(aws)
+        moved.front = inSafari
+        await moved.connect(aws)
+        #expect(moved.recorded.isEmpty)
+        let win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
+        let r = try Harness(win)
+        await r.connect(win)
+        #expect(r.recorded == [win.id])
+        let locked = try Harness(win)
+        locked.provider.passwordFailures = ["login": .locked]
+        await locked.connect(win)
+        #expect(locked.recorded.isEmpty)
     }
 }
