@@ -23,7 +23,11 @@ struct DetailsPane: View {
         case .folder(let id):
             if let folder = connections.library.folder(id) {
                 // Per-item ids, so one editor's unsaved field state never shows on another.
-                chrome(connections.store.loadError, connections.saveProblem, file: "connections.yaml") { FolderEditorView(editing: connections, folder: folder, focus: $focus).id(id) }
+                chrome(connections.store.loadError, connections.saveProblem, file: "connections.yaml") { FolderEditorView(editing: connections, folder: folder, focus: $focus, newConnection: {
+                    guard let new = connections.addConnection(in: id) else { return }
+                    selection = .connection(new)
+                    focus = .name
+                }) { delete(.folder(id)) }.id(id) }
             } else { nothingSelected }
         case .connection(let id):
             if let connection = connections.library.connection(id) {

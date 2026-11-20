@@ -91,6 +91,7 @@ struct Sidebar: View {
                 Spacer()
                 Button("Settings", systemImage: "gearshape", action: openSettings)
                     .labelStyle(.iconOnly).buttonStyle(.borderless)
+                    .help("Settings")
             }
             .padding(6)
         }
@@ -158,6 +159,7 @@ struct Sidebar: View {
                     Button("Add Snippet Group", systemImage: "plus") {
                         if let id = editing.addGroup() { selection = .snippetGroup(id) }
                     }
+                    .help("Add Snippet Group")
                     .disabled(editing.readOnly)
                 }
             }
@@ -192,6 +194,7 @@ struct Sidebar: View {
             Button("New Top-Level Folder") { select(connections.addFolder(in: nil).map(SidebarItem.folder), focus: .name) }
         }
         .menuIndicator(.hidden).fixedSize()
+        .help("Add a connection or folder")
         .disabled(connections.readOnly)
     }
 
@@ -231,8 +234,12 @@ struct Sidebar: View {
     private func snippetGroup(_ group: SnippetGroup, _ snippets: [Snippet], expanded: Binding<Bool>) -> some View {
         DisclosureGroup(isExpanded: expanded) {
             ForEach(snippets) { snippet in
+                // Off by itself or with its group: either way it doesn't expand.
+                let off = !snippet.enabled || !group.enabled
                 sidebarRow(EditorRules.displayName(snippet.name), detail: snippet.keyword, symbol: "text.cursor")
-                    .opacity(snippet.enabled ? 1 : 0.5)
+                    .opacity(off ? 0.5 : 1)
+                    .accessibilityValue(off ? "Off" : "")
+                    .help(!snippet.enabled ? "Disabled: this snippet doesn't expand." : off ? "Its group is disabled, so it doesn't expand." : "")
                     .tag(SidebarItem.snippet(snippet.id))
                     .draggable(SidebarItem.snippet(snippet.id).dragText)
             }
@@ -254,7 +261,8 @@ struct Sidebar: View {
                     .labelsHidden().toggleStyle(.switch).controlSize(.mini)
                     .disabled(editing.readOnly)
             }
-            .help(group.description)
+            .help(group.enabled ? group.description : (["Disabled: its snippets don't expand."] + [group.description]).filter { !$0.isEmpty }.joined(separator: "\n"))
+            .accessibilityValue(group.enabled ? "" : "Off")
             .tag(SidebarItem.snippetGroup(group.id))
             .draggable(SidebarItem.snippetGroup(group.id).dragText)
             .dropDestination(for: String.self) { texts, _ in

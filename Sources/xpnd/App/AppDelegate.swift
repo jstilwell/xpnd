@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onActivate: { [weak self] in await self?.activate($0, typedInto: $1, typed: $2) }
         )
         engine.isEnabled = settings.expansionEnabled
-        picker = PickerPanel(store: store, engine: engine)
+        picker = PickerPanel(store: store, engine: engine, openApp: { [weak self] in self?.showMainWindow(selecting: nil) })
         pickerHotKey.action = { [weak self] in self?.picker.toggle() }
         registerPickerShortcut()
         launcher = ConnectionLauncherPanel()
