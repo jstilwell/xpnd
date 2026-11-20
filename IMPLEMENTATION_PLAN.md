@@ -8,7 +8,7 @@ detailed plan is in `docs/superpowers/plans/`, written when the stage starts.
 expansion, restored after the app reads; combo limits; clearer Shortcuts and script errors; cheaper per-key and picker work.
 **Success Criteria**: `make test` passes; typing `;sig ` expands to `Best `; typing fast after a keyword keeps the keys.
 **Tests**: `TypingTests`, `ExpansionEngineTests`, `PlayerTests`, `EvaluatorTests`, `ActionRunnerTests`, `ProcessRunnerTests`, `KeywordNamespaceTests`.
-**Status**: In Progress (`fix/expansion-reliability`, plan `2026-11-20-expansion-reliability.md`)
+**Status**: Complete (`fix/expansion-reliability`, PR open)
 
 ## Stage 2: Connections
 **Goal**: RDP fetch outside the engine claim, per-tab password offers, SSH timeout/keepalive setting, drop-folder cleanup
