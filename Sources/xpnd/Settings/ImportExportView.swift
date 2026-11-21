@@ -237,6 +237,8 @@ private struct ConnectionImportExport: View {
     @State private var conflicts: [String] = []
     @State private var resolvingConflicts = false
     @State private var preview: ConnectionImport.Preview?
+    /// What an SSH config import left out, for the preview.
+    @State private var notes: [String] = []
 
     var body: some View {
         Form {
@@ -251,6 +253,8 @@ private struct ConnectionImportExport: View {
             }
             Section("Import") {
                 Button("Import…", action: chooseImport).disabled(store.loadError != nil)
+                Button("Import from SSH Config…", action: importSSHConfig).disabled(store.loadError != nil)
+                    .help("Adds the hosts in ~/.ssh/config to a folder named “\(SSHConfigImport.folderName)”.")
                 if store.loadError != nil {
                     Text("Fix connections.yaml before importing.").font(.callout).foregroundStyle(.secondary)
                 }
@@ -271,7 +275,7 @@ private struct ConnectionImportExport: View {
             Text("Skip keeps your connections; Replace uses the imported ones.\n" + conflicts.joined(separator: ", "))
         }
         .sheet(isPresented: Binding(get: { preview != nil }, set: { if !$0 { preview = nil } })) {
-            if let preview { ConnectionPreviewSheet(preview: preview, taken: taken, cancel: cancelImport, confirm: merge) }
+            if let preview { ConnectionPreviewSheet(preview: preview, taken: taken, notes: notes, cancel: cancelImport, confirm: merge) }
         }
     }
 
@@ -310,6 +314,27 @@ private struct ConnectionImportExport: View {
             message = "No connections or folders were found in \(url.lastPathComponent)."
             return
         }
+        stage(library, notes: [])
+    }
+
+    /// Read as text only: nothing in it is run, and `ssh -G` isn't used.
+    private func importSSHConfig() {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".ssh/config")
+        guard let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) else {
+            message = "Couldn't read ~/.ssh/config."
+            return
+        }
+        let (library, notes) = SSHConfigImport.parse(text, existing: store.library)
+        guard !library.allConnections.isEmpty else {
+            message = (["No new hosts were found in ~/.ssh/config."] + notes).joined(separator: " ")
+            return
+        }
+        stage(library, notes: notes)
+    }
+
+    /// Takes off strings snippets use, then asks about conflicts or goes straight to the preview.
+    private func stage(_ library: ConnectionLibrary, notes: [String]) {
+        self.notes = notes
         let (kept, taken) = ConnectionImport.removing(Set(snippets.library.groups.flatMap(\.snippets).map(\.keyword)), from: library)
         self.taken = taken
         incoming = kept
@@ -350,6 +375,7 @@ private struct ConnectionImportExport: View {
 private struct ConnectionPreviewSheet: View {
     let preview: ConnectionImport.Preview
     let taken: [String]
+    let notes: [String]
     let cancel: () -> Void
     let confirm: () -> Void
 
@@ -396,6 +422,7 @@ private struct ConnectionPreviewSheet: View {
                 Text("Snippets already use \(taken.map(ConnectionImport.visible).joined(separator: ", ")), so those come without their string.")
                     .font(.callout).foregroundStyle(.secondary)
             }
+            ForEach(Array(notes.enumerated()), id: \.offset) { Text(ConnectionImport.visible($1)).font(.callout).foregroundStyle(.secondary) }
             Text("SSH options and jump hosts run when you connect, so check them before importing.")
                 .font(.callout).foregroundStyle(.secondary)
             HStack {

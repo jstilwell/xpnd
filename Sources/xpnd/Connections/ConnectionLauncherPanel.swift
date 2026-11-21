@@ -1,12 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// The search panel the connection hotkey opens: type to filter (or browse the folder tree when the
-/// query is empty), Return to connect, Esc to close.
+/// The search panel the connection hotkey opens: type to filter (or, with the query empty, pick from Favorites
+/// and Recent or browse the folder tree), Return to connect, Esc to close.
 @MainActor
 final class ConnectionLauncherPanel: LauncherPanel {
+    /// `recents`: connection ids, newest first.
     func toggle(
         library: ConnectionLibrary,
+        recents: [Connection.ID],
         onOpenApp: @escaping () -> Void,
         connect: @escaping (Connection.ID, pid_t?, _ sudo: Bool) async -> Void
     ) {
@@ -14,6 +16,7 @@ final class ConnectionLauncherPanel: LauncherPanel {
         // A fresh view each time, so the query and highlight start clean.
         present(ConnectionLauncherView(
             library: library,
+            recents: recents,
             choose: { [weak self] id, sudo in
                 guard let self else { return }
                 close()
@@ -30,8 +33,14 @@ final class ConnectionLauncherPanel: LauncherPanel {
     }
 }
 
+/// A row of the launcher's list. A connection can be in Favorites or Recent and in the tree, so each is its own row.
+private enum LauncherRow: Hashable {
+    case favorite(Connection.ID), recent(Connection.ID), tree(UUID)
+}
+
 private struct ConnectionLauncherView: View {
     let library: ConnectionLibrary
+    let recents: [Connection.ID]
     let choose: (Connection.ID, _ sudo: Bool) -> Void
     let cancel: () -> Void
     let openApp: () -> Void
@@ -40,15 +49,16 @@ private struct ConnectionLauncherView: View {
     /// Return with ⌘ may reach both the field's submit and the key handler; the first one wins.
     @State private var activated = false
     @State private var query = ""
-    @State private var selected: UUID?
+    @State private var selected: LauncherRow?
     @State private var expanded: Set<ConnectionFolder.ID>
     @FocusState private var focused: Bool
 
     init(
-        library: ConnectionLibrary, choose: @escaping (Connection.ID, _ sudo: Bool) -> Void,
+        library: ConnectionLibrary, recents: [Connection.ID], choose: @escaping (Connection.ID, _ sudo: Bool) -> Void,
         cancel: @escaping () -> Void, openApp: @escaping () -> Void
     ) {
         self.library = library
+        self.recents = recents
         self.choose = choose
         self.cancel = cancel
         self.openApp = openApp
@@ -56,10 +66,19 @@ private struct ConnectionLauncherView: View {
     }
 
     private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
-    private var found: [ConnectionEntry] { ConnectionFilter.filter(ConnectionFilter.entries(library), query: query) }
+    private var entries: [ConnectionEntry] { ConnectionFilter.entries(library) }
+    private var found: [ConnectionEntry] { ConnectionFilter.filter(entries, query: query, recents: recents) }
+    private var shortlist: (favorites: [ConnectionEntry], recent: [ConnectionEntry]) {
+        ConnectionFilter.shortlist(entries, recents: recents)
+    }
     private var tree: [ConnectionTreeRow] { ConnectionTreeRow.rows(library, expanded: expanded) }
-    private var ids: [UUID] { searching ? found.map(\.connection.id) : tree.map(\.id) }
-    private var current: UUID? { ids.contains { $0 == selected } ? selected : ids.first }
+    private var ids: [LauncherRow] {
+        if searching { return found.map { .tree($0.connection.id) } }
+        let list = shortlist
+        return list.favorites.map { .favorite($0.connection.id) } + list.recent.map { .recent($0.connection.id) }
+            + tree.map { .tree($0.id) }
+    }
+    private var current: LauncherRow? { ids.contains { $0 == selected } ? selected : ids.first }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -80,24 +99,28 @@ private struct ConnectionLauncherView: View {
                 ScrollViewReader { proxy in
                     List(selection: $selected) {
                         if searching {
-                            ForEach(found, id: \.connection.id) { entry in
-                                HStack {
-                                    Text(entry.connection.name).lineLimit(1).foregroundStyle(entry.color?.ui ?? Color.primary)
-                                    Spacer()
-                                    Text(entry.pathText).font(.callout).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                                .tag(entry.connection.id)
-                                .contentShape(Rectangle())
-                                .onTapGesture(count: 2) { pick(entry.connection.id) }
-                            }
+                            ForEach(found, id: \.connection.id) { entryRow($0, .tree($0.connection.id)) }
                         } else {
-                            ForEach(tree) { row in
-                                treeRow(row).tag(row.id)
+                            let list = shortlist
+                            if list.favorites.isEmpty && list.recent.isEmpty {
+                                treeRows
+                            } else {
+                                if !list.favorites.isEmpty {
+                                    Section("Favorites") {
+                                        ForEach(list.favorites, id: \.connection.id) { entryRow($0, .favorite($0.connection.id)) }
+                                    }
+                                }
+                                if !list.recent.isEmpty {
+                                    Section("Recent") {
+                                        ForEach(list.recent, id: \.connection.id) { entryRow($0, .recent($0.connection.id)) }
+                                    }
+                                }
+                                Section("All Connections") { treeRows }
                             }
                         }
                     }
                     .listStyle(.plain)
-                    .onChange(of: selected) { _, id in if let id { proxy.scrollTo(id) } }
+                    .onChange(of: selected) { _, row in if let row { proxy.scrollTo(row) } }
                 }
             }
         }
@@ -115,6 +138,22 @@ private struct ConnectionLauncherView: View {
             activate()
             return .handled
         }
+    }
+
+    private var treeRows: some View {
+        ForEach(tree) { row in treeRow(row).tag(LauncherRow.tree(row.id)).id(LauncherRow.tree(row.id)) }
+    }
+
+    private func entryRow(_ entry: ConnectionEntry, _ row: LauncherRow) -> some View {
+        HStack {
+            Text(entry.connection.name).lineLimit(1).foregroundStyle(entry.color?.ui ?? Color.primary)
+            Spacer()
+            Text(entry.pathText).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .tag(row)
+        .id(row)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { pick(entry.connection.id) }
     }
 
     private func treeRow(_ row: ConnectionTreeRow) -> some View {
@@ -135,7 +174,12 @@ private struct ConnectionLauncherView: View {
     }
 
     private func activate() {
-        if searching { if let id = current { pick(id) } } else if let row = tree.first(where: { $0.id == current }) { activate(row) }
+        switch current {
+        case .favorite(let id)?, .recent(let id)?: pick(id)
+        case .tree(let id)?:
+            if searching { pick(id) } else if let row = tree.first(where: { $0.id == id }) { activate(row) }
+        case nil: break
+        }
     }
 
     private func pick(_ id: Connection.ID) {
@@ -158,19 +202,25 @@ private struct ConnectionLauncherView: View {
         selected = ids[min(max(index + delta, 0), ids.count - 1)]
     }
 
+    /// The tree row the selection is on, if it's on one.
+    private var currentTreeIndex: Int? {
+        guard case .tree(let id)? = current else { return nil }
+        return tree.firstIndex { $0.id == id }
+    }
+
     private func expand() -> KeyPress.Result {
-        if let row = tree.first(where: { $0.id == current }), case .folder = row.kind { expanded.insert(row.id) }
+        if let index = currentTreeIndex, case .folder = tree[index].kind { expanded.insert(tree[index].id) }
         return .handled
     }
 
     /// ← closes an open folder; otherwise moves to the parent folder.
     private func collapseOrAscend() -> KeyPress.Result {
         let rows = tree
-        guard let index = rows.firstIndex(where: { $0.id == current }) else { return .handled }
+        guard let index = currentTreeIndex else { return .handled }
         if case .folder(true) = rows[index].kind {
             expanded.remove(rows[index].id)
         } else if let parent = ConnectionTreeRow.parent(of: index, in: rows) {
-            selected = rows[parent].id
+            selected = .tree(rows[parent].id)
         }
         return .handled
     }

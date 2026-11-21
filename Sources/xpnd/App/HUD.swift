@@ -78,6 +78,11 @@ final class HUD {
         }
     }
 
+    /// Leaves anything shown since in place.
+    func hide(ifShowing text: String) {
+        if panel.isVisible, label.stringValue == text { hide() }
+    }
+
     func hide() {
         hideTask?.cancel()
         panel.orderOut(nil)

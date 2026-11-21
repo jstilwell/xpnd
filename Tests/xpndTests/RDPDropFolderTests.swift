@@ -153,6 +153,27 @@ import xpndRDP
         }
     }
 
+    @Test func clearInTurnRemovesTheFolder() async throws {
+        try await inTemp { dir in
+            let id = UUID()
+            _ = try await RDPDropFolder.copyInTurn([try file("a.txt", in: dir)], folder: RDPDropFolder.url(for: id))
+            await RDPDropFolder.clearInTurn(folder: RDPDropFolder.url(for: id))
+            #expect(!FileManager.default.fileExists(atPath: RDPDropFolder.url(for: id).path))
+        }
+    }
+
+    @Test func launchCleanupInTurnRemovesOldFolders() async throws {
+        try await inTemp { dir in
+            let id = UUID()
+            _ = try RDPDropFolder.copyIn([try file("a.txt", in: dir)], folder: RDPDropFolder.url(for: id))
+            let now = Date()
+            try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-9 * 86400)],
+                                                  ofItemAtPath: RDPDropFolder.url(for: id).path)
+            await RDPDropFolder.applyLaunchCleanupInTurn(policy: .after7Days, now: now)
+            #expect(!FileManager.default.fileExists(atPath: RDPDropFolder.url(for: id).path))
+        }
+    }
+
     @Test func cleanupPolicy() {
         let now = Date()
         let old = now.addingTimeInterval(-8 * 86400), recent = now.addingTimeInterval(-86400)
@@ -260,6 +281,7 @@ extension RDPDropFolderTests {
             host.session(s, didDisconnectWithErrorName: "ERRCONNECT_CONNECT_TRANSPORT_FAILED")
             await host.retry?.value
             host.session(s, didDisconnectWithErrorName: "ERRCONNECT_CONNECT_TRANSPORT_FAILED")
+            await host.clearing?.value
             #expect(!FileManager.default.fileExists(atPath: folder.path))
         }
     }
@@ -271,6 +293,7 @@ extension RDPDropFolderTests {
         }
         try await dropHost(.onDisconnect) { host, _, folder in
             host.terminate()
+            await host.clearing?.value
             #expect(!FileManager.default.fileExists(atPath: folder.path))
         }
     }

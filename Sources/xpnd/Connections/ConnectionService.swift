@@ -28,8 +28,18 @@ import Foundation
     private let copySecret: @MainActor (String) async -> Void
     private let prompt: any PasswordPrompting
     private let keysDirectory: URL
-    /// Runs after `connect` returns, so Touch ID and the sudo offer never hold the engine's one-action claim.
+    private let sshConnectDefaults: @MainActor () -> Bool
+    /// Shows (true) or takes down (false, if it still shows) a message while a password manager is asked.
+    private let waiting: @MainActor (String, Bool) -> Void
+    /// Once something launched or opened, for the launcher's Recent list.
+    private let recordRecent: @MainActor (Connection.ID) -> Void
+    // Both run after `connect` returns, so Touch ID and the sudo offer never hold the engine's one-action claim.
+    /// Copies to the clipboard: the next connect cancels it, since its own passwords take the clipboard.
     private(set) var passwordPhase: Task<Void, Never>?
+    /// Offers into a tab, or a desktop's password fetch then its tab: each belongs to its own tab, so a later connect
+    /// leaves it alone.
+    // shortcut: only the latest is kept, so closing the window cancels that one and earlier ones run on (offers end with their tabs); keep a set if a desktop opening after a close bites.
+    private(set) var tabPhase: Task<Void, Never>?
 
     init(
         connections: ConnectionStore, provider: @escaping @MainActor () -> any CredentialProvider, executor: any LaunchExecuting,
@@ -38,7 +48,10 @@ import Foundation
         notify: @escaping @MainActor (String) -> Void, showCopied: @escaping @MainActor (String, TerminalSession.ID) -> Void = { _, _ in },
         tabPasswords: @escaping @MainActor () -> TabPasswordMode = { .clipboard },
         offerInTab: @escaping @MainActor (String, String, TerminalSession.ID, Bool) async -> Bool = { _, _, _, _ in false },
-        copySecret: @escaping @MainActor (String) async -> Void, prompt: any PasswordPrompting, keysDirectory: URL
+        copySecret: @escaping @MainActor (String) async -> Void, prompt: any PasswordPrompting, keysDirectory: URL,
+        sshConnectDefaults: @escaping @MainActor () -> Bool = { false },
+        waiting: @escaping @MainActor (String, Bool) -> Void = { _, _ in },
+        recordRecent: @escaping @MainActor (Connection.ID) -> Void = { _ in }
     ) {
         self.connections = connections
         self.provider = provider
@@ -55,14 +68,20 @@ import Foundation
         self.copySecret = copySecret
         self.prompt = prompt
         self.keysDirectory = keysDirectory
+        self.sshConnectDefaults = sshConnectDefaults
+        self.waiting = waiting
+        self.recordRecent = recordRecent
     }
 
     /// Where a connect went: a built-in tab (which its passwords can be sent into), or another app.
     private enum Launched { case tab(TerminalSession.ID), elsewhere }
 
+    /// Both phases: the window is closing.
     func cancelPasswordPhase() {
         passwordPhase?.cancel()
         passwordPhase = nil
+        tabPhase?.cancel()
+        tabPhase = nil
     }
 
     /// `target`: the app the action was started from, which must still be in front to act.
@@ -72,38 +91,73 @@ import Foundation
     /// (nothing for RDP).
     func connect(_ id: Connection.ID, typedInto target: pid_t?, deletingCharacters: Int = 0, sudo: Bool = false,
                  preferBuiltIn: Bool = false) async {
-        cancelPasswordPhase()
+        passwordPhase?.cancel()
+        passwordPhase = nil
         var library = connections.library // one snapshot, since the file can change across the awaits
         if sudo { library.editConnection(id) { $0.autoSudo = true } }
         guard let connection = library.connection(id) else { return notify("That connection no longer exists.") }
         guard let plan = plan(for: connection, in: library, preferBuiltIn: preferBuiltIn),
               await fetchMissingKeys(for: connection, in: library) else { return }
         if case .rdpTab(let config) = plan {
-            return await openRemoteDesktop(config, for: connection, in: library, into: target, deletingCharacters: deletingCharacters)
+            // The typed string goes now, from the app it was typed in; the tab is xpnd's own, so it can open later.
+            guard await prepareToAct(into: target, deletingCharacters: deletingCharacters) else { return }
+            tabPhase = Task { await openRemoteDesktop(config, for: connection, in: library) }
+            return
         }
         guard let launched = await launch(plan, for: connection, into: target, deletingCharacters: deletingCharacters) else { return }
-        let tab: TerminalSession.ID? = if case .tab(let id) = launched { id } else { nil }
-        passwordPhase = Task { await copyPasswords(for: connection, in: library, tab: tab) }
+        recordRecent(connection.id)
+        if case .tab(let tab) = launched, tabPasswords() != .clipboard {
+            let automatic = tabPasswords() == .sendAutomatically
+            tabPhase = Task { await offerPasswords(for: connection, in: library, tab: tab, automatic: automatic) }
+        } else {
+            let tab: TerminalSession.ID? = if case .tab(let id) = launched { id } else { nil }
+            passwordPhase = Task { await copyPasswords(for: connection, in: library, tab: tab) }
+        }
     }
 
-    /// The passwords are fetched before the tab exists, so Touch ID comes first, and go into the
-    /// tab's session only: nothing is copied. No credential opens the tab with "" and FreeRDP asks.
-    private func openRemoteDesktop(_ config: RDPSessionConfig, for connection: Connection, in library: ConnectionLibrary,
-                                   into target: pid_t?, deletingCharacters: Int) async {
-        var password = "", gatewayPassword: String?
-        do throws(CredentialError) {
-            if let login = library.loginCredential(for: connection.id)?.ref, login.hasPassword {
-                password = try await provider().password(for: login)
+    static func waitingText(for ref: CredentialRef) -> String {
+        ref.provider == KeychainProvider.id ? "Waiting for the Keychain…" : "Waiting for 1Password…"
+    }
+
+    /// The passwords are fetched before the tab exists and go into the tab's session only: nothing is copied. A
+    /// password that isn't there ("") is left unset, so FreeRDP asks for it; any other failure opens nothing.
+    private func openRemoteDesktop(_ config: RDPSessionConfig, for connection: Connection, in library: ConnectionLibrary) async {
+        let login = library.loginCredential(for: connection.id).map(\.ref).flatMap { $0.hasPassword ? $0 : nil }
+        let asked = (login ?? config.gateway?.credential).map(Self.waitingText)
+        if let asked { waiting(asked, true) }
+        var missing: String?
+        func fetch(_ ref: CredentialRef) async throws(CredentialError) -> String {
+            do throws(CredentialError) {
+                return try await provider().password(for: ref)
+            } catch {
+                switch error {
+                case .notFound, .noPassword:
+                    missing = missing ?? error.message
+                    return ""
+                default: throw error
+                }
             }
-            if let gateway = config.gateway {
-                // Same credentials: FreeRDP's core never copies the login password to the gateway itself.
-                gatewayPassword = if let ref = gateway.credential { try await provider().password(for: ref) } else { password }
-            }
-        } catch {
-            return notify(error.message)
         }
-        guard await prepareToAct(into: target, deletingCharacters: deletingCharacters) else { return }
-        _ = openTab(.remoteDesktop(config, password: password, gatewayPassword: gatewayPassword), connection)
+        let passwords: Result<(String, String?), CredentialError>
+        do throws(CredentialError) {
+            let password = if let login { try await fetch(login) } else { "" }
+            // Same credentials: FreeRDP's core never copies the login password to the gateway itself.
+            let gateway: String? = if let gateway = config.gateway {
+                if let ref = gateway.credential { try await fetch(ref) } else { password }
+            } else { nil }
+            passwords = .success((password, gateway))
+        } catch {
+            passwords = .failure(error)
+        }
+        if let asked { waiting(asked, false) }
+        guard !Task.isCancelled else { return }
+        switch passwords {
+        case .failure(let error):
+            notify(error.message)
+        case .success(let (password, gateway)):
+            if let missing { notify(missing + " Windows will ask for the password.") }
+            if openTab(.remoteDesktop(config, password: password, gatewayPassword: gateway), connection) != nil { recordRecent(connection.id) }
+        }
     }
 
     /// Runs first, before any provider call: a connection that can't be built shouldn't ask for Touch ID.
@@ -121,7 +175,8 @@ import Foundation
             }
             let command: SSHCommand
             do throws(SSHCommandError) {
-                command = try SSHCommandBuilder.build(connection.id, in: library, keysDirectory: keysDirectory)
+                command = try SSHCommandBuilder.build(connection.id, in: library, keysDirectory: keysDirectory,
+                                                       connectDefaults: sshConnectDefaults())
             } catch {
                 notify(error.message)
                 return nil
@@ -200,9 +255,6 @@ import Foundation
     }
 
     private func copyPasswords(for connection: Connection, in library: ConnectionLibrary, tab: TerminalSession.ID?) async {
-        if let tab, tabPasswords() != .clipboard {
-            return await offerPasswords(for: connection, in: library, tab: tab, automatic: tabPasswords() == .sendAutomatically)
-        }
         let name = connection.name
         let login = library.loginCredential(for: connection.id)?.ref
         let needsLogin = login?.hasPassword == true

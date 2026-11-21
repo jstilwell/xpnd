@@ -59,6 +59,8 @@ extension XPRDPSession: RDPSessionControlling {}
     /// A rejected login reconnected to ask, and no sheet has been asked for since. Another rejection then
     /// means FreeRDP sent stored credentials without asking, so the tab ends instead of looping.
     private var awaitingPrompt = false
+    /// The policy's clear of the drop folder, once the session has ended; tests await it.
+    private(set) var clearing: Task<Void, Never>?
     /// The rejection whose password sheet was cancelled: the tab ends with it, not with "cancelled".
     private var cancelledAfter: String?
     /// Internal for tests, which await it.
@@ -215,8 +217,7 @@ extension XPRDPSession: RDPSessionControlling {}
         guard let folder = config.dropFolder,
               RDPDropFolder.shouldClear(policy: cleanup(), lastUse: nil, now: Date(), disconnecting: true) else { return }
         // shortcut: duplicate tabs of a connection share one folder, so one ending clears it for the other; track open tabs per connection to fix.
-        // shortcut: a copy still running or queued recreates the folder after this, and it stays until the connection next ends; clear on the copy queue if that bites.
-        try? RDPDropFolder.clear(folder: URL(fileURLWithPath: folder))
+        clearing = Task { await RDPDropFolder.clearInTurn(folder: URL(fileURLWithPath: folder)) }
     }
 
     private func present(_ prompt: some View, orElse refuse: () -> Void) {

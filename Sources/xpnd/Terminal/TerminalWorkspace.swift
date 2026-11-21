@@ -37,9 +37,13 @@ struct TerminalWorkspace: View {
                 switch session.state {
                 case .running: EmptyView()
                 case .ended(let status):
-                    endedBar(status.map { "Session ended (exit \($0))" } ?? "Session ended (signal)", session)
+                    // A desktop's end is `.disconnected`; an ended terminal reconnects with a fresh connect, passwords included.
+                    endedBar(TerminalSessions.endedText(status), session) {
+                        sessions.replaceOnNextOpen(session.id)
+                        duplicate(session.connectionID)
+                    }
                 case .disconnected(let reason):
-                    endedBar("Disconnected: \(reason)", session, reconnect: true)
+                    endedBar("Disconnected: \(reason)", session) { sessions.reconnect(session.id) }
                 }
             }
         }
@@ -143,11 +147,11 @@ struct TerminalWorkspace: View {
         }
     }
 
-    private func endedBar(_ text: String, _ session: TerminalSession, reconnect: Bool = false) -> some View {
+    private func endedBar(_ text: String, _ session: TerminalSession, reconnect: @escaping () -> Void) -> some View {
         HStack {
             Text(text)
             Spacer()
-            if reconnect { Button("Reconnect") { sessions.reconnect(session.id) } }
+            Button("Reconnect", action: reconnect)
             Button("Close") { sessions.close(session.id) }
         }
         .padding(8)

@@ -158,16 +158,42 @@ extension TerminalHost {
         self.makeHost = makeHost
     }
 
+    /// Ended tabs a Reconnect asked to replace, by connection: that connection's next `open` takes the tab's place.
+    private var replacements: [Connection.ID: TerminalSession.ID] = [:]
+
+    /// `replacing`: an ended tab whose place the new one takes (else, the one `replaceOnNextOpen` named); a tab
+    /// that isn't ended, or is gone, is left alone and the new one goes last.
     @discardableResult
-    func open(_ request: TabRequest, for connection: Connection, color: ItemColor?) -> TerminalSession.ID {
+    func open(_ request: TabRequest, for connection: Connection, color: ItemColor?,
+              replacing: TerminalSession.ID? = nil) -> TerminalSession.ID {
         let session = TerminalSession(connection: connection, kind: request.kind, color: color, host: makeHost(request))
         let id = session.id
         session.host.onExit = { [weak self] status in self?.ended(id, status) }
         session.host.onDisconnect = { [weak self] reason in self?.disconnected(id, reason) }
         session.host.onReconnecting = { [weak self] in self?.reconnecting(id) }
-        sessions.append(session)
+        let old = replacing ?? replacements.removeValue(forKey: connection.id)
+        if let index = sessions.firstIndex(where: { $0.id == old }), case .ended = sessions[index].state {
+            sessions[index] = session // an ended host has nothing left to terminate
+        } else {
+            sessions.append(session)
+        }
         selected = id
         return id
+    }
+
+    /// The ended tab `id`'s Reconnect: the connect that follows opens in its place.
+    func replaceOnNextOpen(_ id: TerminalSession.ID) {
+        guard let session = sessions.first(where: { $0.id == id }), case .ended = session.state else { return }
+        replacements[session.connectionID] = id
+    }
+
+    /// The bar under an ended tab. ssh exits 255 when it couldn't connect, and has printed why above.
+    static func endedText(_ status: Int32?) -> String {
+        switch status {
+        case 255?: "ssh couldn't connect (see the message above)"
+        case let status?: "Session ended (exit \(status))"
+        case nil: "Session ended (signal)"
+        }
     }
 
     /// Over the tab `id` (the one the connect opened), for as long as the clipboard keeps the password. Another tab of

@@ -44,6 +44,13 @@ struct TerminalSettingsView: View {
                 Text("When one of these is in front, connecting types the command into it.")
                     .font(.callout).foregroundStyle(.secondary)
             }
+            Section("SSH") {
+                VStack(alignment: .leading) {
+                    Toggle("Add a connect timeout and keepalive", isOn: $settings.sshConnectDefaults)
+                    Text("ssh gives up after 15 seconds and checks a quiet session every 30. These override ~/.ssh/config, so turn this off if you set them there.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
             Section("When no terminal is in front") {
                 Picker("Open in", selection: $mode) {
                     ForEach(Self.modes, id: \.self) { Text(Self.label($0)).tag($0) }

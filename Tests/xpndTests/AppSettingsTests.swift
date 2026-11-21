@@ -38,4 +38,23 @@ struct AppSettingsTests {
         #expect(AppSettings(defaults: defaults).onePasswordPath == nil)
         #expect(AppSettings(defaults: defaults).onePasswordAccount == "ACCT1")
     }
+
+    @Test func sshConnectDefaultsStartOnAndPersist() throws {
+        let suite = "AppSettingsTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        #expect(AppSettings(defaults: defaults).sshConnectDefaults)
+        AppSettings(defaults: defaults).sshConnectDefaults = false
+        #expect(!AppSettings(defaults: defaults).sshConnectDefaults)
+    }
+
+    @Test func recentConnectionsPersist() throws {
+        let suite = "AppSettingsTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        #expect(AppSettings(defaults: defaults).recentConnections.isEmpty)
+        let ids = [UUID(), UUID()]
+        AppSettings(defaults: defaults).recentConnections = ids
+        #expect(AppSettings(defaults: defaults).recentConnections == ids)
+    }
 }

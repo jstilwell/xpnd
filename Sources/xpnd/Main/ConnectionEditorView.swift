@@ -69,6 +69,8 @@ struct ConnectionEditorView: View {
                                 inherited: library.path(of: connection.id).last.flatMap { library.color(for: .folder($0.id)) }) { color in
                         editing.edit(connection: connection.id) { $0.color = color }
                     }
+                    Toggle("Favorite", isOn: binding(\.favorite))
+                        .help("Favorites are listed first in the connection launcher.")
                 }
                 Section("Credentials") {
                     CredentialRow(title: "Login", editing: editing, resolved: login, own: connection.credential) { ref in
@@ -84,6 +86,14 @@ struct ConnectionEditorView: View {
                 }
                 if connection.type == .ssh { advanced(library) }
                 if connection.type == .rdp { rdpOptions }
+                Section("Notes") {
+                    CommittingTextField("Notes", text: connection.notes ?? "", prompt: Text("Anything to remember about this host"),
+                                        axis: .vertical) { notes in
+                        editing.edit(connection: connection.id) { $0.notes = notes.isEmpty ? nil : notes }
+                    }
+                    .labelsHidden()
+                    .lineLimit(3...12)
+                }
             }
             .formStyle(.grouped)
             .disabled(editing.readOnly)

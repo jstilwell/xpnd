@@ -18,6 +18,8 @@ final class AppSettings {
         static let usesKeychain = "usesKeychain"
         static let tabPasswords = "tabPasswords"
         static let typesKeystrokes = "typesKeystrokes"
+        static let sshConnectDefaults = "sshConnectDefaults"
+        static let recentConnections = "recentConnections"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -68,9 +70,17 @@ final class AppSettings {
     /// Type every snippet as keystrokes instead of pasting; off, only remote-desktop apps get typed.
     var typesKeystrokes: Bool { didSet { defaults.set(typesKeystrokes, forKey: Key.typesKeystrokes) } }
 
+    /// Adds `SSHCommandBuilder.connectDefaults` to every ssh command.
+    var sshConnectDefaults: Bool { didSet { defaults.set(sshConnectDefaults, forKey: Key.sshConnectDefaults) } }
+
+    /// Connection ids, newest first (`ConnectionFilter.recording`). Ids only: this Mac's, so not in the connections file.
+    var recentConnections: [Connection.ID] {
+        didSet { defaults.set(recentConnections.map(\.uuidString), forKey: Key.recentConnections) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        defaults.register(defaults: [Key.expansionEnabled: true])
+        defaults.register(defaults: [Key.expansionEnabled: true, Key.sshConnectDefaults: true])
         expansionEnabled = defaults.bool(forKey: Key.expansionEnabled)
         if let data = defaults.data(forKey: Key.pickerShortcut) {
             pickerShortcut = try? JSONDecoder().decode(Shortcut.self, from: data)
@@ -88,6 +98,8 @@ final class AppSettings {
         onePasswordPath = defaults.string(forKey: Key.onePasswordPath)
         onePasswordAccount = defaults.string(forKey: Key.onePasswordAccount)
         typesKeystrokes = defaults.bool(forKey: Key.typesKeystrokes)
+        sshConnectDefaults = defaults.bool(forKey: Key.sshConnectDefaults)
+        recentConnections = (defaults.stringArray(forKey: Key.recentConnections) ?? []).compactMap(UUID.init(uuidString:))
         usesKeychain = defaults.bool(forKey: Key.usesKeychain)
         tabPasswords = defaults.string(forKey: Key.tabPasswords).flatMap(TabPasswordMode.init) ?? .clipboard
     }

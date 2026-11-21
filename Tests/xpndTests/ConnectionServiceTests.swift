@@ -130,6 +130,10 @@ private let sudo = ref("sudo", .password)
     var tabPasswords = TabPasswordMode.clipboard
     /// What a tab's offer answers: true as if the password went in.
     var offerAccepted = true
+    var connectDefaults = false
+    /// The HUD's waiting messages: shown, then taken down.
+    var waits: [String] = []
+    var recorded: [Connection.ID] = []
 
     init(library: ConnectionLibrary) throws {
         provider = FakeProvider(log: log)
@@ -171,7 +175,9 @@ private let sudo = ref("sudo", .password)
                 onCopy()
                 log.events.append("copy \(secret)")
             },
-            prompt: prompt, keysDirectory: keys)
+            prompt: prompt, keysDirectory: keys, sshConnectDefaults: { [unowned self] in connectDefaults },
+            waiting: { [unowned self] text, shown in waits.append((shown ? "show " : "hide ") + text) },
+            recordRecent: { [unowned self] in recorded.append($0) })
     }
 
     func connect(_ connection: Connection, typedInto target: pid_t? = terminalPID, deleting: Int = 0, sudo: Bool = false,
@@ -179,6 +185,7 @@ private let sudo = ref("sudo", .password)
         let service = service()
         await service.connect(connection.id, typedInto: target, deletingCharacters: deleting, sudo: sudo, preferBuiltIn: preferBuiltIn)
         await service.passwordPhase?.value
+        await service.tabPhase?.value
     }
 
     func writeKey(_ ref: CredentialRef) throws {
@@ -754,9 +761,9 @@ struct ConnectionServiceTests {
         var win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
         win.rdp = RDPOptions(gateway: .init(host: "gw.example", credential: ref("gw", .login)))
         let h = try Harness(win)
-        h.provider.passwordFailures = ["gw": .notFound("gw")]
+        h.provider.passwordFailures = ["gw": .locked]
         await h.connect(win)
-        #expect(h.log.events == ["password login", "password gw", "notify \(CredentialError.notFound("gw").message)"])
+        #expect(h.log.events == ["password login", "password gw", "notify \(CredentialError.locked.message)"])
         #expect(h.opened.isEmpty)
     }
 
@@ -764,11 +771,97 @@ struct ConnectionServiceTests {
         let win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
         let h = try Harness(win)
         await h.connect(win, deleting: 3, sudo: true)
-        #expect(h.log.events == ["password login", "backspace x3", "tab win (remoteDesktop)"])
+        #expect(h.log.events == ["backspace x3", "password login", "tab win (remoteDesktop)"])
         let moved = try Harness(win)
         moved.front = inSafari
         await moved.connect(win)
-        #expect(moved.log.events == ["password login", "notify \(ExpansionError.targetAppChanged.message)"])
+        #expect(moved.log.events == ["notify \(ExpansionError.targetAppChanged.message)"])
         #expect(moved.opened.isEmpty)
+    }
+
+    @Test func connectDefaultsSettingReachesTheCommand() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3")
+        let h = try Harness(aws)
+        h.connectDefaults = true
+        await h.connect(aws, typedInto: nil, preferBuiltIn: true)
+        let expected = try SSHCommandBuilder.build(aws.id, in: h.store.library, keysDirectory: h.keys, connectDefaults: true)
+        #expect(h.opened.count == 1 && h.opened[0].0 == .terminal(expected))
+    }
+
+    @Test func rdpOpensAfterConnectReturns() async throws {
+        let win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
+        let h = try Harness(win)
+        h.provider.held = ["login"]
+        let service = h.service()
+        await service.connect(win.id, typedInto: terminalPID) // would never return if the claim waited for Touch ID
+        #expect(await eventually { h.provider.isHolding("login") })
+        #expect(h.opened.isEmpty)
+        h.provider.release("login")
+        await service.tabPhase?.value
+        #expect(h.opened.count == 1)
+    }
+
+    @Test func rdpSaysItIsWaitingForThePasswordManager() async throws {
+        let win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
+        let h = try Harness(win)
+        await h.connect(win)
+        #expect(h.waits == ["show Waiting for 1Password…", "hide Waiting for 1Password…"])
+        var keychain = login
+        keychain.provider = KeychainProvider.id
+        let k = try Harness(Connection(name: "k", type: .rdp, host: "k.example", credential: keychain))
+        await k.connect(try #require(k.store.library.allConnections.first))
+        #expect(k.waits == ["show Waiting for the Keychain…", "hide Waiting for the Keychain…"])
+        let none = Connection(name: "none", type: .rdp, host: "none.example")
+        let n = try Harness(none)
+        await n.connect(none)
+        #expect(n.waits.isEmpty)
+    }
+
+    @Test(arguments: [CredentialError.notFound("login"), .noPassword("login")])
+    func rdpMissingPasswordOpensTheTabSoWindowsAsks(_ failure: CredentialError) async throws {
+        let win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
+        let h = try Harness(win)
+        h.provider.passwordFailures = ["login": failure]
+        await h.connect(win)
+        #expect(h.log.events == ["password login", "notify \(failure.message) Windows will ask for the password.", "tab win (remoteDesktop)"])
+        #expect(try h.desktop().password == "")
+    }
+
+    @Test func newerConnectKeepsATabOffer() async throws {
+        let (a, b) = (ref("a", .login), ref("b", .login))
+        let older = Connection(name: "older", host: "older", credential: a)
+        let newer = Connection(name: "newer", host: "newer", credential: b)
+        let h = try Harness(older, newer)
+        h.tabPasswords = .sendOnClick
+        h.provider.held = ["a"]
+        let service = h.service()
+        await service.connect(older.id, typedInto: nil, preferBuiltIn: true)
+        let first = try #require(service.tabPhase)
+        #expect(await eventually { h.provider.isHolding("a") })
+        await service.connect(newer.id, typedInto: nil, preferBuiltIn: true)
+        h.provider.release("a")
+        await first.value
+        await service.tabPhase?.value
+        #expect(h.log.events.contains("offer Password secret-a"))
+        #expect(h.log.events.contains("offer Password secret-b"))
+    }
+
+    @Test func connectRecordsARecentOnlyOnceSomethingOpened() async throws {
+        let aws = Connection(name: "aws", host: "54.1.2.3")
+        let h = try Harness(aws)
+        await h.connect(aws)
+        #expect(h.recorded == [aws.id])
+        let moved = try Harness(aws)
+        moved.front = inSafari
+        await moved.connect(aws)
+        #expect(moved.recorded.isEmpty)
+        let win = Connection(name: "win", type: .rdp, host: "win.example", credential: login)
+        let r = try Harness(win)
+        await r.connect(win)
+        #expect(r.recorded == [win.id])
+        let locked = try Harness(win)
+        locked.provider.passwordFailures = ["login": .locked]
+        await locked.connect(win)
+        #expect(locked.recorded.isEmpty)
     }
 }

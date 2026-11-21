@@ -367,4 +367,23 @@ private let controlValues = ["a\nb", "a\tb", "x\u{15}touch M\r", "\r", "\u{1b}[2
         #expect(levels == 5)
         #expect(arguments.contains(#"Tag="it\'s""#))
     }
+
+    @Test func connectDefaultsFollowTheConnectionsOwnOptions() throws {
+        let c = Connection(name: "a", host: "host", sshOptions: "-o ConnectTimeout=5", autoSudo: true)
+        let command = try SSHCommandBuilder.build(c.id, in: library([c]), keysDirectory: keys, connectDefaults: true)
+        #expect(command.arguments == ["ssh", "-o", "ConnectTimeout=5", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=30",
+                                      "-t", "host", "sudo", "-i"])
+    }
+
+    @Test func connectDefaultsAreOffByDefault() throws {
+        #expect(try build(Connection(name: "a", host: "host")).arguments == ["ssh", "host"])
+    }
+
+    @Test func jumpHopsDontGetConnectDefaults() throws {
+        let jump = Connection(name: "j", host: "bastion", credential: ref("k", .sshKey))
+        let c = Connection(name: "a", host: "host", jumpHost: .connection(jump.id))
+        let command = try SSHCommandBuilder.build(c.id, in: library([c, jump]), keysDirectory: keys, connectDefaults: true)
+        #expect(!(try proxyCommand(command)).contains("ConnectTimeout"))
+        #expect(command.arguments.filter { $0 == "ConnectTimeout=15" }.count == 1)
+    }
 }

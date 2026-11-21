@@ -18,7 +18,14 @@ extension AppDelegate {
             },
             copySecret: { [weak self] secret in await self?.engine.whenIdle { SecretClipboard.copy(secret) } },
             prompt: PasswordPrompt(),
-            keysDirectory: keysDirectory
+            keysDirectory: keysDirectory,
+            sshConnectDefaults: { AppSettings.shared.sshConnectDefaults },
+            waiting: { text, shown in if shown { hud.show(text) } else { hud.hide(ifShowing: text) } },
+            recordRecent: { [weak self] id in
+                guard let self else { return }
+                let existing = Set(connections.library.allConnections.map(\.id))
+                AppSettings.shared.recentConnections = ConnectionFilter.recording(id, in: AppSettings.shared.recentConnections, keeping: existing)
+            }
         )
     }
 

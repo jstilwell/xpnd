@@ -15,7 +15,7 @@ expansion, restored after the app reads; combo limits; clearer Shortcuts and scr
 off main, favourites and recents, Reconnect, `~/.ssh/config` import, FreeRDP prompt fallback, notes, RDP frame-copy check.
 **Success Criteria**: `make test` and `make app` pass; launcher shows favourites/recents with an empty query.
 **Tests**: `ConnectionServiceTests`, `SSHCommandTests`, `ConnectionFilterTests`, `ConnectionImportTests`, `ConnectionYAMLTests`, `TerminalSessionsTests`.
-**Status**: Not Started (`feature/connection-improvements`)
+**Status**: Complete (`feature/connection-improvements`, PR open)
 
 ## Stage 3: Main window and settings
 **Goal**: Undo that restores only affected items, commit-on-save keyword fields, fuller context menus, standard menus,

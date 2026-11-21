@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## 0.5.0 - Unreleased
 
+### Added
+- Favorites: star a connection in its Details or right-click menu. With nothing typed, the connection launcher lists your favorites and your last five connections above the folders, and while you search they come first among equal matches.
+- Notes on a connection: free text in its Details, which the launcher searches too.
+- Settings → Import/Export → Import from SSH Config… adds the hosts in `~/.ssh/config` (HostName, User, Port, IdentityFile, ProxyJump), through the same preview as any import. Patterns like `Host *`, `Include` and `Match` are left out and the preview says so.
+- A built-in tab whose ssh failed shows Reconnect, which connects again in the same tab position. Exit status 255 now reads "ssh couldn't connect" instead of a bare number.
+- ssh connections get a 15-second connect timeout and a 30-second keepalive, after a connection's own SSH options. Turn it off in Settings → Terminal if you set them in `~/.ssh/config`.
+
 ### Changed
 - A strict snippet (the default) now expands when you finish the word, on the space or punctuation after its keyword, which is typed back after the text: `;sig ` becomes `Best `. It no longer fires inside a longer word (`the` in "then"), and a keyword can follow `(` or a quote. Return and Tab don't expand it. Loose snippets still expand the moment you type them.
 - The warning that one keyword starts another now appears only when the shorter one fires at once: a loose snippet, or a connection or folder string.
@@ -12,6 +19,9 @@ All notable changes to this project will be documented in this file.
 - A snippet pasted into a slow app (Electron or Office under load) no longer pastes your old clipboard instead: xpnd now waits until the app has read the snippet, up to a second, before putting your clipboard back. Your clipboard is saved once per snippet rather than at each piece of text, and is put back before a keyboard shortcut, delay, Open App or Run Shortcut, so `#{shortcut:Cmd+V}` pastes your clipboard and a Shortcut never reads the snippet's text.
 - A snippet that includes itself, directly or through others, now says so instead of pasting `#{combo:…}` as text, and snippets nested too deeply (over 16 levels, or so many copies that they would freeze xpnd) stop with a message before anything is typed.
 - A Run Shortcut snippet lists your Shortcuts once instead of twice, and when the list can't be read it says so instead of claiming the Shortcut doesn't exist. A script without execute permission says to run `chmod +x` instead of "No script was found".
+- While 1Password or the Keychain waits for Touch ID to open a Windows desktop, snippets and other connections keep working, and a HUD says what it's waiting for. If the item or its password is missing, the desktop opens and Windows asks for the password instead of stopping.
+- Connecting to a second host no longer cancels a password still waiting to be sent into the first host's tab.
+- Clearing a Windows desktop's drop folder no longer runs on the main thread, so a large folder can't stall the app, and a copy still in progress can't recreate it afterwards.
 - Keys typed while a snippet expands are no longer lost or put in front of it: typing `;sig` and carrying on quickly kept the space and let the backspaces eat the keyword's last letters instead. They're typed again after the snippet. If an arrow, Return or other key may have moved the cursor meanwhile, the snippet is cancelled and says so, rather than deleting the wrong text.
 
 ## 0.4.0 - 11-15-2026
