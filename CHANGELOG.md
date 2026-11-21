@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.5.0 - Unreleased
+## 0.5.0 - 11-21-2026
 
 ### Added
 - Favorites: star a connection in its Details or right-click menu. With nothing typed, the connection launcher lists your favorites and your last five connections above the folders, and while you search they come first among equal matches.
