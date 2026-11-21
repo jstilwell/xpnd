@@ -501,11 +501,28 @@ final class ConnectionEditing {
         guard save({ removed = $0.remove(item); return removed != nil }), let removed else { return false }
         if let undo, let place {
             undo.registerUndo(withTarget: self) { editing in
-                MainActor.assumeIsolated { _ = editing.save { $0.restore(removed, at: place) } }
+                MainActor.assumeIsolated { editing.restore(removed, at: place) }
             }
             undo.setActionName("Delete “\(name)”")
         }
         return true
+    }
+
+    /// Undo of a delete. A string a snippet took meanwhile stays the snippet's (one file's save can't see the other's),
+    /// so the item comes back without it, and says so.
+    private func restore(_ removed: ConnectionLibrary.Removed, at place: ConnectionPlacement) {
+        let keywords = Set(snippets.library.groups.flatMap(\.snippets).map(\.keyword))
+        let wrapped = switch removed {
+        case .connection(let c): ConnectionLibrary(folders: [ConnectionFolder(name: "", connections: [c])])
+        case .folder(let f): ConnectionLibrary(folders: [f])
+        }
+        let (kept, taken) = ConnectionImport.removing(keywords, from: wrapped)
+        let back: ConnectionLibrary.Removed = switch removed {
+        case .connection: .connection(kept.folders[0].connections[0])
+        case .folder: .folder(kept.folders[0])
+        }
+        guard save({ $0.restore(back, at: place) }), !taken.isEmpty else { return }
+        saveProblem = "Snippets now use \(taken.joined(separator: ", ")), so it came back without \(taken.count == 1 ? "that string" : "those strings")."
     }
 
     private func displayName(of item: SidebarItem) -> String {

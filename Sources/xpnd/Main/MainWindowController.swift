@@ -58,7 +58,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 model.hideEditor()
                 sessions.focusSelected()
             })
-        let snippetEditing = SnippetEditing(store: store)
+        let snippetEditing = SnippetEditing(store: store, connections: connections)
         connectionEditing = editing
         self.snippetEditing = snippetEditing
         let host = NSHostingController(rootView: MainView(
@@ -121,6 +121,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func find() {
         model.searching = true
+    }
+
+    /// Whether xpnd's menus take ⌘N, ⌘F, ⌘M and ⌘H: not in a desktop tab, where they went to Windows before.
+    nonisolated static func menuTakesKeys(focusedSessionKind: TerminalSession.Kind?) -> Bool {
+        focusedSessionKind != .remoteDesktop
     }
 
     /// Whether the keyboard is in a session's terminal or desktop.

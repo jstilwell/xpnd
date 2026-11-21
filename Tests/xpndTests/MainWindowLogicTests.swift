@@ -481,4 +481,58 @@ private struct TwoAccountProvider: CredentialProvider {
         #expect(editing.snippet(copy)?.name == "New Snippet 2")
         #expect(editing.snippet(copy)?.text == original.text)
     }
+
+    // MARK: Review fixes
+
+    /// I3: a keyword the format rules refuse with any suffix (a space in it, from a hand-edited file) used to loop forever.
+    @MainActor @Test func duplicateGivesUpWhenNoKeywordIsFree() throws {
+        let (editing, directory) = snippetEditing()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try editing.store.update { $0.groups = [SnippetGroup(name: "G", snippets: [Snippet(name: "s", keyword: "a b", text: "x")])] }
+        let original = try #require(editing.store.library.groups.first?.snippets.first)
+        #expect(editing.duplicateSnippet(original, connections: .empty) == nil)
+        #expect(editing.saveProblem != nil)
+    }
+
+    /// I2: a snippet keyword taken by a connection meanwhile: the undo says so and adds no clash.
+    @MainActor @Test func undoDeleteSnippetRefusesAKeywordAConnectionTookMeanwhile() throws {
+        let (connections, directory) = editing(TwoAccountProvider())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let snippets = SnippetEditing(store: connections.snippets, connections: connections.store)
+        let g = try #require(snippets.addGroup())
+        let group = try #require(snippets.group(g))
+        let s = try #require(snippets.addSnippet(to: group, connections: .empty))
+        let undo = undoManager()
+        let snippet = try #require(snippets.snippet(s))
+        #expect(act(undo) { snippets.deleteSnippet(snippet, undo: undo) })
+        let folder = try #require(connections.addFolder(in: nil))
+        let c = try #require(connections.addConnection(in: folder))
+        connections.edit(connection: c) { $0.activation = ";new" }
+        undo.undo()
+        #expect(snippets.snippet(s) == nil)
+        #expect(snippets.saveProblem?.contains(";new") == true)
+    }
+
+    /// I2: a connection's string taken by a snippet meanwhile: it comes back without it, and says so.
+    @MainActor @Test func undoDeleteConnectionComesBackWithoutAStringASnippetTook() throws {
+        let (connections, directory) = editing(TwoAccountProvider())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let folder = try #require(connections.addFolder(in: nil))
+        let c = try #require(connections.addConnection(in: folder))
+        connections.edit(connection: c) { $0.activation = ";web" }
+        let undo = undoManager()
+        #expect(act(undo) { connections.delete(.connection(c), undo: undo) })
+        try connections.snippets.update { $0.groups = [SnippetGroup(name: "G", snippets: [Snippet(name: "w", keyword: ";web", text: "x")])] }
+        undo.undo()
+        #expect(connections.library.connection(c) != nil)
+        #expect(connections.library.connection(c)?.activation == nil)
+        #expect(connections.saveProblem?.contains(";web") == true)
+    }
+
+    /// I1: ⌘N, ⌘F, ⌘M and ⌘H go to Windows in a desktop tab, as before the File menu.
+    @MainActor @Test func menuKeysStepAsideForADesktop() {
+        #expect(!MainWindowController.menuTakesKeys(focusedSessionKind: .remoteDesktop))
+        #expect(MainWindowController.menuTakesKeys(focusedSessionKind: .terminal))
+        #expect(MainWindowController.menuTakesKeys(focusedSessionKind: nil))
+    }
 }

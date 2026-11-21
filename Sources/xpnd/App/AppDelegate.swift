@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private(set) var statusItem: NSStatusItem!
     private(set) var menu = NSMenu()
 
@@ -223,8 +223,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.items = [
             item("About xpnd", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), target: NSApp), .separator(),
             item("Settings…", #selector(showSettings), ",", target: self), .separator(),
-            item("Hide xpnd", #selector(NSApplication.hide(_:)), "h"),
-            item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            item("Hide xpnd", #selector(hideApp), "h", target: self),
+            item("Hide Others", #selector(hideOthers), "h", [.command, .option], target: self),
             item("Show All", #selector(NSApplication.unhideAllApplications(_:))), .separator(),
             item("Quit xpnd", #selector(NSApplication.terminate(_:)), "q"),
         ]
@@ -250,7 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ]
         let windowMenu = NSMenu(title: "Window")
         windowMenu.items = [
-            item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+            item("Minimize", #selector(minimizeWindow), "m", target: self),
             NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"),
         ]
         NSApp.windowsMenu = windowMenu
@@ -346,6 +346,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openPicker() {
         picker.toggle()
     }
+
+    /// Items whose keys a desktop tab keeps: disabled there, so the key falls through to Windows as before.
+    private static let desktopKeys: Set<Selector> = [
+        #selector(newSnippet), #selector(newSnippetGroup), #selector(newConnection), #selector(findInMainWindow),
+        #selector(hideApp), #selector(hideOthers), #selector(minimizeWindow),
+    ]
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard let action = item.action, Self.desktopKeys.contains(action) else { return true }
+        return MainWindowController.menuTakesKeys(focusedSessionKind: mainWindow?.focusedSessionKind)
+    }
+
+    @objc private func hideApp() { NSApp.hide(nil) }
+    @objc private func hideOthers() { NSApp.hideOtherApplications(nil) }
+    @objc private func minimizeWindow() { NSApp.keyWindow?.performMiniaturize(nil) }
 
     @objc private func openLauncher() {
         launcherHotKey.action?()
