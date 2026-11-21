@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import xpnd
 
@@ -47,5 +48,13 @@ struct TemplateTests {
         #expect(Template.parse(#"#{input:a\nb}"#) == [
             .variable(name: "input", argument: #"a\nb"#, raw: #"#{input:a\nb}"#),
         ])
+    }
+
+    @Test func rangesAreUTF16() {
+        let marks = Template.parseWithRanges("👍🏽 #{date} x")
+        #expect(marks.count == 3)
+        #expect(marks[1].range == NSRange(location: 5, length: 7))
+        #expect(marks[1].token == .variable(name: "date", argument: nil, raw: "#{date}"))
+        #expect(marks[2].range == NSRange(location: 12, length: 2))
     }
 }

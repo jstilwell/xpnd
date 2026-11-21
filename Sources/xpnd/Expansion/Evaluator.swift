@@ -41,14 +41,15 @@ enum Evaluator {
         for token in Template.parse(snippet.text) {
             budget -= 1
             guard budget >= 0 else { throw .comboTooDeep }
-            guard case let .variable(name, argument?, _) = token, !argument.isEmpty else { continue }
-            switch name {
-            case "input" where !labels.contains(argument):
-                labels.append(argument)
-            case "combo", "upper", "lower":
-                if stack.contains(argument) { throw .comboCycle(argument) }
+            guard case let .variable(name, argument, _) = token, case .success(let variable) = Variable.parse(name: name, argument: argument)
+            else { continue }
+            switch variable {
+            case .input(let label, _) where !labels.contains(label):
+                labels.append(label)
+            case .snippet(let keyword, _):
+                if stack.contains(keyword) { throw .comboCycle(keyword) }
                 guard stack.count <= maxDepth else { throw .comboTooDeep }
-                guard let nested = context.snippet(keyword: argument) else { throw .missingCombo(argument) }
+                guard let nested = context.snippet(keyword: keyword) else { throw .missingCombo(keyword) }
                 try collectInputs(nested, context: context, stack: stack, into: &labels, budget: &budget)
             default:
                 break
@@ -67,7 +68,11 @@ enum Evaluator {
             case .text(let s):
                 items.append(.step(.paste(s)))
             case let .variable(name, argument, raw):
-                let resolved = try await resolve(name, argument, context: context, answers: answers, stack: stack)
+                guard case .success(let variable) = Variable.parse(name: name, argument: argument) else {
+                    items.append(.step(.paste(raw)))
+                    continue
+                }
+                let resolved = try await resolve(variable, context: context, answers: answers, stack: stack)
                 items += resolved ?? [.step(.paste(raw))]
             }
         }
@@ -75,102 +80,54 @@ enum Evaluator {
     }
 
     private static func resolve(
-        _ name: String, _ argument: String?, context: some EvaluationContext, answers: [String: String], stack: [String]
+        _ variable: Variable, context: some EvaluationContext, answers: [String: String], stack: [String]
     ) async throws(ExpansionError) -> [Item]? {
         func text(_ s: String) -> [Item] { [.step(.paste(s))] }
         func step(_ s: PlayStep) -> [Item] { [.step(s)] }
 
-        guard let arg = argument else {
-            switch name {
-            case "clipboard": return text(await context.clipboardText() ?? "")
-            case "date": return text(format(context.now, "", date: .short, time: .none, context))
-            case "time": return text(format(context.now, "", date: .none, time: .short, context))
-            case "dateTime": return text(format(context.now, "", date: .short, time: .short, context))
-            case "cursor": return [.cursor]
-            default: return nil
-            }
-        }
-        guard !arg.isEmpty else { return nil }
-        switch name {
-        case "dateTime":
-            return dateTime(arg, context).map(text)
-        case "combo", "upper", "lower":
-            if stack.contains(arg) { throw .comboCycle(arg) } // pass 1 throws first
-            guard let nested = context.snippet(keyword: arg) else { throw .missingCombo(arg) }
+        switch variable {
+        case .clipboard(nil): return text(await context.clipboardText() ?? "")
+        case .date(nil): return text(format(context.now, "", date: .short, time: .none, context))
+        case .time(nil): return text(format(context.now, "", date: .none, time: .short, context))
+        case let .dateTime(shift, fmt):
+            guard let date = shifted(context.now, by: shift, context) else { return nil }
+            return text(format(date, fmt, date: .short, time: .short, context))
+        case .cursor: return [.cursor]
+        case let .snippet(keyword, c):
+            if stack.contains(keyword) { throw .comboCycle(keyword) } // pass 1 throws first
+            guard let nested = context.snippet(keyword: keyword) else { throw .missingCombo(keyword) }
             let items = try await expand(nested, context: context, answers: answers, stack: stack)
-            guard name != "combo" else { return items }
+            guard c != .plain else { return items }
             return items.map {
                 guard case .step(.paste(let s)) = $0 else { return $0 }
-                return .step(.paste(name == "upper" ? s.uppercased() : s.lowercased()))
+                return .step(.paste(c == .upper ? s.uppercased() : s.lowercased()))
             }
-        case "input":
-            return text(answers[arg] ?? "")
-        case "envVar":
-            return text(context.environment(arg) ?? "")
-        case "shell":
-            var path = arg, timeout = 10000
-            if let colon = arg.lastIndex(of: ":"), case let digits = arg[arg.index(after: colon)...],
-               isDigits(digits) {
-                guard let t = Int(digits) else { return nil }
-                path = String(arg[..<colon])
-                timeout = t
-            }
-            guard !path.isEmpty else { return nil }
-            var out = try await context.runScript(path: path, timeoutMs: timeout)
+        case .input(let label, _):
+            return text(answers[label] ?? "")
+        case .envVar(let name):
+            return text(context.environment(name) ?? "")
+        case let .script(path, timeout):
+            var out = try await context.runScript(path: path, timeoutMs: timeout ?? Variable.defaultScriptTimeoutMs)
             while out.last?.isNewline == true { out.removeLast() }
             return text(out)
-        case "key":
-            let parts = arg.split(separator: ":", omittingEmptySubsequences: false)
-            guard parts.count <= 2, let key = KeyName(rawValue: String(parts[0])) else { return nil }
-            let count = parts.count == 2 ? Int(parts[1]) : 1
-            guard let count, count >= 1 else { return nil }
-            return step(.key(key, count: count))
-        case "shortcut":
-            return KeyCombo.parse(arg).map { step(.shortcut($0)) }
-        case "delay":
-            guard let ms = Int(arg), ms >= 0 else { return nil }
-            return step(.delay(milliseconds: ms))
-        case "openApp":
-            return step(.openApp(path: arg))
-        case "runShortcut":
-            return step(.runShortcut(name: arg))
-        default:
-            return nil
+        case let .key(key, count): return step(.key(key, count: count))
+        case .shortcut(let s): return KeyCombo.parse(s).map { step(.shortcut($0)) }
+        case .delay(let ms): return step(.delay(milliseconds: ms))
+        case .openApp(let path): return step(.openApp(path: path))
+        case .runShortcut(let name): return step(.runShortcut(name: name))
+        default: return nil
         }
     }
 
-    private static func isDigits(_ s: Substring) -> Bool {
-        !s.isEmpty && s.allSatisfy { ("0"..."9").contains($0) }
-    }
-
-    /// `<format>` or `<shift>:<format>`. A first part starting with + or - must be a valid shift,
-    /// so a typo like `+1x:` stays literal instead of becoming a strange format.
-    private static func dateTime(_ arg: String, _ context: some EvaluationContext) -> String? {
-        let parts = arg.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-        guard parts.count == 2, let sign = parts[0].first, sign == "+" || sign == "-" else {
-            return format(context.now, arg, date: .short, time: .short, context)
-        }
-        guard let shifted = shift(context.now, by: parts[0], in: context.timeZone) else { return nil }
-        return format(shifted, String(parts[1]), date: .short, time: .short, context)
-    }
-
-    /// Applies `^([+-]\d+[yMwdhms])+$` left to right on the Gregorian calendar; nil if it doesn't match.
-    private static func shift(_ date: Date, by spec: Substring, in timeZone: TimeZone) -> Date? {
-        let units: [Character: Calendar.Component] = [
-            "y": .year, "M": .month, "w": .weekOfYear, "d": .day, "h": .hour, "m": .minute, "s": .second,
-        ]
+    /// `date` moved by a shift spec on the Gregorian calendar; `date` itself for no shift.
+    private static func shifted(_ date: Date, by spec: String?, _ context: some EvaluationContext) -> Date? {
+        guard let spec else { return date }
+        guard let steps = Variable.shiftSteps(spec) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
+        calendar.timeZone = context.timeZone
         var date = date
-        var rest = spec
-        while let sign = rest.first {
-            guard sign == "+" || sign == "-" else { return nil }
-            let digits = rest.dropFirst().prefix { ("0"..."9").contains($0) }
-            rest = rest.dropFirst(1 + digits.count)
-            guard let n = Int(digits), let unit = rest.first.flatMap({ units[$0] }),
-                  let next = calendar.date(byAdding: unit, value: sign == "-" ? -n : n, to: date)
-            else { return nil }
-            rest = rest.dropFirst()
+        for (unit, n) in steps {
+            guard let next = calendar.date(byAdding: unit, value: n, to: date) else { return nil }
             date = next
         }
         return date
