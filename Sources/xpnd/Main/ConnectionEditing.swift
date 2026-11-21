@@ -11,7 +11,32 @@ extension StoreError {
 }
 
 /// The editors' rules that don't need a view.
+/// Why New Snippet from Clipboard made nothing.
+enum ClipboardRefusal: Error, Equatable {
+    case concealed, noText
+
+    var message: String {
+        switch self {
+        case .concealed: "The clipboard holds a password, so xpnd didn't make a snippet from it."
+        case .noText: "The clipboard has no text to make a snippet from."
+        }
+    }
+}
+
 enum EditorRules {
+    /// The clipboard's text for a new snippet. A concealed item (a password manager's, or xpnd's own) is refused: it
+    /// would be saved in snippets.yaml.
+    static func clipboardSnippetText(types: [String], string: String?) -> Result<String, ClipboardRefusal> {
+        if isConcealed(types) { return .failure(.concealed) }
+        guard let string, !string.isEmpty else { return .failure(.noText) }
+        return .success(string)
+    }
+
+    /// A password manager's item, or xpnd's own copied password.
+    static func isConcealed(_ types: [String]) -> Bool {
+        types.contains { $0 == "org.nspasteboard.ConcealedType" || $0.hasPrefix(SecretClipboard.secretTypePrefix) }
+    }
+
     /// Where a drop between rows of a folder (or group) list lands when the dragged item can't sit
     /// among them: the folder above the insertion line. Above the first row that is the enclosing
     /// folder, or at the top level the first folder.

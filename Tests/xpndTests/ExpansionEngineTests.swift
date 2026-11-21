@@ -36,7 +36,9 @@ private struct FakeContext: EvaluationContext {
     func environment(_ name: String) -> String? { nil }
     func snippet(keyword: String) -> Snippet? { library.snippet(keyword: keyword) }
     func runScript(path: String, timeoutMs: Int) async throws(ExpansionError) -> String { "" }
-    func askInputs(_ labels: [String]) async -> [String: String]? { await gate.wait() }
+    func askInputs(_ fields: [InputField]) async -> [String: String]? { await gate.wait() }
+    func selectedText() async -> String? { nil }
+    let fullName = ""
 }
 
 private struct Activation: Equatable {
@@ -52,6 +54,8 @@ private struct Activation: Equatable {
     let sender = FakeSender()
     let gate = InputGate()
     var notes: [String] = []
+    /// How each expansion was started, in order.
+    var triggers: [ExpansionTrigger] = []
     /// The pid the engine sees as frontmost.
     var front: pid_t? = 100
     /// What `onActivate` received, in order.
@@ -71,7 +75,10 @@ private struct Activation: Equatable {
         let store = store, gate = gate
         engine = ExpansionEngine(
             store: store, connections: connections, player: Player(sender: sender, actions: FakeActions()),
-            makeContext: { FakeContext(library: store.library, gate: gate) },
+            makeContext: { [unowned self] trigger in
+                triggers.append(trigger)
+                return FakeContext(library: store.library, gate: gate)
+            },
             notify: { [unowned self] in notes.append($0) },
             frontmostPID: { [unowned self] in front },
             onActivate: { [unowned self] target, pid, typed in
@@ -121,6 +128,20 @@ private func snip(_ keyword: String, _ text: String) -> Snippet {
         await h.settle()
         #expect(h.sender.log == ["bs 5", "paste Best "])
         #expect(h.notes.isEmpty)
+    }
+
+    @Test func typedTriggerReachesTheContext() async throws {
+        let h = try Harness([snip(";sig", "Best")])
+        h.type(";", "s", "i", "g", " ")
+        await h.settle()
+        #expect(h.triggers == [.typed])
+    }
+
+    @Test func pickerTriggerReachesTheContext() async throws {
+        let h = try Harness([snip(";sig", "Best")])
+        await h.engine.expand(snip(";sig", "Best"), deletingCharacters: 0)
+        #expect(h.triggers == [.picker])
+        #expect(h.sender.log == ["paste Best"])
     }
 
     @Test func strictFiresOnPunctuation() async throws {

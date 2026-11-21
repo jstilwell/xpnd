@@ -1,3 +1,5 @@
+import Foundation
+
 enum TemplateToken: Equatable, Sendable {
     case text(String)
     /// `raw` is the exact source text, including `#{`, `}` and any backslashes.
@@ -7,23 +9,47 @@ enum TemplateToken: Equatable, Sendable {
 enum Template {
     /// Splits snippet text into literal text and `#{name:argument}` variables.
     /// Anything that starts with `#{` but isn't a well-formed variable stays text.
-    static func parse(_ text: String) -> [TemplateToken] {
+    static func parse(_ text: String) -> [TemplateToken] { parseWithRanges(text).map(\.token) }
+
+    /// `parse`, with where each token sits in UTF-16 units, as `NSTextView` counts.
+    static func parseWithRanges(_ text: String) -> [(token: TemplateToken, range: NSRange)] {
         let chars = Array(text)
-        var tokens: [TemplateToken] = []
+        var tokens: [(token: TemplateToken, range: NSRange)] = []
         var pending = ""
+        var offset = 0 // UTF-16 offset of chars[i]
+        var pendingStart = 0
         var i = 0
+        func flush() {
+            guard !pending.isEmpty else { return }
+            tokens.append((.text(pending), NSRange(location: pendingStart, length: offset - pendingStart)))
+            pending = ""
+        }
         while i < chars.count {
             if let (token, end) = variable(in: chars, at: i) {
-                if !pending.isEmpty { tokens.append(.text(pending)); pending = "" }
-                tokens.append(token)
+                flush()
+                let length = chars[i..<end].reduce(0) { $0 + $1.utf16.count }
+                tokens.append((token, NSRange(location: offset, length: length)))
+                offset += length
                 i = end
             } else {
+                if pending.isEmpty { pendingStart = offset }
                 pending.append(chars[i])
+                offset += chars[i].utf16.count
                 i += 1
             }
         }
-        if !pending.isEmpty { tokens.append(.text(pending)) }
+        flush()
         return tokens
+    }
+
+    /// The variable whose source covers `utf16Offset`, if it reads as one.
+    static func variable(at utf16Offset: Int, in text: String) -> (range: NSRange, variable: Variable)? {
+        for (token, range) in parseWithRanges(text) where range.location <= utf16Offset && utf16Offset < NSMaxRange(range) {
+            guard case let .variable(name, argument, _) = token,
+                  case .success(let variable) = Variable.parse(name: name, argument: argument) else { return nil }
+            return (range, variable)
+        }
+        return nil
     }
 
     private static func variable(in chars: [Character], at start: Int) -> (TemplateToken, Int)? {

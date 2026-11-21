@@ -27,7 +27,7 @@ import Foundation
     private let store: SnippetStore
     private let connections: ConnectionStore
     private let player: Player
-    private let makeContext: @MainActor () -> any EvaluationContext
+    private let makeContext: @MainActor (ExpansionTrigger) -> any EvaluationContext
     private let notify: @MainActor (String) -> Void
     private let frontmostPID: @MainActor () -> pid_t?
     private let onActivate: @MainActor (ActivationTarget, pid_t?, _ typedCharacters: Int) async -> Void
@@ -45,7 +45,7 @@ import Foundation
 
     init(
         store: SnippetStore, connections: ConnectionStore, player: Player,
-        makeContext: @escaping @MainActor () -> any EvaluationContext,
+        makeContext: @escaping @MainActor (ExpansionTrigger) -> any EvaluationContext,
         notify: @escaping @MainActor (String) -> Void,
         frontmostPID: @escaping @MainActor () -> pid_t?,
         onActivate: @escaping @MainActor (ActivationTarget, pid_t?, _ typedCharacters: Int) async -> Void
@@ -171,20 +171,22 @@ import Foundation
     func expand(_ snippet: Snippet, deletingCharacters: Int) async {
         guard !isExpanding else { return notify(ExpansionError.busy.message) }
         isExpanding = true
-        await run(snippet, deletingCharacters: deletingCharacters, into: frontmostPID())
+        await run(snippet, deletingCharacters: deletingCharacters, trigger: .picker, into: frontmostPID())
     }
 
     /// `target`: the app the keyword was typed in. If another app is in front once evaluation ends
     /// (the user switched while the form was open or a script ran), nothing is deleted or pasted.
     /// `boundary`: the space or punctuation that fired a strict keyword, typed again after the text.
-    private func run(_ snippet: Snippet, deletingCharacters: Int, boundary: String? = nil, into target: pid_t?) async {
+    private func run(
+        _ snippet: Snippet, deletingCharacters: Int, boundary: String? = nil, trigger: ExpansionTrigger = .typed, into target: pid_t?
+    ) async {
         defer {
             isExpanding = false
             kept = .off
         }
         do throws(ExpansionError) {
             // Evaluation fails before anything on screen changes, so the keyword stays.
-            let context = makeContext()
+            let context = makeContext(trigger)
             let evaluation = Task { () -> Result<[PlayStep], ExpansionError> in
                 do throws(ExpansionError) { return .success(try await Evaluator.evaluate(snippet, context: context)) }
                 catch { return .failure(error) }

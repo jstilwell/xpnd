@@ -30,6 +30,7 @@
 - **Picker**: press Control-Option-Command-Space (changeable in Settings), or choose Open Picker in the menu bar menu, to search snippets by keyword, name, or text, and press Return to insert one. Each row shows its group.
 - **Groups**: snippets sit in groups you can turn on or off together.
 - **Editing**: snippets are edited in the xpnd window. Its sidebar search filters snippets by keyword, name, or text, and connections by name, host, activation string, or folder. To delete a snippet, group, connection or folder, select it and press Delete, right-click it, or use the button in its Details; Edit → Undo (⌘Z) puts it back where it was, and only a folder or group with things in it asks first. Moves and imports undo the same way. Right-click a snippet to duplicate, disable, move or copy its keyword. File → New Snippet (⌘N), New Snippet Group and New Connection add one; Edit → Find (⌘F) searches the sidebar. A snippet's text, keyword and a connection's activation string are saved when you pause typing.
+- **Writing snippets**: Insert Variable opens a short form for each variable, and right-clicking a variable in the text offers Edit Variable…. Variables are coloured, and one that won't expand (`#{key:tabb}`, a missing snippet) gets a red underline whose tooltip says why. Under the text, a preview shows what the snippet will type, with a field to try each input; it never runs a script, presses a key or reads your clipboard, so those show as labels such as `‹clipboard›` and `⟨Tab⟩`. New Snippet from Clipboard in the menu bar menu starts a snippet from the clipboard's text (not from a copied password).
 - **First launch**: xpnd starts with one snippet, `;date`, which types today's date.
 - **Import and export**: share snippets as YAML. Importing first lists every snippet the file adds, and calls out any that runs a script, opens an app, runs a Shortcut, sends a keyboard shortcut or presses a key; nothing is added until you confirm.
 
@@ -39,14 +40,20 @@ Written `#{name}` or `#{name:value}`. Names are case-sensitive, and unknown ones
 
 | Variable | Inserts or does |
 |---|---|
-| `#{clipboard}` | The clipboard's text |
+| `#{clipboard}` | The clipboard's text; `#{clipboard:trim}`, `:upper` or `:lower` changes it |
+| `#{selection}` | The text selected in the app, when the snippet comes from the picker (empty from a typed keyword, which has already replaced any selection, and in remote desktops); `:trim`, `:upper`, `:lower` as above |
 | `#{date}` `#{time}` `#{dateTime}` | The current date and time |
+| `#{date:<shift>}` `#{time:<shift>}` | The date or time shifted, such as `#{date:+1d}` for tomorrow |
 | `#{dateTime:<format>}` | A custom format, such as `yyyy-MM-dd` |
 | `#{dateTime:<shift>:<format>}` | Shifted by `y M w d h m s`, signed, such as `+1d-2h` |
 | `#{combo:<keyword>}` | Another snippet's text (up to 16 levels deep; a snippet can't include itself) |
 | `#{upper:<keyword>}` `#{lower:<keyword>}` | Another snippet's text, in upper or lower case |
 | `#{cursor}` | Where the caret ends up |
-| `#{input:<label>}` | Asks for a value |
+| `#{input:<label>}` | Asks for a value; `#{input:<label>=<default>}` starts the field with a default |
+| `#{choice:<label>:<a>\|<b>\|<c>}` | Asks you to pick one; the first is preselected. An option can't contain `\|` |
+| `#{longInput:<label>}` | Asks for several lines |
+| `#{uuid}` | A new UUID, uppercase |
+| `#{fullName}` | Your full name, from your Mac account |
 | `#{envVar:<name>}` | An environment variable |
 | `#{shell:<path>[:<timeoutMs>]}` | The output of the script at that path (10 seconds by default; `0` for no limit) |
 | `#{key:<name>[:<count>]}` | Presses a key: tab, enter, space, delete, arrows, home, end, f1 to f20, and more |
@@ -55,7 +62,7 @@ Written `#{name}` or `#{name:value}`. Names are case-sensitive, and unknown ones
 | `#{openApp:<path>}` | Opens the app at that path |
 | `#{runShortcut:<name>}` | Runs a macOS Shortcut by name |
 
-If a value can't be worked out (a script fails, a form is cancelled), nothing changes and your keyword stays where it is.
+A label used twice, by any input kind, is one field in the form. If a value can't be worked out (a script fails, a form is cancelled), nothing changes and your keyword stays where it is.
 
 ## Snippet file
 

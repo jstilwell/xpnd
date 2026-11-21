@@ -127,10 +127,10 @@ final class SnippetEditing {
     }
 
     /// The new snippet's id, or nil if it wasn't saved. Its keyword is free in both files.
-    func addSnippet(to group: SnippetGroup, connections: ConnectionLibrary) -> Snippet.ID? {
+    func addSnippet(to group: SnippetGroup, connections: ConnectionLibrary, text: String = "") -> Snippet.ID? {
         let namespace = KeywordNamespace(snippets: store.library, connections: connections)
         let keyword = (1...).lazy.map { $0 == 1 ? ";new" : ";new\($0)" }.first { namespace.problem($0, for: nil) == nil }!
-        let new = Snippet(name: "New Snippet", keyword: keyword, text: "")
+        let new = Snippet(name: "New Snippet", keyword: keyword, text: text)
         return save(at: group) { $0.groups[$1].snippets.append(new) } ? new.id : nil
     }
 

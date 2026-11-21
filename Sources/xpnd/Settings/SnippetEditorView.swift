@@ -16,24 +16,27 @@ struct SnippetEditorView: View {
     @State private var template = TemplateTextController()
     @State private var choosingShortcut = false
 
-    /// Every variable in the spec's table, as the template it inserts.
-    private static let variables: [(title: String, template: String)] = [
-        ("Clipboard", "#{clipboard}"),
-        ("Date", "#{date}"),
-        ("Time", "#{time}"),
-        ("Date and Time", "#{dateTime}"),
-        ("Date and Time, Custom Format", "#{dateTime:yyyy-MM-dd}"),
-        ("Date and Time, Shifted", "#{dateTime:+1d:yyyy-MM-dd}"),
-        ("Other Snippet", "#{combo:;keyword}"),
-        ("Other Snippet, Uppercased", "#{upper:;keyword}"),
-        ("Other Snippet, Lowercased", "#{lower:;keyword}"),
-        ("Cursor Position", "#{cursor}"),
-        ("Input Prompt", "#{input:Label}"),
-        ("Environment Variable", "#{envVar:HOME}"),
-        ("Script Output", "#{shell:/path/to/script}"),
-        ("Key Press", "#{key:tab}"),
-        ("Keyboard Shortcut", "#{shortcut:Cmd+Shift+J}"),
-        ("Delay", "#{delay:500}"),
+    /// A form open for a new variable (`range` nil) or one in the text.
+    @State private var form: FormRequest?
+
+    private struct FormRequest: Identifiable {
+        let id = UUID()
+        let variable: Variable
+        let kind: VariableKind
+        /// The variable's place and source text, when editing one.
+        let range: NSRange?
+        let raw: String
+    }
+
+    /// The Insert Variable menu: `nil` kind inserts `direct` as it is.
+    private static let menuItems: [[(title: String, kind: VariableKind?, direct: Variable?)]] = [
+        [("Input…", .input, nil), ("Choice…", .choice, nil), ("Long Input…", .longInput, nil)],
+        [("Clipboard…", .clipboard, nil), ("Selected Text…", .selection, nil)],
+        [("Date", nil, .date(shift: nil)), ("Time", nil, .time(shift: nil)), ("Date and Time…", .dateTime, nil),
+         ("Date, Shifted…", .date, nil), ("Time, Shifted…", .time, nil)],
+        [("Other Snippet…", .snippet, nil), ("Cursor Position", nil, .cursor), ("UUID", nil, .uuid), ("Full Name", nil, .fullName),
+         ("Environment Variable…", .envVar, nil), ("Script Output…", .script, nil)],
+        [("Key Press…", .key, nil), ("Keyboard Shortcut…", .shortcut, nil), ("Delay…", .delay, nil)],
     ]
 
     var body: some View {
@@ -54,7 +57,14 @@ struct SnippetEditorView: View {
             }
             Toggle("Enabled", isOn: binding(\.enabled))
             Section {
-                TemplateTextView(text: snippet.text, snippetID: snippet.id, isEditable: !readOnly, controller: template) { new in
+                TemplateTextView(text: snippet.text, snippetID: snippet.id, isEditable: !readOnly, controller: template,
+                                 check: { [keyword = snippet.keyword, library = namespace.snippets] in
+                                     TemplateCheck.marks(in: $0, keyword: keyword, library: library)
+                                 },
+                                 editVariable: { range, raw, variable in
+                                     guard let kind = VariableKind(variable) else { return }
+                                     form = FormRequest(variable: variable, kind: kind, range: range, raw: raw)
+                                 }) { new in
                     edit { $0.text = new }
                 }
                     .frame(minHeight: 200)
@@ -65,6 +75,7 @@ struct SnippetEditorView: View {
                     insertMenu
                 }
             }
+            SnippetPreview(snippet: snippet, library: namespace.snippets)
         }
         .formStyle(.grouped)
         .disabled(readOnly)
@@ -79,17 +90,34 @@ struct SnippetEditorView: View {
         }
         // The check shows while typing; the save waits for a pause (`commitsOnPause`).
         .onChange(of: keyword) { keywordProblem = namespace.problem(keyword, for: .snippet(snippet.id)) }
+        .sheet(item: $form) { request in
+            VariableForm(variable: request.variable, kind: request.kind, library: namespace.snippets, editing: request.range != nil) { new in
+                if let range = request.range {
+                    template.replace(range, expected: request.raw, with: new.template)
+                } else {
+                    template.insert(new.template)
+                }
+            }
+        }
         .sheet(isPresented: $choosingShortcut) {
-            ShortcutChooser { insert("runShortcut", $0) }
+            ShortcutChooser { template.insert(Variable.runShortcut($0).template) }
         }
     }
 
     private var insertMenu: some View {
         Menu("Insert Variable") {
-            ForEach(Self.variables, id: \.template) { variable in
-                Button("\(variable.title)   \(variable.template)") { template.insert(variable.template) }
+            ForEach(Self.menuItems.indices, id: \.self) { section in
+                ForEach(Self.menuItems[section], id: \.title) { item in
+                    Button(item.title) {
+                        if let kind = item.kind {
+                            form = FormRequest(variable: kind.blank, kind: kind, range: nil, raw: "")
+                        } else if let direct = item.direct {
+                            template.insert(direct.template)
+                        }
+                    }
+                }
+                Divider()
             }
-            Divider()
             Button("Open App…", action: chooseApp)
             Button("Run Shortcut…") { choosingShortcut = true }
         }
@@ -114,13 +142,7 @@ struct SnippetEditorView: View {
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.prompt = "Choose"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        insert("openApp", url.path(percentEncoded: false))
-    }
-
-    /// Inserts `#{name:argument}`, escaping `\` and `}` as the template syntax needs.
-    private func insert(_ name: String, _ argument: String) {
-        let escaped = argument.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "}", with: "\\}")
-        template.insert("#{\(name):\(escaped)}")
+        template.insert(Variable.openApp(url.path(percentEncoded: false)).template)
     }
 }
 

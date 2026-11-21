@@ -96,10 +96,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     // The File and Edit menus. On failure the save message shows in the Details of what's selected.
 
     /// Into the selected group (or the selected snippet's), else the first; a group is made if there is none.
-    func newSnippet() {
+    func newSnippet(text: String = "") {
         guard let target = EditorRules.snippetTarget(for: model.selection, in: snippetEditing.store.library) ?? snippetEditing.addGroup(),
               let group = snippetEditing.group(target),
-              let id = snippetEditing.addSnippet(to: group, connections: connectionEditing.library) else { return }
+              let id = snippetEditing.addSnippet(to: group, connections: connectionEditing.library, text: text) else { return }
         model.selection = .snippet(id)
     }
 

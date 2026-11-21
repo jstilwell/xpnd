@@ -47,10 +47,14 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
   `ExpansionEngine` as `KeyInput`. `TypingBuffer` is the rolling buffer, cleared by non-printing keys,
   clicks, and app switches; `Matcher.instant` picks the longest loose keyword the buffer ends with, and `Matcher.strict` the strict keyword a space or punctuation just ended (checked before that key joins the buffer). Keys typed while an expansion runs are kept and handed to `Player` as its tail.
 - `ExpansionEngine` runs one expansion at a time in two phases. `Template` parses the snippet's text
-  into `TemplateToken`s. `Evaluator` computes every value first (through an `EvaluationContext`:
-  `LiveEvaluationContext` for the clipboard, dates, environment, `#{combo:}` against a library
-  snapshot, `ScriptRunner` and `ProcessRunner` for scripts, and the input form), so a failure throws an
-  `ExpansionError` before anything on screen changes. It yields `PlayStep`s.
+  into `TemplateToken`s, and `Variable.parse` reads each `#{…}` into a typed `Variable` or a `VariableProblem`; it is
+  the one reader, shared by `Evaluator`, the editor's `TemplateCheck`, the preview and `VariableForm`. `Evaluator`
+  computes every value first (through an `EvaluationContext`: `LiveEvaluationContext` for the clipboard, the
+  selection (`SelectionCopy`, only when `ExpansionTrigger` is `.picker`), dates, environment, `#{combo:}` against a
+  library snapshot, `ScriptRunner` and `ProcessRunner` for scripts, and the input form's `InputField`s), so a failure
+  throws an `ExpansionError` before anything on screen changes. It yields `PlayStep`s.
+- The snippet editor's preview runs the same `Evaluator` with `PreviewContext`, which has no clipboard, environment or
+  script runner to reach (placeholders instead), and `PreviewText.render` turns keys and actions into labels.
 - `Player` plays the steps: it deletes the keyword, pastes text with `PasteboardSnapshot` saving every
   pasteboard type once per expansion (`CGEventKeystrokeSender.setAside`) and putting it back at the end or before a
   delay, Open App or Run Shortcut. Each paste is a promised string; xpnd waits until the app reads it (150 ms to 1 s).

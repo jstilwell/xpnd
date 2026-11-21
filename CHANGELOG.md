@@ -14,9 +14,15 @@ All notable changes to this project will be documented in this file.
 - A File menu (New Snippet ⌘N, New Snippet Group, New Connection, Import…, Export…), Edit → Find (⌘F) for the sidebar search, About, Hide and Minimize. The menu bar menu has Open Connection Launcher, and both it and Open Picker show their shortcuts.
 - New installs start with a `;date` snippet, and the welcome screen shows the menu bar icon, both shortcuts, and where snippets are edited.
 - The picker shows each snippet's group, and says so when nothing matches or there are no snippets yet.
+- New variables: `#{input:Label=default}`, `#{choice:Label:a|b|c}` (a pop-up in the input form), `#{longInput:Label}` (several lines), `#{selection}` (the selected text, from the picker), `#{uuid}`, `#{fullName}`, `#{date:+1d}` and `#{time:+2h}`, and `:trim`, `:upper` or `:lower` on `#{clipboard}` and `#{selection}`.
+- The snippet editor shows a live preview of what the snippet will type, with fields to try its inputs. Scripts, keys, apps and Shortcuts never run there, and the clipboard is never read.
+- Insert Variable opens a form for each variable, and right-clicking a variable offers Edit Variable….
+- Variables are coloured in the editor, and one that won't expand gets a red underline with a tooltip saying why.
+- New Snippet from Clipboard in the menu bar menu. A copied password is refused.
 - ssh connections get a 15-second connect timeout and a 30-second keepalive, after a connection's own SSH options. Turn it off in Settings → Terminal if you set them in `~/.ssh/config`.
 
 ### Changed
+- In `#{input:…}`, an `=` now starts the field's default: `#{input:Name=Ann}` asks for "Name", filled with "Ann". A label that had an `=` in it is split there.
 - Importing with conflicts: Replace is marked as the destructive choice, and Skip is the default.
 - A disabled snippet, or one in a disabled group, shows dimmed, with a tooltip and "Off" for VoiceOver. Icon-only buttons have tooltips, and the drop drive and NLA options say what they do.
 - A strict snippet (the default) now expands when you finish the word, on the space or punctuation after its keyword, which is typed back after the text: `;sig ` becomes `Best `. It no longer fires inside a longer word (`the` in "then"), and a keyword can follow `(` or a quote. Return and Tab don't expand it. Loose snippets still expand the moment you type them.

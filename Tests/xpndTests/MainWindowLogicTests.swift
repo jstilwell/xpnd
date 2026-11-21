@@ -535,4 +535,14 @@ private struct TwoAccountProvider: CredentialProvider {
         #expect(MainWindowController.menuTakesKeys(focusedSessionKind: .terminal))
         #expect(MainWindowController.menuTakesKeys(focusedSessionKind: nil))
     }
+
+    @MainActor @Test func addSnippetWithText() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let editing = SnippetEditing(store: SnippetStore(fileURL: directory.appending(path: "snippets.yaml")))
+        let groupID = try #require(editing.addGroup())
+        let group = try #require(editing.group(groupID))
+        let id = try #require(editing.addSnippet(to: group, connections: .empty, text: "from the clipboard"))
+        #expect(editing.snippet(id)?.text == "from the clipboard")
+    }
 }

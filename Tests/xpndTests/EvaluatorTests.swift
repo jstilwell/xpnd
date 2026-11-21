@@ -14,7 +14,10 @@ private final class FakeContext: EvaluationContext, @unchecked Sendable {
     var scriptResult: Result<String, ExpansionError> = .success("")
     var answers: [String: String]? = [:]
     var scriptCalls: [String] = []
-    var askedLabels: [[String]] = []
+    var askedFields: [[InputField]] = []
+    var selection: String?
+    let fullName = "Ann Example"
+    var askedLabels: [[String]] { askedFields.map { $0.map(\.label) } }
 
     func clipboardText() async -> String? { clipboard }
     func environment(_ name: String) -> String? { env[name] }
@@ -25,8 +28,10 @@ private final class FakeContext: EvaluationContext, @unchecked Sendable {
         return try scriptResult.get()
     }
 
-    func askInputs(_ labels: [String]) async -> [String: String]? {
-        askedLabels.append(labels)
+    func selectedText() async -> String? { selection }
+
+    func askInputs(_ fields: [InputField]) async -> [String: String]? {
+        askedFields.append(fields)
         return answers
     }
 }
@@ -198,5 +203,72 @@ struct EvaluatorTests {
         ]
         for e in errors { #expect(!e.message.isEmpty && !e.message.contains("\n")) }
         #expect(ExpansionError.missingCombo(";zz").message == "No snippet has the keyword “;zz”.")
+    }
+
+    @Test func inputDefaultFillsTheField() async throws {
+        let ctx = FakeContext()
+        ctx.answers = ["Name": "Bo"]
+        #expect(try await run("Hi #{input:Name=Ann}", ctx) == [.paste("Hi Bo")])
+        #expect(ctx.askedFields == [[InputField(label: "Name", kind: .text(default: "Ann"))]])
+    }
+
+    @Test func choiceAsksWithItsOptions() async throws {
+        let ctx = FakeContext()
+        ctx.answers = ["Size": "M"]
+        #expect(try await run("#{choice:Size:S|M|L}", ctx) == [.paste("M")])
+        #expect(ctx.askedFields == [[InputField(label: "Size", kind: .choice(["S", "M", "L"]))]])
+    }
+
+    @Test func sameLabelSharesOneFieldFirstKindWins() async throws {
+        let ctx = FakeContext()
+        ctx.snippets = [snip(";n", "#{input:Size=XL}")]
+        ctx.answers = ["Size": "S"]
+        #expect(try await run("#{choice:Size:S|M} #{combo:;n} #{longInput:Size}", ctx) == [.paste("S S S")])
+        #expect(ctx.askedFields == [[InputField(label: "Size", kind: .choice(["S", "M"]))]])
+    }
+
+    @Test func longInputAsksMultiline() async throws {
+        let ctx = FakeContext()
+        ctx.answers = ["Notes": "a\nb"]
+        #expect(try await run("#{longInput:Notes}", ctx) == [.paste("a\nb")])
+        #expect(ctx.askedFields == [[InputField(label: "Notes", kind: .multiline)]])
+    }
+
+    @Test func uuidIsUppercase() async throws {
+        let steps = try await run("#{uuid} #{uuid}")
+        guard case .paste(let s)? = steps.first else { Issue.record("no paste"); return }
+        let parts = s.split(separator: " ").map(String.init)
+        #expect(parts.count == 2 && parts[0] != parts[1])
+        #expect(parts.allSatisfy { $0.wholeMatch(of: /[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}/) != nil })
+    }
+
+    @Test func fullNameFromContext() async throws {
+        #expect(try await run("by #{fullName}") == [.paste("by Ann Example")])
+    }
+
+    @Test func dateAndTimeShift() async throws {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")!
+        let now = FakeContext().now
+        f.dateStyle = .short
+        let day = f.string(from: now.addingTimeInterval(86_400))
+        f.dateStyle = .none
+        f.timeStyle = .short
+        let time = f.string(from: now.addingTimeInterval(7_200))
+        #expect(try await run("#{date:+1d}|#{time:+2h}") == [.paste("\(day)|\(time)")])
+    }
+
+    @Test func clipboardTransforms() async throws {
+        let ctx = FakeContext()
+        ctx.clipboard = "  Hi \n"
+        #expect(try await run("[#{clipboard:trim}][#{clipboard:upper}][#{clipboard:lower}]", ctx) == [.paste("[Hi][  HI \n][  hi \n]")])
+    }
+
+    @Test func selectionTransforms() async throws {
+        let ctx = FakeContext()
+        ctx.selection = " Sel "
+        #expect(try await run("[#{selection}][#{selection:trim}][#{selection:upper}]", ctx) == [.paste("[ Sel ][Sel][ SEL ]")])
+        #expect(try await run("[#{selection}]") == [.paste("[]")])
     }
 }

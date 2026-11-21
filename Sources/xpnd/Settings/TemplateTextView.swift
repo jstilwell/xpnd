@@ -12,6 +12,15 @@ final class TemplateTextController {
         textView.window?.makeFirstResponder(textView)
         textView.insertText(string, replacementRange: textView.selectedRange())
     }
+
+    /// Puts `string` in place of `range`, as typing would, if the text there is still `expected` (it may have
+    /// changed while a form was open).
+    func replace(_ range: NSRange, expected: String, with string: String) {
+        guard let textView, textView.isEditable, NSMaxRange(range) <= (textView.string as NSString).length,
+              (textView.string as NSString).substring(with: range) == expected else { return }
+        textView.window?.makeFirstResponder(textView)
+        textView.insertText(string, replacementRange: range)
+    }
 }
 
 /// A plain-text, monospaced editor for snippet templates. SwiftUI's `TextEditor` can't expose the
@@ -24,12 +33,19 @@ struct TemplateTextView: NSViewRepresentable {
     let snippetID: Snippet.ID
     var isEditable: Bool
     let controller: TemplateTextController
+    /// Marks the variables in the text as it is now (not as saved, which lags the typing).
+    var check: (String) -> [TemplateMark] = { _ in [] }
+    /// Right-click → Edit Variable… on a variable that has a form: its range, its source text, and the variable.
+    var editVariable: ((NSRange, String, Variable) -> Void)?
     let save: (String) -> Bool
+
+    static let variableColor = NSColor.systemBlue
+    private static let font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()
         let textView = scroll.documentView as! NSTextView
-        textView.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textView.font = Self.font
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
@@ -48,6 +64,7 @@ struct TemplateTextView: NSViewRepresentable {
         textView.string = text
         context.coordinator.saved = text
         context.coordinator.shownID = snippetID
+        context.coordinator.highlight(textView)
         controller.textView = textView
         scroll.borderType = .bezelBorder
         return scroll
@@ -65,6 +82,8 @@ struct TemplateTextView: NSViewRepresentable {
         guard let textView = scroll.documentView as? NSTextView else { return }
         textView.isEditable = isEditable
         controller.textView = textView
+        // The library may have changed (an included snippet added or renamed).
+        defer { coordinator.highlight(textView) }
         // Once typing is saved the text matches; only a switch or a change from outside differs. Never replace
         // text mid-composition (marked text from an input method), or typing that is still waiting to be saved.
         guard switched || (textView.string != text && !textView.hasMarkedText() && !coordinator.hasUnsavedText) else { return }
@@ -118,12 +137,73 @@ struct TemplateTextView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+            highlight(textView)
             pendingSave?.cancel()
             pendingView = textView
             pendingSave = Task { @MainActor [weak self] in
                 try? await Task.sleep(for: Self.saveDelay)
                 if !Task.isCancelled { self?.flush() }
             }
+        }
+
+        /// Colours good variables and underlines the ones that won't expand, with why as a tooltip. Attributes set on the
+        /// storage directly register no undo. Skipped while an input method has marked text.
+        func highlight(_ textView: NSTextView) {
+            guard !textView.hasMarkedText(), let storage = textView.textStorage else { return }
+            let full = NSRange(location: 0, length: storage.length)
+            storage.beginEditing()
+            storage.removeAttribute(.underlineStyle, range: full)
+            storage.removeAttribute(.underlineColor, range: full)
+            storage.removeAttribute(.toolTip, range: full)
+            storage.addAttribute(.foregroundColor, value: NSColor.textColor, range: full)
+            for mark in parent.check(textView.string) where NSMaxRange(mark.range) <= storage.length {
+                if let problem = mark.problem {
+                    storage.addAttributes([.underlineStyle: NSUnderlineStyle.thick.rawValue, .underlineColor: NSColor.systemRed,
+                                           .toolTip: problem], range: mark.range)
+                } else {
+                    storage.addAttribute(.foregroundColor, value: TemplateTextView.variableColor, range: mark.range)
+                }
+            }
+            storage.endEditing()
+        }
+
+        func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+            guard view.isEditable, parent.editVariable != nil, let found = Template.variable(at: charIndex, in: view.string),
+                  VariableKind(found.variable) != nil else { return menu }
+            let item = NSMenuItem(title: "Edit Variable…", action: #selector(editVariable(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = EditTarget(
+                range: found.range, raw: (view.string as NSString).substring(with: found.range), variable: found.variable)
+            menu.insertItem(item, at: 0)
+            menu.insertItem(.separator(), at: 1)
+            return menu
+        }
+
+        @objc private func editVariable(_ sender: NSMenuItem) {
+            guard let target = sender.representedObject as? EditTarget else { return }
+            parent.editVariable?(target.range, target.raw, target.variable)
+        }
+
+        private final class EditTarget: NSObject {
+            let range: NSRange
+            let raw: String
+            let variable: Variable
+            init(range: NSRange, raw: String, variable: Variable) {
+                self.range = range
+                self.raw = raw
+                self.variable = variable
+            }
+        }
+
+        /// Typing next to a variable mustn't take its colour or underline.
+        func textView(_ textView: NSTextView, shouldChangeTypingAttributes oldTypingAttributes: [String: Any],
+                      toAttributes newTypingAttributes: [NSAttributedString.Key: Any]) -> [NSAttributedString.Key: Any] {
+            var plain = newTypingAttributes
+            plain[.foregroundColor] = NSColor.textColor
+            plain[.underlineStyle] = nil
+            plain[.underlineColor] = nil
+            plain[.toolTip] = nil
+            return plain
         }
 
         /// Leaving the field can't wait for the pause.
@@ -160,6 +240,7 @@ struct TemplateTextView: NSViewRepresentable {
             textView.setSelectedRange(NSRange(location: caret, length: 0))
             textView.undoManager?.removeAllActions()
             saved = text
+            highlight(textView)
         }
     }
 }

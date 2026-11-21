@@ -8,14 +8,14 @@ import SwiftUI
 
     private static var current: InputFormPanel?
 
-    /// The value typed for each label, or nil when cancelled. Either way, it tries to bring back the app
+    /// The value given for each field's label, or nil when cancelled. Either way, it tries to bring back the app
     /// that was in front; if that fails, `ExpansionEngine` sees another app in front and pastes nothing.
-    static func ask(_ labels: [String]) async -> [String: String]? {
+    static func ask(_ fields: [InputField]) async -> [String: String]? {
         guard current == nil else { return nil }
         let previous = NSWorkspace.shared.frontmostApplication
         let values = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                let panel = InputFormPanel(labels: labels, near: previous.flatMap { frontWindowFrame(of: $0) }) { values in
+                let panel = InputFormPanel(fields: fields, near: previous.flatMap { frontWindowFrame(of: $0) }) { values in
                     current = nil
                     continuation.resume(returning: values)
                 }
@@ -59,7 +59,7 @@ import SwiftUI
     private let anchor: NSRect?
     private var finish: (([String: String]?) -> Void)?
 
-    init(labels: [String], near anchor: NSRect?, finish: @escaping ([String: String]?) -> Void) {
+    init(fields: [InputField], near anchor: NSRect?, finish: @escaping ([String: String]?) -> Void) {
         self.anchor = anchor
         self.finish = finish
         super.init()
@@ -70,7 +70,7 @@ import SwiftUI
         // Shows over full-screen apps too, as the picker does.
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let host = NSHostingController(rootView: InputFormView(
-            labels: labels, submit: { [weak self] in self?.end($0) }, cancel: { [weak self] in self?.end(nil) }
+            fields: fields, submit: { [weak self] in self?.end($0) }, cancel: { [weak self] in self?.end(nil) }
         ))
         host.sizingOptions = .preferredContentSize
         panel.contentViewController = host
@@ -105,31 +105,37 @@ import SwiftUI
 }
 
 private struct InputFormView: View {
-    let labels: [String]
+    let fields: [InputField]
     let submit: ([String: String]) -> Void
     let cancel: () -> Void
     @State private var values: [String]
     @FocusState private var focused: Int?
 
-    init(labels: [String], submit: @escaping ([String: String]) -> Void, cancel: @escaping () -> Void) {
-        self.labels = labels
+    init(fields: [InputField], submit: @escaping ([String: String]) -> Void, cancel: @escaping () -> Void) {
+        self.fields = fields
         self.submit = submit
         self.cancel = cancel
-        _values = State(initialValue: labels.map { _ in "" })
+        _values = State(initialValue: fields.map {
+            switch $0.kind {
+            case .text(let def): def
+            case .choice(let options): options.first ?? ""
+            case .multiline: ""
+            }
+        })
     }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 16) {
             Form {
-                ForEach(labels.indices, id: \.self) { i in
-                    TextField(text: $values[i]) { Text(labels[i]) }
-                        .focused($focused, equals: i)
-                        .onSubmit(done)
+                ForEach(fields.indices, id: \.self) { i in
+                    field(i)
                 }
             }
             HStack {
                 Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
+                // ⌘Return too, since Return makes a new line in a long input.
                 Button("Insert", action: done).keyboardShortcut(.defaultAction)
+                    .background(Button("", action: done).keyboardShortcut(.return, modifiers: .command).opacity(0))
             }
         }
         .padding(20)
@@ -137,7 +143,29 @@ private struct InputFormView: View {
         .onAppear { focused = 0 }
     }
 
+    @ViewBuilder private func field(_ i: Int) -> some View {
+        let label = fields[i].label
+        switch fields[i].kind {
+        case .text:
+            TextField(text: $values[i]) { Text(label) }
+                .focused($focused, equals: i)
+                .onSubmit(done)
+        case .choice(let options):
+            Picker(label, selection: $values[i]) {
+                ForEach(options, id: \.self) { Text($0).tag($0) }
+            }
+            .focused($focused, equals: i)
+        case .multiline:
+            LabeledContent(label) {
+                TextEditor(text: $values[i])
+                    .font(.body)
+                    .frame(height: 72)
+                    .focused($focused, equals: i)
+            }
+        }
+    }
+
     private func done() {
-        submit(Dictionary(uniqueKeysWithValues: zip(labels, values)))
+        submit(Dictionary(fields.indices.map { (fields[$0].label, values[$0]) }, uniquingKeysWith: { first, _ in first }))
     }
 }

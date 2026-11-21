@@ -28,8 +28,9 @@ status-menu launcher item, folder buttons, picker empty state, accessible disabl
 **Goal**: New variables (input defaults, choice, longInput, selection, uuid, clipboard/selection transforms, date/time
 shifts, fullName), live preview, variable forms, highlighting and checks, New Snippet from Clipboard.
 **Success Criteria**: `make test` and `make app` pass; a typo like `#{key:tabb}` is underlined in the editor.
-**Tests**: `EvaluatorTests`, `TemplateTests`, `TemplateTextViewTests`, new `TemplateCheckTests`, `PreviewContextTests`.
-**Status**: Not Started (`feature/snippet-designer`)
+**Tests**: `EvaluatorTests`, `TemplateTests`, `TemplateTextViewTests`, new `VariableTests`, `TemplateCheckTests`,
+`SnippetPreviewTests`, `VariableFormTests`, `SelectionCopyTests`.
+**Status**: Complete (`feature/snippet-designer`)
 
 ## After stage 4
 PR to `~/code/websites/xpnd.dev` for the new features; remove this file and the plans/spec once all have merged.
