@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - A File menu (New Snippet ⌘N, New Snippet Group, New Connection, Import…, Export…), Edit → Find (⌘F) for the sidebar search, About, Hide and Minimize. The menu bar menu has Open Connection Launcher, and both it and Open Picker show their shortcuts.
 - New installs start with a `;date` snippet, and the welcome screen shows the menu bar icon, both shortcuts, and where snippets are edited.
 - The picker shows each snippet's group, and says so when nothing matches or there are no snippets yet.
+- New variables: `#{input:Label=default}`, `#{choice:Label:a|b|c}` (a pop-up in the input form), `#{longInput:Label}` (several lines), `#{selection}` (the selected text, from the picker), `#{uuid}`, `#{fullName}`, `#{date:+1d}` and `#{time:+2h}`, and `:trim`, `:upper` or `:lower` on `#{clipboard}` and `#{selection}`.
+- The snippet editor shows a live preview of what the snippet will type, with fields to try its inputs. Scripts, keys, apps and Shortcuts never run there, and the clipboard is never read.
+- Insert Variable opens a form for each variable, and right-clicking a variable offers Edit Variable….
+- Variables are coloured in the editor, and one that won't expand gets a red underline with a tooltip saying why.
+- New Snippet from Clipboard in the menu bar menu. A copied password is refused.
 - ssh connections get a 15-second connect timeout and a 30-second keepalive, after a connection's own SSH options. Turn it off in Settings → Terminal if you set them in `~/.ssh/config`.
 
 ### Changed
