@@ -4,23 +4,37 @@ protocol EvaluationContext: Sendable {
     var now: Date { get }
     var locale: Locale { get }
     var timeZone: TimeZone { get }
-    func clipboardText() async -> String?
     func environment(_ name: String) -> String?
     func snippet(keyword: String) -> Snippet?
     func runScript(path: String, timeoutMs: Int) async throws(ExpansionError) -> String
-    func askInputs(_ labels: [String]) async -> [String: String]?
+    /// The full name of the person logged in.
+    var fullName: String { get }
+    func clipboardText() async -> String?
+    /// The text selected in the front app; nil when there's none or it can't be read.
+    func selectedText() async -> String?
+    func askInputs(_ fields: [InputField]) async -> [String: String]?
+}
+
+/// One field of the input form. A label used twice is one field, of the kind it had first.
+struct InputField: Equatable, Sendable {
+    enum Kind: Equatable, Sendable {
+        case text(default: String)
+        case choice([String])
+        case multiline
+    }
+
+    let label: String
+    let kind: Kind
 }
 
 /// Turns a snippet's template into play steps. Every value is computed here, before anything
 /// on screen changes, so a failure throws instead of leaving a partial expansion.
 enum Evaluator {
     static func evaluate(_ snippet: Snippet, context: some EvaluationContext) async throws(ExpansionError) -> [PlayStep] {
-        var labels: [String] = []
-        var budget = maxPieces
-        try collectInputs(snippet, context: context, stack: [], into: &labels, budget: &budget)
+        let fields = try inputFields(snippet, context: context)
         var answers: [String: String] = [:]
-        if !labels.isEmpty {
-            guard let given = await context.askInputs(labels) else { throw .inputCancelled }
+        if !fields.isEmpty {
+            guard let given = await context.askInputs(fields) else { throw .inputCancelled }
             answers = given
         }
         return finish(try await expand(snippet, context: context, answers: answers, stack: []))
@@ -32,10 +46,17 @@ enum Evaluator {
     static let maxDepth = 16
     static let maxPieces = 10_000
 
-    /// Pass 1: `#{input:}` labels in order of first appearance, through nested combos. It walks the same tree pass 2
-    /// will, so it throws for a cycle or a tree too big before anything is evaluated.
+    /// Pass 1: the input form's fields in order of first appearance, through included snippets. It walks the same tree
+    /// pass 2 will, so it throws for a cycle or a tree too big before anything is evaluated.
+    static func inputFields(_ snippet: Snippet, context: some EvaluationContext) throws(ExpansionError) -> [InputField] {
+        var fields: [InputField] = []
+        var budget = maxPieces
+        try collectInputs(snippet, context: context, stack: [], into: &fields, budget: &budget)
+        return fields
+    }
+
     private static func collectInputs(
-        _ snippet: Snippet, context: some EvaluationContext, stack: [String], into labels: inout [String], budget: inout Int
+        _ snippet: Snippet, context: some EvaluationContext, stack: [String], into fields: inout [InputField], budget: inout Int
     ) throws(ExpansionError) {
         let stack = stack + [snippet.keyword]
         for token in Template.parse(snippet.text) {
@@ -43,14 +64,18 @@ enum Evaluator {
             guard budget >= 0 else { throw .comboTooDeep }
             guard case let .variable(name, argument, _) = token, case .success(let variable) = Variable.parse(name: name, argument: argument)
             else { continue }
+            func add(_ label: String, _ kind: InputField.Kind) {
+                if !fields.contains(where: { $0.label == label }) { fields.append(InputField(label: label, kind: kind)) }
+            }
             switch variable {
-            case .input(let label, _) where !labels.contains(label):
-                labels.append(label)
+            case let .input(label, def): add(label, .text(default: def))
+            case let .choice(label, options): add(label, .choice(options))
+            case .longInput(let label): add(label, .multiline)
             case .snippet(let keyword, _):
                 if stack.contains(keyword) { throw .comboCycle(keyword) }
                 guard stack.count <= maxDepth else { throw .comboTooDeep }
                 guard let nested = context.snippet(keyword: keyword) else { throw .missingCombo(keyword) }
-                try collectInputs(nested, context: context, stack: stack, into: &labels, budget: &budget)
+                try collectInputs(nested, context: context, stack: stack, into: &fields, budget: &budget)
             default:
                 break
             }
@@ -86,9 +111,12 @@ enum Evaluator {
         func step(_ s: PlayStep) -> [Item] { [.step(s)] }
 
         switch variable {
-        case .clipboard(nil): return text(await context.clipboardText() ?? "")
-        case .date(nil): return text(format(context.now, "", date: .short, time: .none, context))
-        case .time(nil): return text(format(context.now, "", date: .none, time: .short, context))
+        case .clipboard(let t): return text(transform(await context.clipboardText() ?? "", t))
+        case .selection(let t): return text(transform(await context.selectedText() ?? "", t))
+        case .date(let shift):
+            return shifted(context.now, by: shift, context).map { text(format($0, "", date: .short, time: .none, context)) }
+        case .time(let shift):
+            return shifted(context.now, by: shift, context).map { text(format($0, "", date: .none, time: .short, context)) }
         case let .dateTime(shift, fmt):
             guard let date = shifted(context.now, by: shift, context) else { return nil }
             return text(format(date, fmt, date: .short, time: .short, context))
@@ -102,8 +130,10 @@ enum Evaluator {
                 guard case .step(.paste(let s)) = $0 else { return $0 }
                 return .step(.paste(c == .upper ? s.uppercased() : s.lowercased()))
             }
-        case .input(let label, _):
+        case .input(let label, _), .choice(let label, _), .longInput(let label):
             return text(answers[label] ?? "")
+        case .uuid: return text(UUID().uuidString)
+        case .fullName: return text(context.fullName)
         case .envVar(let name):
             return text(context.environment(name) ?? "")
         case let .script(path, timeout):
@@ -115,7 +145,15 @@ enum Evaluator {
         case .delay(let ms): return step(.delay(milliseconds: ms))
         case .openApp(let path): return step(.openApp(path: path))
         case .runShortcut(let name): return step(.runShortcut(name: name))
-        default: return nil
+        }
+    }
+
+    private static func transform(_ s: String, _ t: Variable.Transform?) -> String {
+        switch t {
+        case nil: s
+        case .trim: s.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .upper: s.uppercased()
+        case .lower: s.lowercased()
         }
     }
 

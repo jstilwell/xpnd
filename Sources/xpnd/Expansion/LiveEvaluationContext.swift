@@ -7,10 +7,13 @@ struct LiveEvaluationContext: EvaluationContext {
     let now = Date()
     let locale = Locale.current
     let timeZone = TimeZone.current
+    let fullName = NSFullUserName()
 
     func clipboardText() async -> String? {
         await MainActor.run { NSPasteboard.general.string(forType: .string) }
     }
+
+    func selectedText() async -> String? { nil }
 
     func environment(_ name: String) -> String? { ProcessInfo.processInfo.environment[name] }
 
@@ -24,5 +27,5 @@ struct LiveEvaluationContext: EvaluationContext {
         return try await ScriptRunner.run(path: expanded, timeoutMs: timeoutMs)
     }
 
-    func askInputs(_ labels: [String]) async -> [String: String]? { await InputForm.ask(labels) }
+    func askInputs(_ fields: [InputField]) async -> [String: String]? { await InputForm.ask(fields) }
 }

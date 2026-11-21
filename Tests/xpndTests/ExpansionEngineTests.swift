@@ -36,7 +36,9 @@ private struct FakeContext: EvaluationContext {
     func environment(_ name: String) -> String? { nil }
     func snippet(keyword: String) -> Snippet? { library.snippet(keyword: keyword) }
     func runScript(path: String, timeoutMs: Int) async throws(ExpansionError) -> String { "" }
-    func askInputs(_ labels: [String]) async -> [String: String]? { await gate.wait() }
+    func askInputs(_ fields: [InputField]) async -> [String: String]? { await gate.wait() }
+    func selectedText() async -> String? { nil }
+    let fullName = ""
 }
 
 private struct Activation: Equatable {
