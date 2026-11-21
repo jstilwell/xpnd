@@ -323,6 +323,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item.target = self
             menu.addItem(item)
         }
+        let fromClipboard = NSMenuItem(title: "New Snippet from Clipboard", action: #selector(newSnippetFromClipboard), keyEquivalent: "")
+        fromClipboard.target = self
+        menu.addItem(fromClipboard)
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -371,6 +374,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc private func newSnippet() {
         showMainWindow(selecting: nil)
         mainWindow?.newSnippet()
+    }
+
+    @objc private func newSnippetFromClipboard() {
+        let pasteboard = NSPasteboard.general
+        let types = pasteboard.types?.map(\.rawValue) ?? []
+        // The concealed check comes first, so a password is never read into memory here.
+        let string = EditorRules.isConcealed(types) ? nil : pasteboard.string(forType: .string)
+        switch EditorRules.clipboardSnippetText(types: types, string: string) {
+        case .success(let text):
+            showMainWindow(selecting: nil)
+            mainWindow?.newSnippet(text: text)
+        case .failure(let refusal):
+            hud.show(refusal.message)
+        }
     }
 
     @objc private func newSnippetGroup() {

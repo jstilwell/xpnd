@@ -6,7 +6,7 @@ import AppKit
 @MainActor enum SecretClipboard {
     static let clearAfter: Duration = .seconds(30)
     /// Each copy's tag is this plus `.<UUID>`; xpndRDP's `XPRDPClipboardFilter` matches the prefix.
-    static let secretTypePrefix = "com.jessestilwell.xpnd.secret"
+    nonisolated static let secretTypePrefix = "com.jessestilwell.xpnd.secret"
     /// Tuning values: while an expansion's pastes have the clipboard set aside, the deadline is checked again this
     /// often, for at most `holdLimit` (a hold is a second or so per paste).
     private static let recheckEvery: Duration = .milliseconds(50)

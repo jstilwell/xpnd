@@ -91,4 +91,21 @@ import Testing
         #expect(EditorRules.snippetTarget(for: .connection(UUID()), in: snippets) == groups[0].id)
         #expect(EditorRules.snippetTarget(for: nil, in: .empty) == nil)
     }
+
+    @Test func concealedClipboardIsRefused() {
+        #expect(EditorRules.clipboardSnippetText(types: ["public.utf8-plain-text", "org.nspasteboard.ConcealedType"], string: "pw")
+            == .failure(.concealed))
+        #expect(EditorRules.clipboardSnippetText(types: [SecretClipboard.secretTypePrefix + ".x"], string: "pw") == .failure(.concealed))
+    }
+
+    @Test func noTextIsRefused() {
+        #expect(EditorRules.clipboardSnippetText(types: ["public.png"], string: nil) == .failure(.noText))
+        #expect(EditorRules.clipboardSnippetText(types: ["public.utf8-plain-text"], string: "") == .failure(.noText))
+    }
+
+    @Test func clipboardTextBecomesTheSnippet() {
+        #expect(EditorRules.clipboardSnippetText(types: ["public.utf8-plain-text"], string: "Hi #{x}") == .success("Hi #{x}"))
+        #expect(ClipboardRefusal.concealed.message == "The clipboard holds a password, so xpnd didn't make a snippet from it.")
+        #expect(ClipboardRefusal.noText.message == "The clipboard has no text to make a snippet from.")
+    }
 }
