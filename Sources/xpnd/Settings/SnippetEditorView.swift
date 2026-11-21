@@ -54,7 +54,10 @@ struct SnippetEditorView: View {
             }
             Toggle("Enabled", isOn: binding(\.enabled))
             Section {
-                TemplateTextView(text: snippet.text, snippetID: snippet.id, isEditable: !readOnly, controller: template) { new in
+                TemplateTextView(text: snippet.text, snippetID: snippet.id, isEditable: !readOnly, controller: template,
+                                 check: { [keyword = snippet.keyword, library = namespace.snippets] in
+                                     TemplateCheck.marks(in: $0, keyword: keyword, library: library)
+                                 }) { new in
                     edit { $0.text = new }
                 }
                     .frame(minHeight: 200)
