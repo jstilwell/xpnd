@@ -23,7 +23,11 @@ struct DetailsPane: View {
         case .folder(let id):
             if let folder = connections.library.folder(id) {
                 // Per-item ids, so one editor's unsaved field state never shows on another.
-                chrome(connections.store.loadError, connections.saveProblem, file: "connections.yaml") { FolderEditorView(editing: connections, folder: folder, focus: $focus).id(id) }
+                chrome(connections.store.loadError, connections.saveProblem, file: "connections.yaml") { FolderEditorView(editing: connections, folder: folder, focus: $focus, newConnection: {
+                    guard let new = connections.addConnection(in: id) else { return }
+                    selection = .connection(new)
+                    focus = .name
+                }) { delete(.folder(id)) }.id(id) }
             } else { nothingSelected }
         case .connection(let id):
             if let connection = connections.library.connection(id) {
@@ -31,11 +35,11 @@ struct DetailsPane: View {
             } else { nothingSelected }
         case .snippetGroup(let id):
             if let group = editing.group(id) {
-                chrome(editing.store.loadError, editing.saveProblem, file: "snippets.yaml") { SnippetGroupDetails(editing: editing, group: group, connections: connections.library, selection: $selection) { delete(.snippetGroup(id)) } }
+                chrome(editing.store.loadError, editing.saveProblem, file: "snippets.yaml") { SnippetGroupDetails(editing: editing, group: group, connections: connections.library, selection: $selection, focus: $focus) { delete(.snippetGroup(id)) } }
             } else { nothingSelected }
         case .snippet(let id):
             if let snippet = editing.snippet(id) {
-                chrome(editing.store.loadError, editing.saveProblem, file: "snippets.yaml") { SnippetDetails(editing: editing, snippet: snippet, connections: connections.library) { delete(.snippet(id)) } }
+                chrome(editing.store.loadError, editing.saveProblem, file: "snippets.yaml") { SnippetDetails(editing: editing, snippet: snippet, connections: connections.library) { delete(.snippet(id)) }.id(id) }
             } else { nothingSelected }
         case nil:
             nothingSelected

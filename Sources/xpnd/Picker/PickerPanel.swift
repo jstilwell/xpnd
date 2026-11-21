@@ -6,10 +6,12 @@ import SwiftUI
 final class PickerPanel: LauncherPanel {
     private let store: SnippetStore
     private let engine: ExpansionEngine
+    private let openApp: () -> Void
 
-    init(store: SnippetStore, engine: ExpansionEngine) {
+    init(store: SnippetStore, engine: ExpansionEngine, openApp: @escaping () -> Void) {
         self.store = store
         self.engine = engine
+        self.openApp = openApp
         super.init()
     }
 
@@ -21,8 +23,13 @@ final class PickerPanel: LauncherPanel {
         // A fresh view each time, so the query and highlight start clean.
         present(PickerView(
             snippets: store.library.activeSnippets,
+            groups: PickerFilter.groupNames(store.library),
             choose: { [weak self] in self?.insert($0) },
-            cancel: { [weak self] in self?.close() }
+            cancel: { [weak self] in self?.close() },
+            openApp: { [weak self] in
+                self?.close()
+                self?.openApp()
+            }
         ))
     }
 
@@ -37,8 +44,11 @@ final class PickerPanel: LauncherPanel {
 
 private struct PickerView: View {
     let snippets: [Snippet]
+    /// Each snippet's group name.
+    let groups: [Snippet.ID: String]
     let choose: (Snippet) -> Void
     let cancel: () -> Void
+    let openApp: () -> Void
     @State private var query = ""
     @State private var selected: Snippet.ID?
     @FocusState private var focused: Bool
@@ -54,23 +64,17 @@ private struct PickerView: View {
                 .focused($focused)
                 .onSubmit { if let s = current { choose(s) } }
             Divider()
-            ScrollViewReader { proxy in
-                List(results, selection: $selected) { snippet in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(snippet.name).lineLimit(1)
-                            Spacer()
-                            Text(snippet.keyword).font(.callout.monospaced()).foregroundStyle(.secondary)
-                        }
-                        Text(snippet.text.replacingOccurrences(of: "\n", with: " "))
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    .tag(snippet.id)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { choose(snippet) }
+            if snippets.isEmpty {
+                VStack(spacing: 12) {
+                    Text("No snippets yet").foregroundStyle(.secondary)
+                    Text("Add them in the xpnd window.").font(.callout).foregroundStyle(.secondary)
+                    Button("Open xpnd", action: openApp)
                 }
-                .listStyle(.plain)
-                .onChange(of: selected) { _, id in if let id { proxy.scrollTo(id) } }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if results.isEmpty {
+                Text("No snippets match").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                list
             }
         }
         .frame(width: 560, height: 360)
@@ -87,6 +91,30 @@ private struct PickerView: View {
         .onKeyPress(.downArrow) { move(1); return .handled }
         .onKeyPress(.upArrow) { move(-1); return .handled }
         .onKeyPress(.escape) { cancel(); return .handled }
+    }
+
+    private var list: some View {
+        ScrollViewReader { proxy in
+            List(results, selection: $selected) { snippet in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(snippet.name).lineLimit(1)
+                        if let group = groups[snippet.id] {
+                            Text(group).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                        Text(snippet.keyword).font(.callout.monospaced()).foregroundStyle(.secondary)
+                    }
+                    Text(snippet.text.replacingOccurrences(of: "\n", with: " "))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .tag(snippet.id)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { choose(snippet) }
+            }
+            .listStyle(.plain)
+            .onChange(of: selected) { _, id in if let id { proxy.scrollTo(id) } }
+        }
     }
 
     private var current: Snippet? { results.first { $0.id == selected } ?? results.first }

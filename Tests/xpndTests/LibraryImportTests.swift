@@ -98,3 +98,27 @@ private func lib(_ groups: (String, [Snippet])...) -> SnippetLibrary {
     #expect(kept.groups[0].snippets.map(\.keyword) == [";a"])
     #expect(taken == [";sig"])
 }
+
+// MARK: Undoing an import
+
+@Test func undoImportRemovesAddedSnippetsAndGroups() {
+    let before = lib(("Work", [snip(";a")]))
+    let after = LibraryImport.merge(lib(("Work", [snip(";b")]), ("Home", [snip(";c")])), into: before, choice: .skip)
+    #expect(LibraryImport.undo(before: before, after: after, in: after) == before)
+}
+
+@Test func undoImportRestoresReplacedSnippets() {
+    let before = lib(("Work", [snip(";a", "old"), snip(";z")]))
+    let after = LibraryImport.merge(lib(("Home", [snip(";a", "new")])), into: before, choice: .replace)
+    #expect(LibraryImport.undo(before: before, after: after, in: after) == before)
+}
+
+@Test func undoImportKeepsAnEditedSnippet() {
+    let before = lib(("Work", [snip(";a")]))
+    let after = LibraryImport.merge(lib(("Work", [snip(";b"), snip(";c")])), into: before, choice: .skip)
+    var current = after
+    current.groups[0].snippets[1].text = "edited"
+    let undone = LibraryImport.undo(before: before, after: after, in: current)
+    #expect(undone.groups[0].snippets.map(\.keyword) == [";a", ";b"])
+    #expect(undone.groups[0].snippets[1].text == "edited")
+}

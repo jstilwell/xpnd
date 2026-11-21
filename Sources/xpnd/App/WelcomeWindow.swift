@@ -144,6 +144,14 @@ struct WelcomeView: View {
 
     // MARK: - After access
 
+    /// Both global shortcuts, as Settings has them; nil with both turned off.
+    @MainActor private static var shortcutsLine: String? {
+        let settings = AppSettings.shared
+        let parts = [settings.pickerShortcut.map { "\($0.label) searches your snippets" },
+                     settings.connectionLauncherShortcut.map { "\($0.label) opens a connection" }].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: ", and ") + "."
+    }
+
     private var ready: some View {
         VStack(spacing: 16) {
             Image(nsImage: NSApp.applicationIconImage)
@@ -159,9 +167,14 @@ struct WelcomeView: View {
             VStack(spacing: 6) {
                 HStack(spacing: 6) {
                     Text("It runs in the menu bar:")
-                    Image(systemName: "text.cursor")
+                    Image(nsImage: MenuBarIcon.image()).accessibilityLabel("the xpnd icon")
                 }
-                Text("Type a snippet's keyword in any app, and xpnd puts the snippet in its place.")
+                Text("Type a snippet's keyword in any app, and xpnd puts the snippet in its place. Try ;date and a space.")
+                    .fixedSize(horizontal: false, vertical: true)
+                if let shortcuts = Self.shortcutsLine {
+                    Text(shortcuts).fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Add and edit snippets and connections in the xpnd window: click the menu bar icon, then Open xpnd….")
                     .fixedSize(horizontal: false, vertical: true)
             }
             .multilineTextAlignment(.center)

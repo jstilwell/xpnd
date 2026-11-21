@@ -30,6 +30,15 @@ enum EditorRules {
         }
     }
 
+    /// The group a new snippet goes in: the selected group or the selected snippet's, else the first; nil with none.
+    static func snippetTarget(for selection: SidebarItem?, in library: SnippetLibrary) -> SnippetGroup.ID? {
+        switch selection {
+        case .snippetGroup(let id)? where library.groups.contains(where: { $0.id == id }): id
+        case .snippet(let id)?: library.groups.first { $0.snippets.contains { $0.id == id } }?.id ?? library.groups.first?.id
+        default: library.groups.first?.id
+        }
+    }
+
     /// The folders to open so the sidebar shows `selection`: every folder above it. A new connection
     /// lands in a closed (or until then empty) folder, and a selection made from outside may be nested.
     static func foldersToOpen(for selection: SidebarItem?, in library: ConnectionLibrary) -> Set<ConnectionFolder.ID> {
@@ -43,23 +52,18 @@ enum EditorRules {
     /// How an item with no name shows: in the sidebar, in questions about it, in the export list.
     static func displayName(_ name: String) -> String { name.isEmpty ? "Untitled" : name }
 
-    /// What to ask before deleting `item`, since nothing can bring it back. nil when there is nothing to
-    /// lose (an empty folder or group) or the item is gone, and the delete just goes ahead.
+    /// What to ask before deleting a folder or group with things in it. nil for anything else, which goes at once
+    /// (⌘Z brings it back), or when the item is gone.
     static func deleteQuestion(for item: SidebarItem, connections: ConnectionLibrary, snippets: SnippetLibrary) -> (title: String, message: String)? {
-        let final = "This can't be undone."
+        let final = "You can undo this."
         switch item {
-        case .connection(let id):
-            guard let connection = connections.connection(id) else { return nil }
-            let users = connections.allConnections.filter { $0.jumpHost == .connection(id) }.count
-            let lost = users == 0 ? "" : "\(count(users, "connection")) use\(users == 1 ? "s" : "") it as a jump host and will lose it. "
-            return ("Delete “\(displayName(connection.name))”?", lost + final)
+        // One item comes back with ⌘Z, so it goes without asking.
+        case .connection, .snippet:
+            return nil
         case .folder(let id):
             guard let folder = connections.folder(id), !(folder.connections.isEmpty && folder.folders.isEmpty) else { return nil }
             return ("Delete “\(displayName(folder.name))” and everything in it?",
                     "\(count(folder.allConnections.count, "connection")) and \(count(folder.allFolders.count - 1, "folder")). \(final)")
-        case .snippet(let id):
-            guard let snippet = snippets.groups.lazy.flatMap(\.snippets).first(where: { $0.id == id }) else { return nil }
-            return ("Delete “\(displayName(snippet.name))”?", "Its keyword is \(snippet.keyword). \(final)")
         case .snippetGroup(let id):
             guard let group = snippets.groups.first(where: { $0.id == id }), !group.snippets.isEmpty else { return nil }
             return ("Delete “\(displayName(group.name))” and its \(count(group.snippets.count, "snippet"))?", final)
@@ -319,6 +323,64 @@ extension ConnectionLibrary {
     }
 }
 
+/// Where a connection or folder sat, for undo: its folder (nil: the top level) and its index among its kind there.
+struct ConnectionPlacement: Equatable {
+    let parent: ConnectionFolder.ID?
+    /// For a connection whose folder is gone by the time it comes back: a new folder of this name holds it.
+    let parentName: String?
+    let index: Int
+}
+
+extension ConnectionLibrary {
+    func placement(of item: SidebarItem) -> ConnectionPlacement? {
+        switch item {
+        case .connection(let id):
+            guard let parent = path(of: id).last, let index = parent.connections.firstIndex(where: { $0.id == id }) else { return nil }
+            return ConnectionPlacement(parent: parent.id, parentName: parent.name, index: index)
+        case .folder(let id):
+            let path = folderPath(of: id)
+            guard !path.isEmpty else { return nil }
+            let parent = path.dropLast().last
+            guard let index = (parent?.folders ?? folders).firstIndex(where: { $0.id == id }) else { return nil }
+            return ConnectionPlacement(parent: parent?.id, parentName: parent?.name, index: index)
+        default:
+            return nil
+        }
+    }
+
+    /// Puts `removed` back at `place`, its index clamped. If that folder is gone, a folder goes last at the top level
+    /// and a connection into a new top-level folder named like the old one. False, and no change, if any of its ids
+    /// is already here (it came back some other way).
+    @discardableResult
+    mutating func restore(_ removed: Removed, at place: ConnectionPlacement) -> Bool {
+        let have = Set(allFolders.map(\.id) + allConnections.map(\.id))
+        let parent = place.parent.flatMap { folder($0) == nil ? nil : $0 }
+        switch removed {
+        case .connection(let c):
+            guard !have.contains(c.id) else { return false }
+            if let parent { return editFolder(parent) { $0.connections.insert(c, at: min(place.index, $0.connections.count)) } }
+            folders.append(ConnectionFolder(name: place.parentName ?? "Restored", connections: [c]))
+        case .folder(let f):
+            guard have.isDisjoint(with: f.allFolders.map(\.id) + f.allConnections.map(\.id)) else { return false }
+            if let parent { return editFolder(parent) { $0.folders.insert(f, at: min(place.index, $0.folders.count)) } }
+            if place.parent == nil { folders.insert(f, at: min(place.index, folders.count)) } else { folders.append(f) }
+        }
+        return true
+    }
+
+    /// Undoes a move: `item` goes back to `place`. False, and no change, if it or that folder is gone.
+    @discardableResult
+    mutating func moveBack(_ item: SidebarItem, to place: ConnectionPlacement) -> Bool {
+        var next = self
+        guard let removed = next.remove(item) else { return false }
+        // Checked after the removal: a folder can't go back into what is now its own subtree.
+        if let parent = place.parent, next.folder(parent) == nil { return false }
+        guard next.restore(removed, at: place) else { return false }
+        self = next
+        return true
+    }
+}
+
 /// Connection saving for the main window's sidebar and Details pane. Every edit saves at once
 /// through `store.update`; ids are persisted, so a save finds its item by id.
 @MainActor @Observable
@@ -419,12 +481,57 @@ final class ConnectionEditing {
         } ? copy.id : nil
     }
 
-    func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?, at index: Int? = nil) -> Bool {
-        save { $0.move(item, to: destination, at: index) }
+    /// `undo`: the acting window's; ⌘Z then moves it back to where it was.
+    func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?, at index: Int? = nil, undo: UndoManager? = nil) -> Bool {
+        let place = library.placement(of: item), name = displayName(of: item)
+        guard save({ $0.move(item, to: destination, at: index) }) else { return false }
+        if let undo, let place {
+            undo.registerUndo(withTarget: self) { editing in
+                MainActor.assumeIsolated { _ = editing.save { $0.moveBack(item, to: place) } }
+            }
+            undo.setActionName("Move “\(name)”")
+        }
+        return true
     }
 
-    func delete(_ item: SidebarItem) -> Bool {
-        save { $0.remove(item) != nil }
+    /// `undo`: the acting window's; ⌘Z then puts back what this removed, into the library as it is by then.
+    func delete(_ item: SidebarItem, undo: UndoManager? = nil) -> Bool {
+        let place = library.placement(of: item), name = displayName(of: item)
+        var removed: ConnectionLibrary.Removed?
+        guard save({ removed = $0.remove(item); return removed != nil }), let removed else { return false }
+        if let undo, let place {
+            undo.registerUndo(withTarget: self) { editing in
+                MainActor.assumeIsolated { editing.restore(removed, at: place) }
+            }
+            undo.setActionName("Delete “\(name)”")
+        }
+        return true
+    }
+
+    /// Undo of a delete. A string a snippet took meanwhile stays the snippet's (one file's save can't see the other's),
+    /// so the item comes back without it, and says so.
+    private func restore(_ removed: ConnectionLibrary.Removed, at place: ConnectionPlacement) {
+        let keywords = Set(snippets.library.groups.flatMap(\.snippets).map(\.keyword))
+        let wrapped = switch removed {
+        case .connection(let c): ConnectionLibrary(folders: [ConnectionFolder(name: "", connections: [c])])
+        case .folder(let f): ConnectionLibrary(folders: [f])
+        }
+        let (kept, taken) = ConnectionImport.removing(keywords, from: wrapped)
+        let back: ConnectionLibrary.Removed = switch removed {
+        case .connection: .connection(kept.folders[0].connections[0])
+        case .folder: .folder(kept.folders[0])
+        }
+        guard save({ $0.restore(back, at: place) }), !taken.isEmpty else { return }
+        saveProblem = "Snippets now use \(taken.joined(separator: ", ")), so it came back without \(taken.count == 1 ? "that string" : "those strings")."
+    }
+
+    private func displayName(of item: SidebarItem) -> String {
+        let name: String? = switch item {
+        case .connection(let id): library.connection(id)?.name
+        case .folder(let id): library.folder(id)?.name
+        default: nil
+        }
+        return EditorRules.displayName(name ?? "")
     }
 
     /// The account to search: the one chosen in Settings, or the only one. Never a guess.

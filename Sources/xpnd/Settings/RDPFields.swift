@@ -48,11 +48,21 @@ struct RDPFields: View {
             toggle("Share clipboard", \.clipboard, d?.clipboard)
             toggle("Share printers", \.printers, d?.printers)
         }
-        Section("Files") {
+        Section {
             toggle("File drop drive", \.dropDrive, d?.dropDrive)
+        } header: {
+            Text("Files")
+        } footer: {
+            Text("Files dropped on the toolbar go to one folder Windows sees as This PC → xpnd, and nothing else of your Mac.")
+                .font(.callout).foregroundStyle(.secondary)
         }
-        Section("Security") {
+        Section {
             toggle("Network Level Authentication", \.nla, d?.nla)
+        } header: {
+            Text("Security")
+        } footer: {
+            Text("On, it connects with NLA or not at all. Turn it off for a server without it: the connection then uses TLS and asks about the certificate.")
+                .font(.callout).foregroundStyle(.secondary)
         }
         Section("Network") {
             RDPOptionRow(value: $options.performance, defaultValue: d?.performance, describe: RDPOptionLabels.label(for:)) { perf in

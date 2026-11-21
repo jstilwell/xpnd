@@ -41,6 +41,7 @@ struct SnippetEditorView: View {
             CommittingTextField("Name", text: snippet.name) { name in _ = edit { $0.name = name } }.id(snippet.id)
             VStack(alignment: .leading, spacing: 4) {
                 TextField("Keyword", text: $keyword)
+                    .commitsOnPause(keyword, saveKeyword)
                 if let keywordProblem {
                     Text(keywordProblem).font(.callout).foregroundStyle(.red)
                 } else if let note = namespace.hidingNote(keyword, for: .snippet(snippet.id)) {
@@ -76,7 +77,8 @@ struct SnippetEditorView: View {
             keyword = snippet.keyword
             keywordProblem = namespace.problem(keyword, for: .snippet(snippet.id))
         }
-        .onChange(of: keyword) { saveKeyword() }
+        // The check shows while typing; the save waits for a pause (`commitsOnPause`).
+        .onChange(of: keyword) { keywordProblem = namespace.problem(keyword, for: .snippet(snippet.id)) }
         .sheet(isPresented: $choosingShortcut) {
             ShortcutChooser { insert("runShortcut", $0) }
         }

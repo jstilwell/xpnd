@@ -1,6 +1,11 @@
 import Foundation
 
 enum PickerFilter {
+    /// Each snippet's group name, as the sidebar shows it, for the picker's rows.
+    static func groupNames(_ library: SnippetLibrary) -> [Snippet.ID: String] {
+        Dictionary(library.groups.flatMap { g in g.snippets.map { ($0.id, EditorRules.displayName(g.name)) } }, uniquingKeysWith: { a, _ in a })
+    }
+
     /// `snippets` is taken as given: the picker passes `library.activeSnippets`, so disabled ones never show
     /// there, and the sidebar a whole group, disabled ones included.
     static func filter(_ snippets: [Snippet], query: String) -> [Snippet] {

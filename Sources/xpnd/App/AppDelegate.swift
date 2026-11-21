@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private(set) var statusItem: NSStatusItem!
     private(set) var menu = NSMenu()
 
@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installMainMenu()
 
         store.load()
+        store.seedIfFirstLaunch(defaults: .standard)
         store.startWatching()
         connections.load()
         connections.seedIfFirstLaunch(defaults: .standard)
@@ -64,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onActivate: { [weak self] in await self?.activate($0, typedInto: $1, typed: $2) }
         )
         engine.isEnabled = settings.expansionEnabled
-        picker = PickerPanel(store: store, engine: engine)
+        picker = PickerPanel(store: store, engine: engine, openApp: { [weak self] in self?.showMainWindow(selecting: nil) })
         pickerHotKey.action = { [weak self] in self?.picker.toggle() }
         registerPickerShortcut()
         launcher = ConnectionLauncherPanel()
@@ -211,12 +212,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and closing shortcuts.
     /// Adapted from HoverEnhance's.
     private func installMainMenu() {
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
-        settingsItem.target = self
+        func item(_ title: String, _ action: Selector, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command,
+                  target: AnyObject? = nil) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            item.target = target
+            return item
+        }
         let appMenu = NSMenu()
         appMenu.items = [
-            settingsItem, .separator(),
-            NSMenuItem(title: "Quit xpnd", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"),
+            item("About xpnd", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), target: NSApp), .separator(),
+            item("Settings…", #selector(showSettings), ",", target: self), .separator(),
+            item("Hide xpnd", #selector(hideApp), "h", target: self),
+            item("Hide Others", #selector(hideOthers), "h", [.command, .option], target: self),
+            item("Show All", #selector(NSApplication.unhideAllApplications(_:))), .separator(),
+            item("Quit xpnd", #selector(NSApplication.terminate(_:)), "q"),
+        ]
+        // ⌘⇧N is the notch's in a desktop tab, so New Connection has no shortcut.
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.items = [
+            item("New Snippet", #selector(newSnippet), "n", target: self),
+            item("New Snippet Group", #selector(newSnippetGroup), target: self),
+            item("New Connection", #selector(newConnection), target: self), .separator(),
+            item("Import…", #selector(showImportExport), target: self),
+            item("Export…", #selector(showImportExport), target: self),
         ]
         let editMenu = NSMenu(title: "Edit")
         let redo = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
@@ -226,12 +245,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"),
             NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"),
             NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"),
-            NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"),
+            NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"), .separator(),
+            item("Find", #selector(findInMainWindow), "f", target: self),
         ]
         let windowMenu = NSMenu(title: "Window")
-        windowMenu.items = [NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")]
+        windowMenu.items = [
+            item("Minimize", #selector(minimizeWindow), "m", target: self),
+            NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"),
+        ]
+        NSApp.windowsMenu = windowMenu
         let main = NSMenu()
-        for submenu in [appMenu, editMenu, windowMenu] {
+        for submenu in [appMenu, fileMenu, editMenu, windowMenu] {
             let item = NSMenuItem()
             item.submenu = submenu
             main.addItem(item)
@@ -289,9 +313,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggle.target = self
         toggle.state = settings.expansionEnabled ? .on : .off
         menu.addItem(toggle)
-        let open = NSMenuItem(title: "Open Picker", action: #selector(openPicker), keyEquivalent: "")
-        open.target = self
-        menu.addItem(open)
+        // Shown with their global shortcuts; the menu only displays them, the hotkeys do the work.
+        for (title, action, shortcut) in [("Open Picker", #selector(openPicker), settings.pickerShortcut),
+                                          ("Open Connection Launcher", #selector(openLauncher), settings.connectionLauncherShortcut)] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: shortcut?.menuKeyEquivalent ?? "")
+            item.keyEquivalentModifierMask = shortcut?.modifierFlags ?? []
+            item.target = self
+            menu.addItem(item)
+        }
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -316,6 +345,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openPicker() {
         picker.toggle()
+    }
+
+    /// Items whose keys a desktop tab keeps: disabled there, so the key falls through to Windows as before.
+    private static let desktopKeys: Set<Selector> = [
+        #selector(newSnippet), #selector(newSnippetGroup), #selector(newConnection), #selector(findInMainWindow),
+        #selector(hideApp), #selector(hideOthers), #selector(minimizeWindow),
+    ]
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard let action = item.action, Self.desktopKeys.contains(action) else { return true }
+        return MainWindowController.menuTakesKeys(focusedSessionKind: mainWindow?.focusedSessionKind)
+    }
+
+    @objc private func hideApp() { NSApp.hide(nil) }
+    @objc private func hideOthers() { NSApp.hideOtherApplications(nil) }
+    @objc private func minimizeWindow() { NSApp.keyWindow?.performMiniaturize(nil) }
+
+    @objc private func openLauncher() {
+        launcherHotKey.action?()
+    }
+
+    @objc private func newSnippet() {
+        showMainWindow(selecting: nil)
+        mainWindow?.newSnippet()
+    }
+
+    @objc private func newSnippetGroup() {
+        showMainWindow(selecting: nil)
+        mainWindow?.newSnippetGroup()
+    }
+
+    @objc private func newConnection() {
+        showMainWindow(selecting: nil)
+        mainWindow?.newConnection()
+    }
+
+    @objc private func findInMainWindow() {
+        showMainWindow(selecting: nil)
+        mainWindow?.find()
+    }
+
+    @objc private func showImportExport() {
+        showSettings()
+        settingsWindow?.show(.importExport)
     }
 
     @objc private func checkForUpdates() {

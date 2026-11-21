@@ -84,6 +84,11 @@ struct TemplateTextView: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
+        /// The text's own undo, so dropping it (`replace`) leaves the window's Delete and Move undos alone.
+        private let textUndo = UndoManager()
+
+        func undoManager(for view: NSTextView) -> UndoManager? { textUndo }
+
         var parent: TemplateTextView
         /// The text last saved (or shown from the store), to go back to if a save fails.
         var saved = ""

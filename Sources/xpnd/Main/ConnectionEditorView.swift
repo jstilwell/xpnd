@@ -62,7 +62,8 @@ struct ConnectionEditorView: View {
                     }
                     field(problem: activationProblem(namespace),
                           note: activationText.isEmpty ? nil : namespace.hidingNote(activationText, for: .connection(connection.id))) {
-                        TextField("Activation string", text: Binding(get: { activationText }, set: editActivation), prompt: Text("None"))
+                        TextField("Activation string", text: $activationText, prompt: Text("None"))
+                            .commitsOnPause(activationText, saveActivation)
                             .focused($focused, equals: .activation)
                     }
                     ColorChoice(own: connection.color,
@@ -99,7 +100,7 @@ struct ConnectionEditorView: View {
             .disabled(editing.readOnly)
             HStack {
                 // Here as well as in the sidebar's menu, which a first look doesn't find.
-                Button("Delete Connection…", systemImage: "minus", role: .destructive, action: delete).disabled(editing.readOnly)
+                Button("Delete Connection", systemImage: "minus", role: .destructive, action: delete).disabled(editing.readOnly)
                 Spacer()
                 if hasSession { Button("Show Session") { editing.showSession(connection.id) } }
                 if live {
@@ -235,9 +236,8 @@ struct ConnectionEditorView: View {
         activationText.isEmpty ? nil : namespace.problem(activationText, for: .connection(connection.id))
     }
 
-    private func editActivation(_ text: String) {
-        activationText = text
-        let new = text.isEmpty ? nil : text
+    private func saveActivation() {
+        let new = activationText.isEmpty ? nil : activationText
         guard activationProblem(editing.namespace) == nil, new != connection.activation else { return }
         editing.edit(connection: connection.id) { $0.activation = new }
     }

@@ -77,7 +77,13 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
   through `SnippetEditing`, `SnippetGroupDetails`, and `SnippetDetails` (in
   `Settings/SnippetsSettingsView.swift`) with `SnippetEditorView` and `TemplateTextView`; connections
   through `ConnectionEditing` with `ConnectionEditorView` and `FolderEditorView`. Their text fields are
-  `CommittingTextField`s, which save once typing pauses (like `TemplateTextView`), not per key.
+  `CommittingTextField`s, which save once typing pauses (like `TemplateTextView`), not per key; keyword and
+  activation fields, which check as you type, use `commitsOnPause`.
+  Undo is in memory only and puts back just what an action changed: deletes and moves record where the item sat
+  (`ConnectionLibrary.placement`/`restore`/`moveBack`, `SnippetLibrary.placement`/`restoreSnippet`) and register
+  on the window's `UndoManager`; an import's undo (`ConnectionImport.undo`, `LibraryImport.undo`) diffs the
+  library before and after it against the current one, leaving anything edited since. `AppDelegate.installMainMenu`
+  routes File and Find to `MainWindowController`.
 - Connections: `ConnectionStore` owns the library and atomically saves `connections.yaml` through
   `ConnectionYAML` (an unreadable file is left untouched, like snippets). `KeywordNamespace` makes
   snippet keywords and connection and folder activation strings one namespace (`hidingNote` warns when one

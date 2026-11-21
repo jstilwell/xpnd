@@ -40,6 +40,8 @@ struct Sidebar: View {
     let sessions: TerminalSessions
     @Binding var selection: SidebarItem?
     @Binding var focus: EditorFocus?
+    /// True puts the keyboard in the search field (Edit → Find).
+    @Binding var searchPresented: Bool
     let openSettings: () -> Void
     /// Deletes an item, asking first when there is something to lose.
     let delete: (SidebarItem) -> Void
@@ -49,6 +51,7 @@ struct Sidebar: View {
     @State private var expandedFolders: Set<ConnectionFolder.ID> = []
     /// The group a drag is over (its "into" target), so it highlights.
     @State private var targetedGroup: SnippetGroup.ID?
+    @Environment(\.undoManager) private var undoManager
 
     private var searching: Bool { !search.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -57,7 +60,7 @@ struct Sidebar: View {
             connectionsSection
             snippetsSection
         }
-        .searchable(text: $search, placement: .sidebar)
+        .searchable(text: $search, isPresented: $searchPresented, placement: .sidebar)
         .contextMenu(forSelectionType: SidebarItem.self) { items in
             menu(for: items)
         } primaryAction: { items in
@@ -88,6 +91,7 @@ struct Sidebar: View {
                 Spacer()
                 Button("Settings", systemImage: "gearshape", action: openSettings)
                     .labelStyle(.iconOnly).buttonStyle(.borderless)
+                    .help("Settings")
             }
             .padding(6)
         }
@@ -140,7 +144,7 @@ struct Sidebar: View {
                         case .snippetGroup(let id):
                             var probe = editing.store.library
                             guard !searching, probe.moveGroup(id, to: index), probe != editing.store.library else { continue }
-                            _ = editing.moveGroup(id, to: index)
+                            _ = editing.moveGroup(id, to: index, undo: undoManager)
                         // A snippet dropped under a group's row goes into that group.
                         case .snippet(let id):
                             if let group = EditorRules.aboveTheLine(index: index, siblings: library.groups.map(\.id), container: nil) {
@@ -155,6 +159,7 @@ struct Sidebar: View {
                     Button("Add Snippet Group", systemImage: "plus") {
                         if let id = editing.addGroup() { selection = .snippetGroup(id) }
                     }
+                    .help("Add Snippet Group")
                     .disabled(editing.readOnly)
                 }
             }
@@ -189,6 +194,7 @@ struct Sidebar: View {
             Button("New Top-Level Folder") { select(connections.addFolder(in: nil).map(SidebarItem.folder), focus: .name) }
         }
         .menuIndicator(.hidden).fixedSize()
+        .help("Add a connection or folder")
         .disabled(connections.readOnly)
     }
 
@@ -216,20 +222,24 @@ struct Sidebar: View {
     private func drop(_ item: SidebarItem, to container: ConnectionFolder.ID?, at index: Int?) {
         var probe = connections.library
         guard !searching, probe.move(item, to: container, at: index), probe != connections.library else { return }
-        _ = connections.move(item, to: container, at: index)
+        _ = connections.move(item, to: container, at: index, undo: undoManager)
     }
 
     private func dropSnippet(_ id: Snippet.ID, into group: SnippetGroup.ID, at index: Int?) {
         var probe = editing.store.library
         guard !searching, probe.moveSnippet(id, to: group, at: index), probe != editing.store.library else { return }
-        _ = editing.moveSnippet(id, to: group, at: index)
+        _ = editing.moveSnippet(id, to: group, at: index, undo: undoManager)
     }
 
     private func snippetGroup(_ group: SnippetGroup, _ snippets: [Snippet], expanded: Binding<Bool>) -> some View {
         DisclosureGroup(isExpanded: expanded) {
             ForEach(snippets) { snippet in
+                // Off by itself or with its group: either way it doesn't expand.
+                let off = !snippet.enabled || !group.enabled
                 sidebarRow(EditorRules.displayName(snippet.name), detail: snippet.keyword, symbol: "text.cursor")
-                    .opacity(snippet.enabled ? 1 : 0.5)
+                    .opacity(off ? 0.5 : 1)
+                    .accessibilityValue(off ? "Off" : "")
+                    .help(!snippet.enabled ? "Disabled: this snippet doesn't expand." : off ? "Its group is disabled, so it doesn't expand." : "")
                     .tag(SidebarItem.snippet(snippet.id))
                     .draggable(SidebarItem.snippet(snippet.id).dragText)
             }
@@ -251,7 +261,8 @@ struct Sidebar: View {
                     .labelsHidden().toggleStyle(.switch).controlSize(.mini)
                     .disabled(editing.readOnly)
             }
-            .help(group.description)
+            .help(group.enabled ? group.description : (["Disabled: its snippets don't expand."] + [group.description]).filter { !$0.isEmpty }.joined(separator: "\n"))
+            .accessibilityValue(group.enabled ? "" : "Off")
             .tag(SidebarItem.snippetGroup(group.id))
             .draggable(SidebarItem.snippetGroup(group.id).dragText)
             .dropDestination(for: String.self) { texts, _ in
@@ -294,21 +305,45 @@ struct Sidebar: View {
                 Button("Duplicate") { select(connections.duplicate(id).map(SidebarItem.connection), focus: .name, else: .connection(id)) }
                 moveMenu(.connection(id))
                 Divider()
-                Button("Delete…", role: .destructive) { delete(.connection(id)) }
+                Button("Delete", role: .destructive) { delete(.connection(id)) }
             }
             .disabled(readOnly)
         case .snippetGroup(let id)?:
-            Group {
-                Button("New Snippet") {
-                    if let group = editing.store.library.groups.first(where: { $0.id == id }) { addSnippet(to: group) }
+            if let group = editing.group(id) {
+                Group {
+                    Button("New Snippet") { addSnippet(to: group) }
+                    Button("Rename") { select(.snippetGroup(id), focus: .name) }
+                    Button(group.enabled ? "Disable" : "Enable") { editing.save(at: group) { $0.groups[$1].enabled.toggle() } }
+                    Divider()
+                    Button("Delete…", role: .destructive) { delete(.snippetGroup(id)) }
+                }
+                .disabled(editing.readOnly)
+            }
+        case .snippet(let id)?:
+            if let snippet = editing.snippet(id) {
+                Group {
+                    Button("Duplicate") {
+                        if let copy = editing.duplicateSnippet(snippet, connections: connections.library) { selection = .snippet(copy) }
+                    }
+                    Button(snippet.enabled ? "Disable" : "Enable") { editing.save(at: snippet) { $0.groups[$1].snippets[$2].enabled.toggle() } }
+                    let others = editing.store.library.groups.filter { $0.id != editing.group(containing: id)?.id }
+                    Menu("Move to Group") {
+                        ForEach(others) { group in
+                            Button(EditorRules.displayName(group.name)) { _ = editing.moveSnippet(id, to: group.id, at: nil, undo: undoManager) }
+                        }
+                    }
+                    .disabled(others.isEmpty)
+                }
+                .disabled(editing.readOnly)
+                // The keyword only, never the snippet's text.
+                Button("Copy Keyword") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(snippet.keyword, forType: .string)
                 }
                 Divider()
-                Button("Delete…", role: .destructive) { delete(.snippetGroup(id)) }
+                Button("Delete", role: .destructive) { delete(.snippet(id)) }
+                    .disabled(editing.readOnly)
             }
-            .disabled(editing.readOnly)
-        case .snippet(let id)?:
-            Button("Delete…", role: .destructive) { delete(.snippet(id)) }
-                .disabled(editing.readOnly)
         default:
             if items.isEmpty {
                 Button("New Folder") { select(connections.addFolder(in: nil).map(SidebarItem.folder), focus: .name) }
@@ -351,7 +386,7 @@ struct Sidebar: View {
 
     /// On failure the item is selected, so its Details shows why.
     private func move(_ item: SidebarItem, to destination: ConnectionFolder.ID?) {
-        if !connections.move(item, to: destination) { selection = item }
+        if !connections.move(item, to: destination, undo: undoManager) { selection = item }
     }
 
 }

@@ -33,4 +33,10 @@ struct PickerFilterTests {
         // filter takes snippets as given; the caller passes `activeSnippets`.
         #expect(PickerFilter.filter(library.activeSnippets, query: "").map(\.name) == ["a"])
     }
+
+    @Test func groupNamesForEachSnippet() {
+        let a = snip("a"), b = snip("b")
+        let library = SnippetLibrary(groups: [SnippetGroup(name: "Work", snippets: [a]), SnippetGroup(name: "", snippets: [b])])
+        #expect(PickerFilter.groupNames(library) == [a.id: "Work", b.id: "Untitled"])
+    }
 }

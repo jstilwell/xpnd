@@ -110,4 +110,84 @@ private func server(_ name: String, credential: CredentialRef? = nil, sudo: Cred
         #expect(library.path(of: shallow.id).map(\.name) == ["outer"])
         #expect(library.path(of: Connection.ID()).isEmpty)
     }
+
+    // MARK: Putting an item back (undo)
+
+    private func undoLibrary() -> (ConnectionLibrary, Connection, Connection, ConnectionFolder) {
+        let a = Connection(name: "a", host: "a"), b = Connection(name: "b", host: "b")
+        let web = ConnectionFolder(name: "web")
+        return (ConnectionLibrary(folders: [ConnectionFolder(name: "prod", connections: [a, b], folders: [web]), ConnectionFolder(name: "dev")]), a, b, web)
+    }
+
+    @Test func restoreAConnectionAtItsPlace() throws {
+        var (library, a, b, _) = undoLibrary()
+        let place = try #require(library.placement(of: .connection(a.id)))
+        let taken = library.remove(.connection(a.id))
+        let removed = try #require(taken)
+        library.editConnection(b.id) { $0.host = "edited" } // a later edit survives
+        let ok1 = library.restore(removed, at: place)
+        #expect(ok1)
+        #expect(library.folders[0].connections.map(\.name) == ["a", "b"])
+        #expect(library.connection(b.id)?.host == "edited")
+    }
+
+    @Test func restoreIntoAGoneFolderMakesOne() throws {
+        var (library, a, _, _) = undoLibrary()
+        let place = try #require(library.placement(of: .connection(a.id)))
+        let taken = library.remove(.connection(a.id))
+        let removed = try #require(taken)
+        library.folders.removeFirst()
+        let ok2 = library.restore(removed, at: place)
+        #expect(ok2)
+        #expect(library.folders.map(\.name) == ["dev", "prod"])
+        #expect(library.folders.last?.connections.map(\.id) == [a.id])
+    }
+
+    @Test func restoreAFolderAtItsPlaceOrTheTopLevel() throws {
+        var (library, _, _, web) = undoLibrary()
+        let place = try #require(library.placement(of: .folder(web.id)))
+        #expect(place.parent == library.folders[0].id && place.index == 0)
+        let taken = library.remove(.folder(web.id))
+        let removed = try #require(taken)
+        var copy = library
+        let ok3 = copy.restore(removed, at: place)
+        #expect(ok3)
+        #expect(copy.folders[0].folders.map(\.id) == [web.id])
+        library.folders.removeFirst()
+        let ok4 = library.restore(removed, at: place)
+        #expect(ok4)
+        #expect(library.folders.map(\.name) == ["dev", "web"])
+    }
+
+    @Test func restoreRefusesAnIDAlreadyThere() throws {
+        var (library, a, _, _) = undoLibrary()
+        let place = try #require(library.placement(of: .connection(a.id)))
+        let ok5 = library.restore(.connection(a), at: place)
+        #expect(!ok5)
+        #expect(library.allConnections.count == 2)
+    }
+
+    @Test func moveBackReturnsToTheOldPosition() throws {
+        var (library, a, b, web) = undoLibrary()
+        let place = try #require(library.placement(of: .connection(a.id)))
+        library.move(.connection(a.id), to: library.folders[0].id, at: 2) // reorder: now b, a
+        #expect(library.folders[0].connections.map(\.id) == [b.id, a.id])
+        let ok6 = library.moveBack(.connection(a.id), to: place)
+        #expect(ok6)
+        #expect(library.folders[0].connections.map(\.id) == [a.id, b.id])
+        library.move(.connection(a.id), to: web.id)
+        let ok7 = library.moveBack(.connection(a.id), to: place)
+        #expect(ok7)
+        #expect(library.folders[0].connections.map(\.id) == [a.id, b.id])
+        #expect(library.folder(web.id)?.connections.isEmpty == true)
+    }
+
+    @Test func moveBackWithTheOldFolderGoneLeavesIt() throws {
+        var (library, a, _, web) = undoLibrary()
+        let place = ConnectionPlacement(parent: UUID(), parentName: "gone", index: 0)
+        library.move(.connection(a.id), to: web.id)
+        let ok8 = library.moveBack(.connection(a.id), to: place)
+        #expect(!ok8)
+        #expect(library.folder(web.id)?.connections.map(\.id) == [a.id])
+    }
 }

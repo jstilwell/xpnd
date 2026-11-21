@@ -202,4 +202,66 @@ struct SnippetStoreTests {
             #expect(other.library.groups.flatMap(\.snippets).map(\.keyword) == [";x", ";b"])
         }
     }
+
+    // MARK: Putting a snippet or group back (undo)
+
+    @Test func restoreSnippetByGroupName() throws {
+        var library = SnippetLibrary(groups: [group(";a", ";b"), group(";c")])
+        let place = try #require(library.placement(ofSnippet: library.groups[0].snippets[0].id))
+        let removed = library.groups[0].snippets.remove(at: 0)
+        library.groups[0].id = UUID() // a reload gives every group a new id
+        let ok1 = library.restoreSnippet(removed, at: place)
+        #expect(ok1)
+        #expect(library.groups[0].snippets.map(\.keyword) == [";a", ";b"])
+    }
+
+    @Test func restoreSnippetIntoAGoneGroupMakesOne() throws {
+        var first = group(";a"), second = group(";c")
+        first.name = "Work"
+        second.name = "Home"
+        var library = SnippetLibrary(groups: [first, second])
+        let place = try #require(library.placement(ofSnippet: library.groups[0].snippets[0].id))
+        let removed = library.groups.remove(at: 0).snippets[0]
+        let ok2 = library.restoreSnippet(removed, at: place)
+        #expect(ok2)
+        #expect(library.groups.map { $0.snippets.map(\.keyword) } == [[";c"], [";a"]])
+        #expect(library.groups.last?.name == place.groupName)
+    }
+
+    @Test func restoreGroupAtItsIndex() {
+        var library = SnippetLibrary(groups: [group(";a"), group(";b"), group(";c")])
+        let removed = library.groups.remove(at: 1)
+        library.restoreGroup(removed, at: 1)
+        #expect(library.groups.map { $0.snippets[0].keyword } == [";a", ";b", ";c"])
+        let last = library.groups.remove(at: 2)
+        library.groups.removeAll()
+        library.restoreGroup(last, at: 2)
+        #expect(library.groups.count == 1)
+    }
+
+    @Test func findsASnippetByIDElseKeyword() {
+        let library = SnippetLibrary(groups: [group(";a")])
+        let s = library.groups[0].snippets[0]
+        #expect(library.snippetID(id: s.id, keyword: ";zzz") == s.id)
+        #expect(library.snippetID(id: UUID(), keyword: ";a") == s.id)
+        #expect(library.snippetID(id: UUID(), keyword: ";zzz") == nil)
+    }
+
+    @Test func snippetsSeedOnceOnFirstLaunch() async throws {
+        try await withTempDir { dir in
+            let suite = "SnippetSeed.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let url = dir.appending(path: "snippets.yaml")
+            let store = SnippetStore(fileURL: url)
+            store.seedIfFirstLaunch(defaults: defaults)
+            store.load()
+            #expect(store.library.groups.map(\.name) == ["Starter"])
+            #expect(store.library.groups.first?.snippets.map { [$0.name, $0.keyword, $0.text] } == [["Today's date", ";date", "#{date}"]])
+            #expect(defaults.bool(forKey: "snippetsSeeded"))
+            try FileManager.default.removeItem(at: url)
+            store.seedIfFirstLaunch(defaults: defaults)
+            #expect(!FileManager.default.fileExists(atPath: url.path))
+        }
+    }
 }

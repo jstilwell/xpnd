@@ -20,10 +20,18 @@ extension StoreError {
 @MainActor @Observable
 final class SnippetEditing {
     let store: SnippetStore
+    /// For undo: a snippet can't come back with a string the connections file took meanwhile.
+    private let connections: ConnectionStore?
     var saveProblem: String?
 
-    init(store: SnippetStore) {
+    init(store: SnippetStore, connections: ConnectionStore? = nil) {
         self.store = store
+        self.connections = connections
+    }
+
+    /// The connection and folder strings now: one file's save can't see the other's.
+    private var connectionStrings: Set<String> {
+        connections.map { KeywordNamespace(snippets: store.library, connections: $0.library).connectionStrings } ?? []
     }
 
     var readOnly: Bool { store.loadError != nil }
@@ -90,8 +98,32 @@ final class SnippetEditing {
         return save({ $0.groups.append(new) }) ? new.id : nil
     }
 
-    func deleteGroup(_ group: SnippetGroup) -> Bool {
-        save(at: group) { $0.groups.remove(at: $1) }
+    /// `undo`: the acting window's; ⌘Z then puts the group back at its place.
+    func deleteGroup(_ group: SnippetGroup, undo: UndoManager? = nil) -> Bool {
+        var removed: (group: SnippetGroup, index: Int)?
+        guard save(at: group, { removed = ($0.groups.remove(at: $1), $1) }), let removed else { return false }
+        registerAction(undo, "Delete “\(EditorRules.displayName(group.name))”") { editing in
+            let taken = editing.connectionStrings
+            var group = removed.group
+            let clashes = group.snippets.map(\.keyword).filter(taken.contains)
+            group.snippets.removeAll { taken.contains($0.keyword) }
+            guard editing.save({ $0.restoreGroup(group, at: removed.index) }), !clashes.isEmpty else { return }
+            editing.saveProblem = "Connections now use \(clashes.joined(separator: ", ")), so those snippets didn't come back."
+        }
+        return true
+    }
+
+    /// Registers `change` as the undo of what was just saved.
+    private func register(_ undo: UndoManager?, _ name: String, _ change: @escaping @Sendable (inout SnippetLibrary) -> Void) {
+        registerAction(undo, name) { _ = $0.save(change) }
+    }
+
+    private func registerAction(_ undo: UndoManager?, _ name: String, _ action: @escaping @MainActor (SnippetEditing) -> Void) {
+        guard let undo else { return }
+        undo.registerUndo(withTarget: self) { editing in
+            MainActor.assumeIsolated { action(editing) }
+        }
+        undo.setActionName(name)
     }
 
     /// The new snippet's id, or nil if it wasn't saved. Its keyword is free in both files.
@@ -102,16 +134,59 @@ final class SnippetEditing {
         return save(at: group) { $0.groups[$1].snippets.append(new) } ? new.id : nil
     }
 
-    func moveSnippet(_ id: Snippet.ID, to group: SnippetGroup.ID, at index: Int?) -> Bool {
-        save { $0.moveSnippet(id, to: group, at: index) }
+    /// A copy just after the original: the next free name, and the first free keyword of `keyword2`, `keyword3`….
+    func duplicateSnippet(_ snippet: Snippet, connections: ConnectionLibrary) -> Snippet.ID? {
+        let namespace = KeywordNamespace(snippets: store.library, connections: connections)
+        var copy = snippet
+        copy.id = UUID()
+        // Bounded: a keyword the rules refuse with any suffix (a space in it, one at the length limit) has none free.
+        guard let keyword = (2...999).lazy.map({ "\(snippet.keyword)\($0)" }).first(where: { namespace.problem($0, for: nil) == nil }) else {
+            saveProblem = "There's no free keyword for a copy of “\(snippet.keyword)”."
+            return nil
+        }
+        copy.keyword = keyword
+        copy.name = EditorRules.uniqueName(snippet.name, taken: Set(store.library.groups.flatMap(\.snippets).map(\.name)))
+        return save(at: snippet) { $0.groups[$1].snippets.insert(copy, at: $2 + 1) } ? copy.id : nil
     }
 
-    func moveGroup(_ id: SnippetGroup.ID, to index: Int) -> Bool {
-        save { $0.moveGroup(id, to: index) }
+    func moveSnippet(_ id: Snippet.ID, to group: SnippetGroup.ID, at index: Int?, undo: UndoManager? = nil) -> Bool {
+        guard let moved = snippet(id), let place = store.library.placement(ofSnippet: id),
+              save({ $0.moveSnippet(id, to: group, at: index) }) else { return false }
+        register(undo, "Move “\(EditorRules.displayName(moved.name))”") { library in
+            if let current = library.snippetID(id: id, keyword: moved.keyword) { library.moveSnippetBack(current, to: place) }
+        }
+        return true
     }
 
-    func deleteSnippet(_ snippet: Snippet) -> Bool {
-        save(at: snippet) { $0.groups[$1].snippets.remove(at: $2) }
+    /// `index` counts before the move, as a drop reports it.
+    func moveGroup(_ id: SnippetGroup.ID, to index: Int, undo: UndoManager? = nil) -> Bool {
+        guard let moved = group(id), let from = store.library.groups.firstIndex(where: { $0.id == id }),
+              save({ $0.moveGroup(id, to: index) }) else { return false }
+        register(undo, "Move “\(EditorRules.displayName(moved.name))”") { library in
+            guard let now = library.groups.firstIndex(where: { $0.id == id }) ?? library.groups.firstIndex(where: { $0.name == moved.name })
+            else { return }
+            let group = library.groups.remove(at: now)
+            library.groups.insert(group, at: min(from, library.groups.count))
+        }
+        return true
+    }
+
+    /// `undo`: the acting window's; ⌘Z then puts the snippet back in its group (found by name after a reload).
+    func deleteSnippet(_ snippet: Snippet, undo: UndoManager? = nil) -> Bool {
+        var removed: (snippet: Snippet, place: SnippetPlacement)?
+        guard save(at: snippet, { library, gi, si in
+            let place = SnippetPlacement(groupID: library.groups[gi].id, groupName: library.groups[gi].name, index: si)
+            removed = (library.groups[gi].snippets.remove(at: si), place)
+        }), let removed else { return false }
+        registerAction(undo, "Delete “\(EditorRules.displayName(snippet.name))”") { editing in
+            let keyword = removed.snippet.keyword
+            guard !editing.connectionStrings.contains(keyword) else {
+                editing.saveProblem = "A connection or folder now uses “\(keyword)”, so the snippet can't come back. Change that string and add the snippet again."
+                return
+            }
+            _ = editing.save { $0.restoreSnippet(removed.snippet, at: removed.place) }
+        }
+        return true
     }
 }
 
@@ -121,12 +196,16 @@ struct SnippetGroupDetails: View {
     let group: SnippetGroup
     let connections: ConnectionLibrary
     @Binding var selection: SidebarItem?
+    /// The sidebar's Rename asks for `.name`; consumed here.
+    @Binding var focus: EditorFocus?
     /// Asks (when the group holds snippets), then deletes it.
     let delete: () -> Void
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         Form {
             CommittingTextField("Group", text: group.name) { editing.groupBinding(group, \.name).wrappedValue = $0 }.id(group.id)
+                .focused($nameFocused)
             CommittingTextField("Description", text: group.description) { editing.groupBinding(group, \.description).wrappedValue = $0 }
                 .id(group.id)
             Toggle("Enabled", isOn: editing.groupBinding(group, \.enabled))
@@ -140,6 +219,11 @@ struct SnippetGroupDetails: View {
         }
         .formStyle(.grouped)
         .disabled(editing.readOnly)
+        .onChange(of: focus, initial: true) {
+            guard focus == .name else { return }
+            focus = nil
+            Task { nameFocused = true } // the next turn, once this view is in the window
+        }
     }
 }
 
@@ -159,7 +243,7 @@ struct SnippetDetails: View {
             }
             HStack {
                 Spacer()
-                Button("Delete Snippet…", systemImage: "minus", role: .destructive, action: delete)
+                Button("Delete Snippet", systemImage: "minus", role: .destructive, action: delete)
                     .disabled(editing.readOnly)
             }
             .padding(8)
