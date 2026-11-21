@@ -10,7 +10,7 @@ extension ConnectionLibrary {
     }
 
     /// The first duplicate ID, else the first duplicate custom activation string.
-    fileprivate var firstDuplicate: String? {
+    var firstDuplicate: String? {
         func first(_ items: [String]) -> String? {
             var seen = Set<String>()
             return items.first { !seen.insert($0).inserted }

@@ -276,4 +276,19 @@ struct ConnectionImportRDPTests {
         #expect(undone.folders.map(\.name) == ["prod", "new"])
         #expect(undone.folders[1].connections.map(\.name) == ["mine"])
     }
+
+    /// I4: the evicting connection was edited, so it stays; the evicted one comes back without the string it now holds.
+    @Test func undoReplaceImportAfterEditingTheEvictingConnection() throws {
+        let old = conn("old", act: ";x")
+        let before = ConnectionLibrary(folders: [ConnectionFolder(name: "prod", connections: [old])])
+        let incoming = ConnectionLibrary(folders: [ConnectionFolder(name: "prod", connections: [conn("new", act: ";x"), conn("other")])])
+        let after = ConnectionImport.merge(incoming, into: before, choice: .replace)
+        var current = after
+        let new = try #require(current.allConnections.first { $0.name == "new" })
+        current.editConnection(new.id) { $0.host = "edited" }
+        let undone = ConnectionImport.undo(before: before, after: after, in: current)
+        #expect(undone.allConnections.map(\.name) == ["old", "new"])
+        #expect(undone.connection(old.id)?.activation == nil)
+        #expect(undone.firstDuplicate == nil)
+    }
 }

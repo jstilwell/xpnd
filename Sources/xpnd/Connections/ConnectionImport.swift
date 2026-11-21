@@ -258,6 +258,16 @@ enum ConnectionImport {
     /// (a string it took) go back, and a folder it added goes once empty. Anything edited since is left alone.
     static func undo(before: ConnectionLibrary, after: ConnectionLibrary, in current: ConnectionLibrary) -> ConnectionLibrary {
         var result = current
+        /// `c` without a custom string something else in `result` holds now (an edited import that took it): the store
+        /// refuses a duplicate, and that would drop the whole undo.
+        func free(_ c: Connection) -> Connection {
+            var others = result
+            others.remove(.connection(c.id))
+            guard let string = custom(c.activation), activations(others).contains(string) else { return c }
+            var c = c
+            c.activation = nil
+            return c
+        }
         let oldConnections = Set(before.allConnections.map(\.id)), oldFolders = Set(before.allFolders.map(\.id))
         for added in after.allConnections where !oldConnections.contains(added.id) && result.connection(added.id) == added {
             result.remove(.connection(added.id))
@@ -266,9 +276,12 @@ enum ConnectionImport {
             let imported = after.connection(old.id)
             guard imported != old else { continue }
             if let imported {
-                if result.connection(old.id) == imported { result.editConnection(old.id) { $0 = old } }
+                if result.connection(old.id) == imported {
+                    let back = free(old)
+                    result.editConnection(old.id) { $0 = back }
+                }
             } else if result.connection(old.id) == nil, let place = before.placement(of: .connection(old.id)) {
-                result.restore(.connection(old), at: place)
+                result.restore(.connection(free(old)), at: place)
             }
         }
         /// A folder without its contents: what the import may have changed in it.
@@ -281,9 +294,11 @@ enum ConnectionImport {
         for old in before.allFolders {
             guard let imported = after.folder(old.id), own(imported) != own(old),
                   let now = result.folder(old.id), own(now) == own(imported) else { continue }
+            var back = own(old)
+            if let string = custom(back.activation), activations(result).contains(string) { back.activation = nil }
             result.editFolder(old.id) { f in
                 let kept = (f.connections, f.folders)
-                f = own(old)
+                f = back
                 (f.connections, f.folders) = kept
             }
         }
