@@ -68,6 +68,7 @@ struct SnippetEditorView: View {
                     insertMenu
                 }
             }
+            SnippetPreview(snippet: snippet, library: namespace.snippets)
         }
         .formStyle(.grouped)
         .disabled(readOnly)

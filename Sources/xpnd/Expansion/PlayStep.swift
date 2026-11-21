@@ -78,6 +78,12 @@ struct KeyCombo: Equatable, Sendable {
         "4": kVK_ANSI_4, "5": kVK_ANSI_5, "6": kVK_ANSI_6, "7": kVK_ANSI_7, "8": kVK_ANSI_8, "9": kVK_ANSI_9,
     ]
 
+    /// The key as `parse` spells it: a `KeyName`, or an uppercase letter or digit; nil for any other key code.
+    static func keyText(_ code: CGKeyCode) -> String? {
+        if let name = KeyName.allCases.first(where: { $0.keyCode == code }) { return name.rawValue }
+        return ansi.first { CGKeyCode($0.value) == code }.map { String($0.key).uppercased() }
+    }
+
     private static func keyCode(_ key: String) -> CGKeyCode? {
         if let name = KeyName(rawValue: key) { return name.keyCode }
         guard key.count == 1, let c = key.lowercased().first, c.isASCII, let code = ansi[c] else { return nil }
