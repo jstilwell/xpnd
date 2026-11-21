@@ -128,9 +128,9 @@ private func snippets(_ list: Snippet...) -> SnippetLibrary {
     }
 }
 
-/// Typing `;db` fires `;d` at its second key, so `;db` never works.
+/// Typing `;db` fires a loose `;d` at its second key, so `;db` never works.
 @Test func aStringThatStartsAnotherIsNoted() {
-    let snippet = Snippet(name: "Date", keyword: ";d", text: "x")
+    let snippet = Snippet(name: "Date", keyword: ";d", matching: .loose, text: "x")
     let connection = Connection(name: "DB", host: "h", activation: ";db")
     let namespace = KeywordNamespace(
         snippets: SnippetLibrary(groups: [SnippetGroup(name: "g", snippets: [snippet])]),
@@ -139,4 +139,27 @@ private func snippets(_ list: Snippet...) -> SnippetLibrary {
     #expect(namespace.hidingNote(";d", for: .snippet(snippet.id)) == "Typing “;db” (connection “DB”) will fire “;d” first, so it won't work.")
     #expect(namespace.hidingNote(";x", for: nil) == nil)
     #expect(namespace.problem(";db", for: .connection(connection.id)) == nil) // a note, never a refusal
+}
+
+/// A strict keyword waits for a space or punctuation, so a longer string typed past it still works.
+@Test func aStrictKeywordHidesNothing() {
+    let short = Snippet(name: "Date", keyword: ";d", text: "x")
+    let long = Snippet(name: "Debug", keyword: ";db", text: "y")
+    let connection = Connection(name: "DB", host: "h", activation: ";dbx")
+    let namespace = KeywordNamespace(
+        snippets: SnippetLibrary(groups: [SnippetGroup(name: "g", snippets: [short, long])]),
+        connections: ConnectionLibrary(folders: [ConnectionFolder(name: "f", activation: "", connections: [connection])]))
+    #expect(namespace.hidingNote(";d", for: .snippet(short.id)) == nil)
+    #expect(namespace.hidingNote(";db", for: .snippet(long.id)) == nil)
+    #expect(namespace.hidingNote(";dbx", for: .connection(connection.id)) == nil)
+}
+
+/// A connection's string fires at once, so a strict snippet it starts is never reached.
+@Test func anActivationStillHidesALongerStrictKeyword() {
+    let snippet = Snippet(name: "Debug", keyword: ";db", text: "y")
+    let connection = Connection(name: "D", host: "h", activation: ";d")
+    let namespace = KeywordNamespace(
+        snippets: SnippetLibrary(groups: [SnippetGroup(name: "g", snippets: [snippet])]),
+        connections: ConnectionLibrary(folders: [ConnectionFolder(name: "f", activation: "", connections: [connection])]))
+    #expect(namespace.hidingNote(";db", for: .snippet(snippet.id)) == "“;d” (connection “D”) fires first, so typing “;db” won't work.")
 }

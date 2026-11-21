@@ -42,8 +42,8 @@ private struct PickerView: View {
     @State private var query = ""
     @State private var selected: Snippet.ID?
     @FocusState private var focused: Bool
-
-    private var results: [Snippet] { PickerFilter.filter(snippets, query: query) }
+    /// Filtered and sorted once per query: it searches every snippet's text.
+    @State private var results: [Snippet] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -75,8 +75,15 @@ private struct PickerView: View {
         }
         .frame(width: 560, height: 360)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .onAppear { focused = true; selected = results.first?.id }
-        .onChange(of: query) { selected = results.first?.id }
+        .onAppear {
+            focused = true
+            results = PickerFilter.filter(snippets, query: query)
+            selected = results.first?.id
+        }
+        .onChange(of: query) {
+            results = PickerFilter.filter(snippets, query: query)
+            selected = results.first?.id
+        }
         .onKeyPress(.downArrow) { move(1); return .handled }
         .onKeyPress(.upArrow) { move(-1); return .handled }
         .onKeyPress(.escape) { cancel(); return .handled }
@@ -85,7 +92,6 @@ private struct PickerView: View {
     private var current: Snippet? { results.first { $0.id == selected } ?? results.first }
 
     private func move(_ delta: Int) {
-        let results = results // each read filters and sorts the whole library
         guard !results.isEmpty else { return }
         let index = results.firstIndex { $0.id == selected } ?? (delta > 0 ? -1 : results.count)
         selected = results[min(max(index + delta, 0), results.count - 1)].id

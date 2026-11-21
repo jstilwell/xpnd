@@ -44,17 +44,19 @@ struct KeywordNamespace {
 
     /// When `string` starts another string, or another starts it, typing the longer one fires the shorter first, so
     /// the longer one never works. Allowed (the user may mean it, and `;new` must stay free beside `;new2`), but said.
+    /// A strict snippet's keyword waits for a space or punctuation, so as the shorter one it hides nothing.
     func hidingNote(_ string: String, for owner: Owner?) -> String? {
         guard !string.isEmpty else { return nil }
-        let others: [(string: String, label: String, owner: Owner)] =
-            allSnippets.map { ($0.keyword, "the snippet “\($0.name)”", .snippet($0.id)) }
-            + allConnections.compactMap { c in c.activation.flatMap { $0.isEmpty ? nil : ($0, "connection “\(c.name)”", .connection(c.id)) } }
-            + allFolders.compactMap { f in effectiveActivation(ofFolder: f.id).string.map { ($0, "folder “\(f.name)”", .folder(f.id)) } }
+        let others: [(string: String, label: String, owner: Owner, instant: Bool)] =
+            allSnippets.map { ($0.keyword, "the snippet “\($0.name)”", .snippet($0.id), $0.matching == .loose) }
+            + allConnections.compactMap { c in c.activation.flatMap { $0.isEmpty ? nil : ($0, "connection “\(c.name)”", .connection(c.id), true) } }
+            + allFolders.compactMap { f in effectiveActivation(ofFolder: f.id).string.map { ($0, "folder “\(f.name)”", .folder(f.id), true) } }
+        let instant = if case .snippet(let id)? = owner { allSnippets.first { $0.id == id }?.matching != .strict } else { true }
         for other in others where other.owner != owner && other.string != string {
-            if other.string.hasPrefix(string) {
+            if instant, other.string.hasPrefix(string) {
                 return "Typing “\(other.string)” (\(other.label)) will fire “\(string)” first, so it won't work."
             }
-            if string.hasPrefix(other.string) {
+            if other.instant, string.hasPrefix(other.string) {
                 return "“\(other.string)” (\(other.label)) fires first, so typing “\(string)” won't work."
             }
         }

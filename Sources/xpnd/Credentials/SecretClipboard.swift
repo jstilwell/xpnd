@@ -7,8 +7,10 @@ import AppKit
     static let clearAfter: Duration = .seconds(30)
     /// Each copy's tag is this plus `.<UUID>`; xpndRDP's `XPRDPClipboardFilter` matches the prefix.
     static let secretTypePrefix = "com.jessestilwell.xpnd.secret"
-    /// Tuning value: outlasts a paste, which has the secret set aside until its settle ends.
-    private static let recheckAfter = CGEventKeystrokeSender.pasteSettle * 2
+    /// Tuning values: while an expansion's pastes have the clipboard set aside, the deadline is checked again this
+    /// often, for at most `holdLimit` (a hold is a second or so per paste).
+    private static let recheckEvery: Duration = .milliseconds(50)
+    private static let holdLimit: Duration = .seconds(120)
 
     /// The last copy's tag, so quitting can clear a secret still on the clipboard.
     private static var lastTag: NSPasteboard.PasteboardType?
@@ -26,12 +28,17 @@ import AppKit
         pasteboard.writeObjects([item])
         lastTag = tag
         return Task { @MainActor in
-            for wait in [clearAfter, recheckAfter] {
-                try? await Task.sleep(for: wait)
-                // A newer copy (including a later secret) lacks the tag, so it keeps its own clock.
-                guard pasteboard.types?.contains(tag) == true else { continue }
-                pasteboard.clearContents()
-                return
+            try? await Task.sleep(for: clearAfter)
+            let giveUp = ContinuousClock.now + holdLimit
+            while true {
+                if pasteboard.types?.contains(tag) == true {
+                    pasteboard.clearContents()
+                    return
+                }
+                // A newer copy (including a later secret) lacks the tag, so it keeps its own clock. Without a paste
+                // holding the clipboard aside, the secret isn't coming back.
+                guard CGEventKeystrokeSender.settingAside.contains(pasteboard.name), ContinuousClock.now < giveUp else { return }
+                try? await Task.sleep(for: recheckEvery)
             }
         }
     }

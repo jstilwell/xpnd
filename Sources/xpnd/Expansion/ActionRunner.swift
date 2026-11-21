@@ -13,13 +13,14 @@ extension ActionRunning {
 
 struct ActionRunner: ActionRunning {
     let launch: @Sendable (URL) async throws -> Void
-    let shortcutNames: @Sendable () async -> [String]
+    /// nil when they couldn't be listed.
+    let shortcutNames: @Sendable () async -> [String]?
 
     init(
         launch: @escaping @Sendable (URL) async throws -> Void = { url in
             _ = try await NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         },
-        shortcutNames: @escaping @Sendable () async -> [String] = { await ShortcutsList.fetch() }
+        shortcutNames: @escaping @Sendable () async -> [String]? = { await ShortcutsList.fetch() }
     ) {
         self.launch = launch
         self.shortcutNames = shortcutNames
@@ -31,7 +32,8 @@ struct ActionRunner: ActionRunning {
             switch step {
             case .openApp(let path) where !Self.isApp(path): throw .appNotFound(path: path)
             case .runShortcut(let name):
-                let known = if let names { names } else { await shortcutNames() }
+                let listed = if let names { names } else { await shortcutNames() }
+                guard let known = listed else { throw .shortcutsUnavailable }
                 names = known
                 guard known.contains(name) else { throw .unknownShortcut(name) }
             default: break
@@ -49,8 +51,8 @@ struct ActionRunner: ActionRunning {
         do { try await launch(URL(fileURLWithPath: path)) } catch { throw .appNotFound(path: path) }
     }
 
+    /// `check` has already made sure the Shortcut exists (`Player` calls it before playing).
     func runShortcut(name: String) async throws(ExpansionError) {
-        guard await shortcutNames().contains(name) else { throw .unknownShortcut(name) }
         do {
             let r = try await ProcessRunner.run(URL(fileURLWithPath: "/usr/bin/shortcuts"), arguments: ["run", name], timeoutMs: 30_000)
             guard r.status == 0 else { throw ExpansionError.shortcutFailed(name: name, status: r.status) }

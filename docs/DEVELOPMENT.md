@@ -45,14 +45,16 @@ heavier, glow-free version for 16 and 32 pt. The menu bar symbol is drawn in `Me
   `AppDelegate` runs the tap only while they are.
 - `KeyEventTap` listens (without changing anything) to key presses and clicks and hands them to
   `ExpansionEngine` as `KeyInput`. `TypingBuffer` is the rolling buffer, cleared by non-printing keys,
-  clicks, and app switches; `Matcher` picks the longest matching keyword in the library, strict or loose.
+  clicks, and app switches; `Matcher.instant` picks the longest loose keyword the buffer ends with, and `Matcher.strict` the strict keyword a space or punctuation just ended (checked before that key joins the buffer). Keys typed while an expansion runs are kept and handed to `Player` as its tail.
 - `ExpansionEngine` runs one expansion at a time in two phases. `Template` parses the snippet's text
   into `TemplateToken`s. `Evaluator` computes every value first (through an `EvaluationContext`:
   `LiveEvaluationContext` for the clipboard, dates, environment, `#{combo:}` against a library
   snapshot, `ScriptRunner` and `ProcessRunner` for scripts, and the input form), so a failure throws an
   `ExpansionError` before anything on screen changes. It yields `PlayStep`s.
-- `Player` plays the steps: it deletes the keyword, pastes text with `PasteboardSnapshot` saving and
-  restoring every pasteboard type, and sends keys through `KeystrokeSender` (`SyntheticEvent`). In
+- `Player` plays the steps: it deletes the keyword, pastes text with `PasteboardSnapshot` saving every
+  pasteboard type once per expansion (`CGEventKeystrokeSender.setAside`) and putting it back at the end or before a
+  delay, Open App or Run Shortcut. Each paste is a promised string; xpnd waits until the app reads it (150 ms to 1 s).
+  `SecretClipboard` waits for a set-aside clipboard to come back before clearing a password. It sends keys through `KeystrokeSender` (`SyntheticEvent`). In
   remote-desktop and VM apps (`CGEventKeystrokeSender.remoteDesktopApps`), or everywhere with the
   General setting, text is typed instead: `KeyMap` finds each character's key on the current layout
   and the modifier keys are pressed around it (CLAUDE.md explains why); it prefers main keys to the keypad,

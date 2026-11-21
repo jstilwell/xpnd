@@ -26,7 +26,7 @@
 
 ## Using it
 
-- **Keywords**: type one and it's replaced. Keywords are case-sensitive. A strict snippet (the default) expands when the whole word matches; a loose one when what you typed ends with it. Space, Return, Tab, arrows, a click, or switching apps start the word over. If you switch apps while a snippet's form is open or its script runs, the expansion is cancelled (the form closed and the script stopped) rather than typed into the wrong app. Keywords can't be seen in password fields or in a terminal with Secure Keyboard Entry on.
+- **Keywords**: type one and it's replaced. Keywords are case-sensitive. A strict snippet (the default) expands when you finish the word: type its keyword, then a space or punctuation, which xpnd types again after the text (`;sig ` becomes `Best `). Return and Tab don't expand it, so `;sig` then Return sends `;sig`. Opening characters such as `(` or `"` may come right before the keyword. A loose snippet expands the moment what you typed ends with its keyword. Return, Tab, arrows, a click, or switching apps start the word over, as does a space. Keys you type while a snippet expands are kept and typed after it; if one of them (an arrow, Return) may have moved the cursor, the snippet is cancelled and the keyword stays. If you switch apps while a snippet's form is open or its script runs, the expansion is cancelled (the form closed and the script stopped) rather than typed into the wrong app. Keywords can't be seen in password fields or in a terminal with Secure Keyboard Entry on.
 - **Picker**: press Control-Option-Command-Space (changeable in Settings) to search snippets by keyword, name, or text, and press Return to insert one.
 - **Groups**: snippets sit in groups you can turn on or off together.
 - **Editing**: snippets are edited in the xpnd window. Its sidebar search filters snippets by keyword, name, or text, and connections by name, host, activation string, or folder. To delete a snippet, group, connection or folder, select it and press Delete, right-click it, or use the button in its Details; xpnd asks first, since a delete can't be undone. A snippet's text is saved when you pause typing.
@@ -42,7 +42,7 @@ Written `#{name}` or `#{name:value}`. Names are case-sensitive, and unknown ones
 | `#{date}` `#{time}` `#{dateTime}` | The current date and time |
 | `#{dateTime:<format>}` | A custom format, such as `yyyy-MM-dd` |
 | `#{dateTime:<shift>:<format>}` | Shifted by `y M w d h m s`, signed, such as `+1d-2h` |
-| `#{combo:<keyword>}` | Another snippet's text |
+| `#{combo:<keyword>}` | Another snippet's text (up to 16 levels deep; a snippet can't include itself) |
 | `#{upper:<keyword>}` `#{lower:<keyword>}` | Another snippet's text, in upper or lower case |
 | `#{cursor}` | Where the caret ends up |
 | `#{input:<label>}` | Asks for a value |

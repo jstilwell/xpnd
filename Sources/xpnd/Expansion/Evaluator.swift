@@ -16,7 +16,8 @@ protocol EvaluationContext: Sendable {
 enum Evaluator {
     static func evaluate(_ snippet: Snippet, context: some EvaluationContext) async throws(ExpansionError) -> [PlayStep] {
         var labels: [String] = []
-        try collectInputs(snippet, context: context, stack: [], into: &labels)
+        var budget = maxPieces
+        try collectInputs(snippet, context: context, stack: [], into: &labels, budget: &budget)
         var answers: [String: String] = [:]
         if !labels.isEmpty {
             guard let given = await context.askInputs(labels) else { throw .inputCancelled }
@@ -27,19 +28,28 @@ enum Evaluator {
 
     private enum Item { case step(PlayStep), cursor }
 
-    /// Pass 1: `#{input:}` labels in order of first appearance, through nested combos.
+    /// How deep snippets may include each other, and how many pieces (text runs and variables) one expansion may have.
+    static let maxDepth = 16
+    static let maxPieces = 10_000
+
+    /// Pass 1: `#{input:}` labels in order of first appearance, through nested combos. It walks the same tree pass 2
+    /// will, so it throws for a cycle or a tree too big before anything is evaluated.
     private static func collectInputs(
-        _ snippet: Snippet, context: some EvaluationContext, stack: [String], into labels: inout [String]
+        _ snippet: Snippet, context: some EvaluationContext, stack: [String], into labels: inout [String], budget: inout Int
     ) throws(ExpansionError) {
         let stack = stack + [snippet.keyword]
-        for case let .variable(name, argument?, _) in Template.parse(snippet.text) where !argument.isEmpty {
+        for token in Template.parse(snippet.text) {
+            budget -= 1
+            guard budget >= 0 else { throw .comboTooDeep }
+            guard case let .variable(name, argument?, _) = token, !argument.isEmpty else { continue }
             switch name {
             case "input" where !labels.contains(argument):
                 labels.append(argument)
             case "combo", "upper", "lower":
-                if stack.contains(argument) { continue }
+                if stack.contains(argument) { throw .comboCycle(argument) }
+                guard stack.count <= maxDepth else { throw .comboTooDeep }
                 guard let nested = context.snippet(keyword: argument) else { throw .missingCombo(argument) }
-                try collectInputs(nested, context: context, stack: stack, into: &labels)
+                try collectInputs(nested, context: context, stack: stack, into: &labels, budget: &budget)
             default:
                 break
             }
@@ -85,7 +95,7 @@ enum Evaluator {
         case "dateTime":
             return dateTime(arg, context).map(text)
         case "combo", "upper", "lower":
-            if stack.contains(arg) { return nil }  // a cycle stays literal
+            if stack.contains(arg) { throw .comboCycle(arg) } // pass 1 throws first
             guard let nested = context.snippet(keyword: arg) else { throw .missingCombo(arg) }
             let items = try await expand(nested, context: context, answers: answers, stack: stack)
             guard name != "combo" else { return items }

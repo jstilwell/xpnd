@@ -153,6 +153,6 @@ private struct ShortcutChooser: View {
         }
         .padding()
         .frame(width: 360, height: 360)
-        .task { names = await ShortcutsList.fetch() }
+        .task { names = await ShortcutsList.fetch() ?? [] }
     }
 }

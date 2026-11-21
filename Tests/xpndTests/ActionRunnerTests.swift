@@ -27,7 +27,20 @@ private final class Launched: @unchecked Sendable {
 
     @Test func unknownShortcutErrors() async {
         let runner = ActionRunner(launch: { _ in }, shortcutNames: { ["A"] })
-        await #expect(throws: ExpansionError.unknownShortcut("B")) { try await runner.runShortcut(name: "B") }
+        await #expect(throws: ExpansionError.unknownShortcut("B")) { try await runner.check([.runShortcut(name: "B")]) }
+    }
+
+    @Test func unreadableShortcutsListSaysSo() async {
+        let runner = ActionRunner(launch: { _ in }, shortcutNames: { nil })
+        await #expect(throws: ExpansionError.shortcutsUnavailable) { try await runner.check([.runShortcut(name: "A")]) }
+    }
+
+    /// `check` already listed them before playback; running one doesn't list them again.
+    @Test func runningAShortcutDoesNotListThemAgain() async {
+        let calls = Launched()
+        let runner = ActionRunner(launch: { _ in }, shortcutNames: { calls.add(URL(fileURLWithPath: "/")); return ["A"] })
+        try? await runner.runShortcut(name: "A-\(UUID())")
+        #expect(calls.urls.isEmpty)
     }
 
     @Test func shortcutsListParses() {

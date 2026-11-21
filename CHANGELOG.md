@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.0 - Unreleased
+
+### Changed
+- A strict snippet (the default) now expands when you finish the word, on the space or punctuation after its keyword, which is typed back after the text: `;sig ` becomes `Best `. It no longer fires inside a longer word (`the` in "then"), and a keyword can follow `(` or a quote. Return and Tab don't expand it. Loose snippets still expand the moment you type them.
+- The warning that one keyword starts another now appears only when the shorter one fires at once: a loose snippet, or a connection or folder string.
+
+### Fixed
+- A snippet pasted into a slow app (Electron or Office under load) no longer pastes your old clipboard instead: xpnd now waits until the app has read the snippet, up to a second, before putting your clipboard back. Your clipboard is saved once per snippet rather than at each piece of text, and is put back before a keyboard shortcut, delay, Open App or Run Shortcut, so `#{shortcut:Cmd+V}` pastes your clipboard and a Shortcut never reads the snippet's text.
+- A snippet that includes itself, directly or through others, now says so instead of pasting `#{combo:…}` as text, and snippets nested too deeply (over 16 levels, or so many copies that they would freeze xpnd) stop with a message before anything is typed.
+- A Run Shortcut snippet lists your Shortcuts once instead of twice, and when the list can't be read it says so instead of claiming the Shortcut doesn't exist. A script without execute permission says to run `chmod +x` instead of "No script was found".
+- Keys typed while a snippet expands are no longer lost or put in front of it: typing `;sig` and carrying on quickly kept the space and let the backspaces eat the keyword's last letters instead. They're typed again after the snippet. If an arrow, Return or other key may have moved the cursor meanwhile, the snippet is cancelled and says so, rather than deleting the wrong text.
+
 ## 0.4.0 - 11-15-2026
 
 ### Changed

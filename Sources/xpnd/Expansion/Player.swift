@@ -4,19 +4,50 @@
 
     /// Deletes the typed keyword, then plays each step in order. A missing app or Shortcut throws before the
     /// keyword is deleted; any other action's error stops playback where it is.
-    func play(_ steps: [PlayStep], deletingCharacters: Int) async throws(ExpansionError) {
+    /// `tail`, read once just before the delete: text to type after the expansion's text, and how many of
+    /// those characters were typed into the app since the keyword (so they're deleted too). nil when what was typed
+    /// meanwhile can't be put back, which cancels before anything is deleted.
+    func play(
+        _ steps: [PlayStep], deletingCharacters: Int,
+        tail: @MainActor () -> (text: String, typedSince: Int)? = { ("", 0) }
+    ) async throws(ExpansionError) {
         try await actions.check(steps)
-        if deletingCharacters > 0 { await sender.backspace(times: deletingCharacters) }
-        for step in steps {
-            switch step {
-            case .paste(let text): await sender.paste(text)
-            case .key(let key, let count): await sender.press(key, times: count)
-            case .shortcut(let combo): await sender.press(combo)
-            case .delay(let ms): try? await Task.sleep(for: .milliseconds(ms))
-            case .openApp(let path): try await actions.openApp(path: path)
-            case .runShortcut(let name): try await actions.runShortcut(name: name)
-            case .moveLeft(let n): await sender.press(.left, times: n)
-            }
+        guard let tail = tail() else { throw .typedDuringExpansion }
+        let deleting = deletingCharacters + tail.typedSince
+        if deleting > 0 { await sender.backspace(times: deleting) }
+        // One clipboard capture across pastes and keys; it's put back before a shortcut, a delay or an action, any of
+        // which may read it or take a while.
+        var pasted = false
+        func restore() async {
+            if pasted { await sender.restoreClipboard() }
+            pasted = false
         }
+        do throws(ExpansionError) {
+            for step in steps.appendingText(tail.text) {
+                switch step {
+                case .paste(let text):
+                    await sender.paste(text)
+                    pasted = true
+                case .key(let key, let count): await sender.press(key, times: count)
+                case .shortcut(let combo):
+                    await restore() // ⌘V or ⌘C must see the user's clipboard
+                    await sender.press(combo)
+                case .delay(let ms):
+                    await restore()
+                    try? await Task.sleep(for: .milliseconds(ms))
+                case .openApp(let path):
+                    await restore()
+                    try await actions.openApp(path: path)
+                case .runShortcut(let name):
+                    await restore()
+                    try await actions.runShortcut(name: name)
+                case .moveLeft(let n): await sender.press(.left, times: n)
+                }
+            }
+        } catch {
+            await restore()
+            throw error
+        }
+        await restore()
     }
 }

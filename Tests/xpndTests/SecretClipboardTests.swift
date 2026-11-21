@@ -43,7 +43,10 @@ import Testing
     @Test func clearsAfterAPasteRestores() async {
         await withBoard { board in
             let task = SecretClipboard.copy("hunter2", to: board, clearAfter: .milliseconds(100))
-            await CGEventKeystrokeSender.paste("text", on: board, settle: .milliseconds(10)) {}
+            let snapshot = CGEventKeystrokeSender.setAside(board)
+            let written = await CGEventKeystrokeSender.write(
+                "text", to: board, floor: .milliseconds(10), cap: .milliseconds(10), margin: .zero) {}
+            CGEventKeystrokeSender.restore(snapshot, ifStill: written, on: board)
             #expect(board.string(forType: .string) == "hunter2")
             await task.value
             #expect(board.string(forType: .string) == nil)
@@ -54,7 +57,24 @@ import Testing
     @Test func clearsWhenADeadlineFallsInsideAPaste() async {
         await withBoard { board in
             let task = SecretClipboard.copy("hunter2", to: board, clearAfter: .milliseconds(10))
-            await CGEventKeystrokeSender.paste("text", on: board, settle: .milliseconds(60)) {}
+            let snapshot = CGEventKeystrokeSender.setAside(board)
+            let written = await CGEventKeystrokeSender.write(
+                "text", to: board, floor: .milliseconds(60), cap: .milliseconds(60), margin: .zero) {}
+            CGEventKeystrokeSender.restore(snapshot, ifStill: written, on: board)
+            await task.value
+            #expect(board.string(forType: .string) == nil)
+        }
+    }
+
+    /// An expansion's pastes may hold the clipboard aside for seconds; the secret is cleared once it comes back.
+    @Test func clearsWhenADeadlineFallsInsideALongHold() async {
+        await withBoard { board in
+            let task = SecretClipboard.copy("hunter2", to: board, clearAfter: .milliseconds(10))
+            let snapshot = CGEventKeystrokeSender.setAside(board)
+            let written = await CGEventKeystrokeSender.write(
+                "text", to: board, floor: .milliseconds(500), cap: .milliseconds(500), margin: .zero) {}
+            CGEventKeystrokeSender.restore(snapshot, ifStill: written, on: board)
+            #expect(board.string(forType: .string) == "hunter2")
             await task.value
             #expect(board.string(forType: .string) == nil)
         }

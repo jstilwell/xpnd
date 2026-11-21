@@ -94,3 +94,38 @@ enum PlayStep: Equatable, Sendable {
     case runShortcut(name: String)
     case moveLeft(Int)
 }
+
+extension PlayStep {
+    /// Opens an app or runs a Shortcut, either of which can take the typing somewhere else.
+    var isAction: Bool {
+        switch self {
+        case .openApp, .runShortcut: true
+        default: false
+        }
+    }
+}
+
+extension [PlayStep] {
+    /// Nothing, text, or text with the caret moved back into it: what typed keys may follow.
+    var endsInText: Bool {
+        switch last {
+        case nil, .paste?, .moveLeft?: true
+        default: false
+        }
+    }
+
+    /// `text` right after the expansion's text; with a cursor, the caret moves back past it too.
+    func appendingText(_ text: String) -> [PlayStep] {
+        guard !text.isEmpty else { return self }
+        var steps = self
+        if case .moveLeft(let n)? = steps.last, steps.count >= 2, case .paste(let s) = steps[steps.count - 2] {
+            steps[steps.count - 2] = .paste(s + text)
+            steps[steps.count - 1] = .moveLeft(n + text.count)
+        } else if case .paste(let s)? = steps.last {
+            steps[steps.count - 1] = .paste(s + text)
+        } else {
+            steps.append(.paste(text))
+        }
+        return steps
+    }
+}
