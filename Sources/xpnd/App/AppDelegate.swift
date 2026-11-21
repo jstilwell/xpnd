@@ -59,7 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         service = makeConnectionService(sender: sender)
         engine = ExpansionEngine(
             store: store, connections: connections, player: Player(sender: sender, actions: ActionRunner()),
-            makeContext: { LiveEvaluationContext(library: store.library) },
+            makeContext: { trigger in
+                LiveEvaluationContext(library: store.library, trigger: trigger, copySelection: { await sender.copySelection() })
+            },
             notify: { hud.flash($0) },
             frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
             onActivate: { [weak self] in await self?.activate($0, typedInto: $1, typed: $2) }

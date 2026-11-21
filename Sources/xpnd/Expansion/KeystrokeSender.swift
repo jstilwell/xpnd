@@ -69,6 +69,16 @@ enum SyntheticEvent {
         held = (snapshot, written)
     }
 
+    /// The front app's selected text, copied with ⌘C; nil where a paste can't land either (the copy would be the
+    /// remote machine's), or when nothing was copied in time.
+    func copySelection() async -> String? {
+        guard !Self.typesKeystrokes(
+            in: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, always: AppSettings.shared.typesKeystrokes,
+            remoteDesktopTabFocused: focusedSessionKind() == .remoteDesktop)
+        else { return nil }
+        return await SelectionCopy.read(on: .general) { post(CGKeyCode(kVK_ANSI_C), flags: .maskCommand, times: 1) }
+    }
+
     func restoreClipboard() async {
         guard let held else { return }
         self.held = nil
@@ -143,6 +153,11 @@ enum SyntheticEvent {
     static func setAside(_ pasteboard: NSPasteboard) -> PasteboardSnapshot {
         settingAside.insert(pasteboard.name)
         return PasteboardSnapshot.capture(pasteboard)
+    }
+
+    /// Ends a set-aside that has nothing to put back.
+    static func endSettingAside(_ pasteboard: NSPasteboard) {
+        settingAside.remove(pasteboard.name)
     }
 
     /// Puts `snapshot` back, unless someone copied after xpnd's write (`written`): their newer content wins.
