@@ -57,4 +57,13 @@ import Testing
         #expect(saves() == ["Hello"])
         #expect(coordinator.takeUnsaved() == nil)
     }
+
+    /// Minor 7: text set from outside drops the text's own undo, never the window's Delete and Move undos.
+    @Test func theTextHasItsOwnUndoManager() {
+        let (textView, coordinator, _) = editor()
+        let text = coordinator.undoManager(for: textView)
+        #expect(text != nil)
+        let window = NSWindow()
+        #expect(text !== window.undoManager)
+    }
 }
