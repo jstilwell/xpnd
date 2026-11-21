@@ -42,6 +42,16 @@ enum Template {
         return tokens
     }
 
+    /// The variable whose source covers `utf16Offset`, if it reads as one.
+    static func variable(at utf16Offset: Int, in text: String) -> (range: NSRange, variable: Variable)? {
+        for (token, range) in parseWithRanges(text) where range.location <= utf16Offset && utf16Offset < NSMaxRange(range) {
+            guard case let .variable(name, argument, _) = token,
+                  case .success(let variable) = Variable.parse(name: name, argument: argument) else { return nil }
+            return (range, variable)
+        }
+        return nil
+    }
+
     private static func variable(in chars: [Character], at start: Int) -> (TemplateToken, Int)? {
         guard chars[start] == "#", start + 1 < chars.count, chars[start + 1] == "{" else { return nil }
         var i = start + 2

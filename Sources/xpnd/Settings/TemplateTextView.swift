@@ -12,6 +12,15 @@ final class TemplateTextController {
         textView.window?.makeFirstResponder(textView)
         textView.insertText(string, replacementRange: textView.selectedRange())
     }
+
+    /// Puts `string` in place of `range`, as typing would, if the text there is still `expected` (it may have
+    /// changed while a form was open).
+    func replace(_ range: NSRange, expected: String, with string: String) {
+        guard let textView, textView.isEditable, NSMaxRange(range) <= (textView.string as NSString).length,
+              (textView.string as NSString).substring(with: range) == expected else { return }
+        textView.window?.makeFirstResponder(textView)
+        textView.insertText(string, replacementRange: range)
+    }
 }
 
 /// A plain-text, monospaced editor for snippet templates. SwiftUI's `TextEditor` can't expose the
@@ -26,6 +35,8 @@ struct TemplateTextView: NSViewRepresentable {
     let controller: TemplateTextController
     /// Marks the variables in the text as it is now (not as saved, which lags the typing).
     var check: (String) -> [TemplateMark] = { _ in [] }
+    /// Right-click → Edit Variable… on a variable that has a form: its range, its source text, and the variable.
+    var editVariable: ((NSRange, String, Variable) -> Void)?
     let save: (String) -> Bool
 
     static let variableColor = NSColor.systemBlue
@@ -154,6 +165,34 @@ struct TemplateTextView: NSViewRepresentable {
                 }
             }
             storage.endEditing()
+        }
+
+        func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+            guard view.isEditable, parent.editVariable != nil, let found = Template.variable(at: charIndex, in: view.string),
+                  VariableKind(found.variable) != nil else { return menu }
+            let item = NSMenuItem(title: "Edit Variable…", action: #selector(editVariable(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = EditTarget(
+                range: found.range, raw: (view.string as NSString).substring(with: found.range), variable: found.variable)
+            menu.insertItem(item, at: 0)
+            menu.insertItem(.separator(), at: 1)
+            return menu
+        }
+
+        @objc private func editVariable(_ sender: NSMenuItem) {
+            guard let target = sender.representedObject as? EditTarget else { return }
+            parent.editVariable?(target.range, target.raw, target.variable)
+        }
+
+        private final class EditTarget: NSObject {
+            let range: NSRange
+            let raw: String
+            let variable: Variable
+            init(range: NSRange, raw: String, variable: Variable) {
+                self.range = range
+                self.raw = raw
+                self.variable = variable
+            }
         }
 
         /// Typing next to a variable mustn't take its colour or underline.
