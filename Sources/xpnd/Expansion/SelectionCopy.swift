@@ -17,6 +17,8 @@ enum ExpansionTrigger: Sendable {
         while pasteboard.changeCount == start, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(10))
         }
+        // shortcut: an app that handles ⌘C after the timeout copies over the clipboard with nothing to put it back (and its
+        // ⌘V may paste the selection); keep the snapshot until the expansion ends if users of slow apps report it.
         guard pasteboard.changeCount != start else {
             CGEventKeystrokeSender.endSettingAside(pasteboard) // nothing to put back
             return nil

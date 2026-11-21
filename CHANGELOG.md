@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - ssh connections get a 15-second connect timeout and a 30-second keepalive, after a connection's own SSH options. Turn it off in Settings → Terminal if you set them in `~/.ssh/config`.
 
 ### Changed
+- In `#{input:…}`, an `=` now starts the field's default: `#{input:Name=Ann}` asks for "Name", filled with "Ann". A label that had an `=` in it is split there.
 - Importing with conflicts: Replace is marked as the destructive choice, and Skip is the default.
 - A disabled snippet, or one in a disabled group, shows dimmed, with a tooltip and "Off" for VoiceOver. Icon-only buttons have tooltips, and the drop drive and NLA options say what they do.
 - A strict snippet (the default) now expands when you finish the word, on the space or punctuation after its keyword, which is typed back after the text: `;sig ` becomes `Best `. It no longer fires inside a longer word (`the` in "then"), and a keyword can follow `(` or a quote. Return and Tab don't expand it. Loose snippets still expand the moment you type them.
